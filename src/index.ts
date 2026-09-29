@@ -50,7 +50,7 @@ interface Tunnel {
   child: ChildProcess
   exited: Promise<void>
   proxy: Proxy & {
-    invite: (workspaceId: string) => Invitation
+    invite: () => Invitation
     paired: () => boolean
     /** When the paired phone's access ends, or 0 while nobody is paired. */
     pairedUntil: () => number
@@ -184,6 +184,24 @@ const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // Column resize handles are pointer affordances a phone cannot use, and their strips sit on
   // content at the frame edges. Class modules ship as `<package hash>_handle`.
   + '[class*="_handle"]{display:none !important}'
+  // Keep the composer controls together and lift the status strip clear of the phone's bottom edge.
+  + '[data-composer-card] > [class*="_row"]{flex-wrap:nowrap !important;gap:4px !important;overflow-x:auto;scrollbar-width:none}'
+  + '[data-composer-card] > [class*="_row"]::-webkit-scrollbar{display:none}'
+  + '[data-composer-card] > [class*="_row"] > [class*="_tools"]{flex:none}'
+  + '[data-composer-card] > [class*="_row"] [class*="_tools"],[data-composer-card] > [class*="_row"] [class*="_trailing"],[data-composer-card] > [class*="_row"] [class*="_modes"],[data-composer-card] > [class*="_row"] [class*="_standardControls"]{gap:4px !important}'
+  + '[class*="_root"]:not([class*="_hero"]):has(> [data-composer-card]):has(> [class*="_dock"]){padding-bottom:max(32px,env(safe-area-inset-bottom)) !important}'
+  // Settings has a fixed desktop nav; stack it above the content on phones.
+  + '[data-shortcut-modal="settings"]{flex-direction:column !important;width:calc(100vw - 24px) !important;max-width:none !important;height:calc(100dvh - 32px) !important}'
+  + '[data-shortcut-modal="settings"] > nav{width:auto !important;padding:14px 16px 8px !important;gap:10px !important}'
+  + '[data-shortcut-modal="settings"] [class*="_navTitle"]{padding:0 40px 0 0 !important}'
+  + '[data-shortcut-modal="settings"] [class*="_navList"]{flex-direction:row !important;flex:none;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}'
+  + '[data-shortcut-modal="settings"] [class*="_navList"]::-webkit-scrollbar{display:none}'
+  + '[data-shortcut-modal="settings"] [class*="_navCell"]{flex:none;height:40px !important;padding:8px 10px !important}'
+  + '[data-shortcut-modal="settings"] > [class*="_content"]{min-height:0}'
+  + '[data-shortcut-modal="settings"] [class*="_header"]:has([class*="_close"]){position:absolute;top:12px;right:12px;height:28px !important;padding:0 !important;z-index:1}'
+  + '[data-shortcut-modal="settings"] [class*="_options"]{padding:0 16px 20px !important}'
+  + '[data-shortcut-modal="settings"] [class*="_themeCube"]{flex:1 1 0;min-width:0;padding:12px 4px}'
+  + '[data-shortcut-modal="settings"] [class*="_rowText"]{padding-right:0 !important}'
   + '}</style>'
   // The shell keeps a 56px icon rail whenever it is not a desktop window (AppFrame's collapsedWidth),
   // which a phone cannot spare: the closed sidebar takes no track at all, and the header control in
@@ -320,11 +338,10 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
   let browserToken = ''
   let inviteExpiresAt = 0
   let browserExpiresAt = 0
-  let landing = ''
   let used = false
   const paired = (): boolean => used && Date.now() < browserExpiresAt
-  /** Land the pending invitation on `workspaceId`; renew it once expired or spent, never while a phone is paired. */
-  const invite = (workspaceId: string): Invitation => {
+  /** Renew the invitation once expired or spent, never while a phone is paired. */
+  const invite = (): Invitation => {
     if (paired()) return { paired: true, expiresAt: browserExpiresAt }
     if (used || Date.now() >= inviteExpiresAt) {
       ticket = randomBytes(32).toString('base64url')
@@ -332,7 +349,6 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
       inviteExpiresAt = Date.now() + config.invitationTtlMs
       used = false
     }
-    landing = workspaceId
     return { url: baseUrl + '?pair=' + ticket, expiresAt: inviteExpiresAt }
   }
   /** The dialog follows the pairing state without being reopened. */
@@ -370,7 +386,7 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
       res.writeHead(303, {
         'cache-control': 'no-store',
         'referrer-policy': 'no-referrer',
-        location: '/?remoteWorkspace=' + encodeURIComponent(landing),
+        location: '/',
         'set-cookie': 'dsh-remote-control=' + browserToken + '; Max-Age='
           + String(Math.floor(config.browserTtlMs / 1000))
           + '; Path=/; HttpOnly; Secure; SameSite=Lax',
@@ -461,10 +477,10 @@ export function apply(ctx: Context, config: Config): void {
     await closeProxy(current.proxy)
     await stopChild(current.child, current.exited, config.stopTimeoutMs)
   }
-  // The tunnel serves every Workspace; switching one only retargets the invitation, so a paired phone stays connected.
+  // The tunnel serves every Workspace; a paired phone stays connected when the desktop changes Workspace.
   const start = async (workspaceId: string): Promise<Invitation & { workspaceId: string }> => {
     if (ctx.workspaceRegistry.get(workspaceId as WorkspaceId) === undefined) throw new Error('Unknown workspace')
-    if (active !== undefined) return { ...active.proxy.invite(workspaceId), workspaceId }
+    if (active !== undefined) return { ...active.proxy.invite(), workspaceId }
     // `serve` reaches Tailscale peers only; `funnel` adds the public ingress in front of the same config.
     const command = config.access === 'public' ? 'funnel' : 'serve'
     const label = config.access === 'public' ? 'Funnel' : 'Serve'
@@ -512,7 +528,7 @@ export function apply(ctx: Context, config: Config): void {
         const status = await cliJson(config.tailscaleBinary, [command, 'status', '--json'])
         if (JSON.stringify(status).includes(target)) {
           active = { child, exited, proxy: pairing }
-          return { ...pairing.invite(workspaceId), workspaceId }
+          return { ...pairing.invite(), workspaceId }
         }
         // A public ingress the tailnet has not enabled is a setup step, not a slow start: report it
         // without the wait. `serve` needs no such permission.

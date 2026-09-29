@@ -18,9 +18,6 @@ export const zh = {
   qrUnavailable: '二维码暂不可用，请复制链接在手机上打开。',
   paired: '已有手机配对。可在手机上直接切换到这个工作区；若要配对另一台设备，请停止后重新开启。',
   pairedUntil: '手机访问有效期至',
-  landingTitle: '工作区会话',
-  landingEmpty: '这个工作区还没有会话。',
-  landingMissing: '工作区已不存在。',
 } as const
 
 /** Keys shared by the remote-control dictionaries. */
@@ -42,7 +39,4 @@ export const en: Record<RemoteControlKey, string> = {
   qrUnavailable: 'QR code unavailable. Copy the link and open it on your phone.',
   paired: 'A phone is already paired. Switch to this workspace on the phone; to pair another device, stop and start again.',
   pairedUntil: 'Phone access expires',
-  landingTitle: 'Workspace sessions',
-  landingEmpty: 'This workspace has no sessions yet.',
-  landingMissing: 'This workspace no longer exists.',
 }

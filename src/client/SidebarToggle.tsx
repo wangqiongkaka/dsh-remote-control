@@ -5,7 +5,6 @@ import { IconPanelLeftOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitiv
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { NS } from './locales.ts'
-import { RemoteLanding, type RemoteLandingProps } from './RemoteLanding.tsx'
 
 /** The frame width below which the shell collapses the sidebar and the proxy takes the rail away. */
 const NARROW = '(max-width: 1023px)'
@@ -47,9 +46,4 @@ export function SidebarToggle(props: SidebarToggleProps): React.JSX.Element | nu
     onClick={() => { props.toggleSidebar() }}>
     <IconPanelLeftOutlineRegular size={16} />
   </button>
-}
-
-/** The header's single slot carries both the narrow control and the pairing landing dialog. */
-export function RemoteHeaderLeading(props: SidebarToggleProps & RemoteLandingProps): React.JSX.Element {
-  return <><SidebarToggle {...props} /><RemoteLanding {...props} /></>
 }

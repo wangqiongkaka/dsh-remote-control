@@ -4,7 +4,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { expect, it } from 'vitest'
 import { apply } from '../src/client/index.ts'
 
-it('activates both header controls in the single leading slot', () => {
+it('activates the mobile sidebar control in the single leading slot', () => {
   const core = new SlotCore()
   core.register({
     name: 'root',
@@ -21,7 +21,6 @@ it('activates both header controls in the single leading slot', () => {
       inject: (_name: string, register: () => () => void) => register(),
     },
     layout: { toggleSidebar: () => {} },
-    uiWorkspace: { openSession: () => {} },
   } as unknown as Context
 
   expect(() => { apply(ctx) }).not.toThrow()

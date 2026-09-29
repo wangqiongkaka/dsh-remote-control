@@ -1,4 +1,4 @@
-/** Browser actions for pairing and the first Workspace session list. */
+/** Browser actions for pairing and the mobile sidebar. */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -8,8 +8,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { RemoteControlAction, type RemoteControlInjected } from './RemoteControlAction.tsx'
-import type { LandingInjected } from './RemoteLanding.tsx'
-import { RemoteHeaderLeading, type SidebarToggleInjected } from './SidebarToggle.tsx'
+import { SidebarToggle, type SidebarToggleInjected } from './SidebarToggle.tsx'
 import { en, NS, zh, type RemoteControlKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -18,7 +17,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-export const inject = ['slots', 'locale', 'uiWorkspace', 'layout']
+export const inject = ['slots', 'locale', 'layout']
 
 async function command(action: 'start' | 'stop', workspaceId?: string): Promise<object> {
   const response = await fetch('/api/remote-control', {
@@ -62,9 +61,8 @@ export function apply(ctx: Context): void {
   ctx.slots.inject('conversation.header.leading', () => ctx.slots.register({
     name: 'conversation.header.leading',
     locale: NS,
-    inject: (): SidebarToggleInjected & LandingInjected => ({
+    inject: (): SidebarToggleInjected => ({
       toggleSidebar: () => { ctx.layout.toggleSidebar() },
-      openSession: id => { ctx.uiWorkspace.openSession(id) },
     }),
-  }, RemoteHeaderLeading))
+  }, SidebarToggle))
 }

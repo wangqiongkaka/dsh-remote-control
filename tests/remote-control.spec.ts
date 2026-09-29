@@ -49,7 +49,7 @@ else if (args[0] === 'funnel') {
       return
     }
     if (req.headers.cookie !== 'dsh-session=signed') { res.writeHead(401).end(); return }
-    if (req.url?.startsWith('/?remoteWorkspace=')) {
+    if (req.url === '/') {
       const html = '<head></head><main>DSH Web</main>'
       if (compressedHtml || (req.headers['accept-encoding'] ?? '').includes('gzip')) {
         res.writeHead(200, { 'content-type': 'text/html', 'content-encoding': 'gzip' }).end(gzipSync(html))
@@ -162,7 +162,7 @@ else if (args[0] === 'funnel') {
   expect((await request('/?pair=wrong')).status).toBe(401)
   const paired = await request(new URL(url).pathname + new URL(url).search, { 'sec-fetch-site': 'cross-site' })
   expect(paired.status).toBe(303)
-  expect(paired.headers.get('location')).toBe('/?remoteWorkspace=workspace-2')
+  expect(paired.headers.get('location')).toBe('/')
   const cookie = paired.headers.get('set-cookie')?.split(';', 1)[0]
   expect(cookie).toMatch(/^dsh-remote-control=/u)
   expect((await request(new URL(url).pathname + new URL(url).search)).status).toBe(401)
@@ -171,7 +171,7 @@ else if (args[0] === 'funnel') {
   expect(await invite('workspace-1')).toMatchObject({ paired: true })
   expect(await (await control.fetch(new Request('http://localhost/api/remote-control'))).json())
     .toEqual({ active: true, paired: true, pairedUntil: expect.any(Number) })
-  const page = await request('/?remoteWorkspace=workspace-1', {
+  const page = await request('/', {
     cookie: cookie ?? '', accept: 'text/html', 'accept-encoding': 'gzip',
   })
   expect(page.status).toBe(200)
@@ -181,12 +181,12 @@ else if (args[0] === 'funnel') {
   // The phone gets the proxy's narrow-screen layer on top of the shell it forwards.
   expect(markup).toContain('data-dsh-remote-control')
   compressedHtml = true
-  const compressed = await request('/?remoteWorkspace=workspace-1', {
+  const compressed = await request('/', {
     cookie: cookie ?? '', accept: 'text/html',
   })
   expect(compressed.headers.get('content-encoding')).toBe('gzip')
   expect(await compressed.text()).not.toContain('data-dsh-remote-control')
-  expect((await request('/?remoteWorkspace=workspace-1', {
+  expect((await request('/', {
     cookie: cookie ?? '', 'sec-fetch-site': 'cross-site',
   })).status).toBe(200)
   const echo = await request('/api/echo', { cookie: cookie ?? '', origin: 'https://host.tailnet.ts.net' })
