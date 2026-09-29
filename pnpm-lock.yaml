@@ -20,6 +20,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-conversation':
         specifier: link:../../deepseek-harness/packages/client/ui-conversation
         version: link:../../deepseek-harness/packages/client/ui-conversation
+      '@deepseek-ai/dsh-client-ui-layout':
+        specifier: link:../../deepseek-harness/packages/client/ui-layout
+        version: link:../../deepseek-harness/packages/client/ui-layout
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: link:../../deepseek-harness/packages/client/ui-primitives
         version: link:../../deepseek-harness/packages/client/ui-primitives
