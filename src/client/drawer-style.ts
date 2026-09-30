@@ -12,6 +12,9 @@
  * first produces such a change as the hover, so opening a session took two taps. On a touch device
  * every row therefore keeps its resting shape.
  *
+ * The drawer also groups the list into one outlined card per top-level Workspace, and at phone
+ * width (where the proxy opens the drawer full screen) gives its rows touch-sized heights.
+ *
  * It lives on the client because it only matters once someone interacts with the list, and the
  * client plugin reloads with the page while the proxy's patch layer is baked into the running host
  * process. The caller owns the phone gate (wide frames and plain local windows keep the shell's own
@@ -21,7 +24,13 @@
 /** Attribute on the injected sheet; the proxy's layers use their own attribute names. */
 export const DRAWER_STYLE_ATTRIBUTE = 'data-dsh-remote-control-drawer-selection'
 
-/** The current session's fill, and the resting row shape that keeps a tap a tap on a touch device. */
+/** A top-level Workspace section of the sidebar tree; search results and the flat list have none. */
+const CARD = '[class*="_sidebarCol"] [role="tree"] > [class*="_groupSection"]'
+
+/**
+ * The current session's fill, the resting row shape that keeps a tap a tap on a touch device,
+ * the Workspace cards, and touch-sized rows at phone width.
+ */
 const DRAWER_SELECTION_STYLE = '[class*="_sessionRow"][aria-selected="true"]'
   + '{background:var(--dsw-specific-sidebar-nav-item-active) !important}'
   + '@media (hover: none){'
@@ -42,6 +51,22 @@ const DRAWER_SELECTION_STYLE = '[class*="_sessionRow"][aria-selected="true"]'
   + '[class*="_sessionRow"]:active,'
   + '[class*="_searchResultRow"]:active,'
   + '[class*="_projectRow"]:active{background:var(--dsw-alias-interactive-bg-active) !important}'
+  + '}'
+  // Each top-level Workspace section — its row, Session rows and overflow control — reads as one
+  // outlined card. A child Workspace in tree grouping sits inside its parent's section, so it stays
+  // an indented row of that card instead of a card within a card.
+  + `${CARD}{padding:4px;border-radius:16px;box-shadow:inset 0 0 0 0.5px var(--dsw-alias-border-l3)}`
+  + `${CARD} + [class*="_groupSection"]{margin-top:8px !important}`
+  + `${CARD} > [class*="_projectRow"] [class*="_title"]{font-weight:600}`
+  // At phone width the drawer is the whole screen: rows grow to thumb size, and so do New Session
+  // (the button only; its label spans share the class prefix) and the logo row's collapse control,
+  // which is the drawer's only way back there.
+  + '@media (max-width: 720px){'
+  + 'button[class*="_newSession"]{height:44px !important}'
+  + '[class*="_projectRow"]{height:44px !important}'
+  + '[class*="_sessionRow"]{height:40px !important}'
+  + '[class*="_sessionOverflowButton"]{height:36px !important}'
+  + '[class*="_logoRow"] button[class*="_toggle"]{width:40px !important;height:40px !important}'
   + '}'
 
 /**

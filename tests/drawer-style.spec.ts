@@ -40,6 +40,33 @@ it('keeps every row at its resting shape on a touch device', () => {
   dispose()
 })
 
+// Each top-level Workspace section (its row, Session rows and overflow control) reads as one card;
+// a child Workspace in tree grouping stays inside its parent's card instead of nesting another.
+it('draws each top-level workspace section as an outlined card', () => {
+  const dispose = applyDrawerSelection()
+  const css = sheet()?.textContent ?? ''
+  const card = '[class*="_sidebarCol"] [role="tree"] > [class*="_groupSection"]'
+  expect(css).toContain(`${card}{padding:4px;border-radius:16px;box-shadow:inset 0 0 0 0.5px var(--dsw-alias-border-l3)}`)
+  expect(css).toContain(`${card} + [class*="_groupSection"]{margin-top:8px !important}`)
+  expect(css).toContain(`${card} > [class*="_projectRow"] [class*="_title"]{font-weight:600}`)
+  dispose()
+})
+
+// The full-screen phone drawer gives every row a thumb-sized target, the only way back included.
+it('raises the drawer rows to touch height at phone width', () => {
+  const dispose = applyDrawerSelection()
+  const css = sheet()?.textContent ?? ''
+  const phone = css.slice(css.indexOf('@media (max-width: 720px){'))
+  expect(phone).not.toBe(css)
+  expect(phone).toContain('[class*="_projectRow"]{height:44px !important}')
+  expect(phone).toContain('[class*="_sessionRow"]{height:40px !important}')
+  expect(phone).toContain('[class*="_sessionOverflowButton"]{height:36px !important}')
+  expect(phone).toContain('[class*="_logoRow"] button[class*="_toggle"]{width:40px !important;height:40px !important}')
+  // Only the button itself: its label, mask and shortcut spans share the class prefix.
+  expect(phone).toContain('button[class*="_newSession"]{height:44px !important}')
+  dispose()
+})
+
 it('removes the sheet it injected', () => {
   const dispose = applyDrawerSelection()
   expect(sheet()).not.toBeNull()

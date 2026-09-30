@@ -87,4 +87,11 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // drawer is expanded (the client's SidebarDismiss owns the element and its toggle).
   + '[data-remote-control-scrim]{position:fixed;inset:0;z-index:25;display:none}'
   + `${FRAME}:not([data-sidebar-collapsed]) [data-remote-control-scrim]{display:block}`
+  + '}'
+  // A phone has no room to keep beside the drawer: there the open sidebar takes the whole screen,
+  // and the collapse control in the sidebar's own logo row is the way back. The shell sizes the
+  // sidebar content inline at the column's track width, which the full column overrides.
+  + '@media (max-width: 720px){'
+  + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]{width:100vw;box-shadow:none}`
+  + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"] [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important}`
   + '}</style>'

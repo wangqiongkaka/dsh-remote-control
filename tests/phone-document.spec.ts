@@ -8,6 +8,20 @@ it('adds the keyboard-aware viewport meta to a document that ships none', () => 
   expect(out).toContain('data-dsh-remote-control')
 })
 
+it('opens the drawer full screen at phone width and keeps the tablet drawer', () => {
+  const out = phoneDocument('<html><head></head><body></body></html>')
+  const drawer = out.slice(out.indexOf('<style data-dsh-remote-control-drawer>'))
+  const open = '[class*="_frame"]:has([class*="_sidebarCol"]):not([data-sidebar-collapsed]) [class*="_sidebarCol"]'
+  // Tablets keep the 320px drawer beside the dimmed page.
+  expect(drawer).toContain(`${open}{position:fixed;top:0;bottom:0;left:0;width:min(84vw,320px)`)
+  // A phone gets the whole screen, with nothing left for the scrim's shadow to dim.
+  const phone = drawer.slice(drawer.indexOf('@media (max-width: 720px){'))
+  expect(phone).not.toBe(drawer)
+  expect(phone).toContain(`${open}{width:100vw;box-shadow:none}`)
+  // The shell sizes the sidebar content inline at its track width; the full column overrides it.
+  expect(phone).toContain(`${open} [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important}`)
+})
+
 it('appends the resize hint to the viewport meta the app already declares', () => {
   const out = phoneDocument('<head><meta name="viewport" content="width=device-width, initial-scale=1" /></head>')
   expect(out).toContain('content="width=device-width, initial-scale=1, interactive-widget=resizes-content"')
