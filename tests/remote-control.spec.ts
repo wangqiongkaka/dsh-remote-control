@@ -182,8 +182,16 @@ else if (args[0] === 'funnel') {
   expect(markup).toContain('data-dsh-remote-control')
   // The drawer layer carries the dismissal scrim's visibility rules.
   expect(markup).toContain('[data-remote-control-scrim]')
-  // The composer row hands the scroll to its left group and lifts that clip while a menu is open.
-  expect(markup).toContain('[data-composer-card] > [class*="_row"] > [class*="_tools"]:has([class*="hp-menu"])')
+  // The composer row is one strip: both host groups dissolve into it, so every chip between the
+  // attach button and the send circle slides while those stay pinned at the two ends.
+  expect(markup).toContain('> [class*="_tools"]:not([hidden])) > [class*="_trailing"]{display:contents}')
+  expect(markup).toContain('> [class*="_add"]{position:sticky;left:0;z-index:2')
+  expect(markup).toContain('> [class*="_primary"]{position:sticky;right:8px;z-index:2}')
+  expect(markup).toContain('> [class*="_activity"]{position:sticky;right:46px;z-index:2}')
+  // ...with an opaque floor under the tail and a popup that hangs off the card instead of the row.
+  expect(markup).toContain('::after{content:"";position:sticky;right:0;z-index:1;align-self:stretch;flex:none;width:74px')
+  expect(markup).toContain('[class*="hp-anchor"]{position:static}')
+  expect(markup).toContain('[class*="hp-panel"]{bottom:50px !important}')
   // A document without a viewport meta gets the keyboard-aware one.
   expect(markup).toContain('interactive-widget=resizes-content')
   // The keyboard patch's stylesheet is present for the client attribute it keys on.
