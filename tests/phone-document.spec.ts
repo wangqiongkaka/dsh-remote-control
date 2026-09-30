@@ -8,6 +8,14 @@ it('adds the keyboard-aware viewport meta to a document that ships none', () => 
   expect(out).toContain('data-dsh-remote-control')
 })
 
+it('keeps the active phone composer at the bottom while the chat scrolls without a keyboard', () => {
+  const out = phoneDocument('<head></head>')
+  const chat = '[class*="_frame"]:has([class*="_sidebarCol"]) [data-phase="active"] > '
+    + '[data-conversation-content] > [data-conversation-scroll]:not(:has([data-conversation-composer-overlay]))'
+  expect(out).toContain(`}${chat}{padding-bottom:var(--dsh-composer-height,0px)}`)
+  expect(out).toContain(`}${chat} > [data-composer-seat]{position:absolute !important;inset:auto 0 0}`)
+})
+
 it('appends the resize hint to the viewport meta the app already declares', () => {
   const out = phoneDocument('<head><meta name="viewport" content="width=device-width, initial-scale=1" /></head>')
   expect(out).toContain('content="width=device-width, initial-scale=1, interactive-widget=resizes-content"')

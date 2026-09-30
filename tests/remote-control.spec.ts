@@ -188,7 +188,7 @@ else if (args[0] === 'funnel') {
   expect(markup).toContain('interactive-widget=resizes-content')
   // The keyboard patch's stylesheet is present for the client attribute it keys on.
   expect(markup).toContain('[data-dsh-remote-keyboard]')
-  // While typing, the composer is anchored outside the chat scroller's scrolling geometry.
+  // The phone composer stays anchored outside the chat scroller's scrolling geometry.
   expect(markup).toContain('[data-composer-seat]{position:absolute !important;inset:auto 0 0}')
   compressedHtml = true
   const compressed = await request('/', {

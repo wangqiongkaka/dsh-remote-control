@@ -45,15 +45,15 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '[class*="_portal"]{max-height:calc(100dvh - 24px) !important}'
   // Bottom clearance for the status dock, plus the phone's own safe area.
   + '[class*="_root"]:not([class*="_hero"]):has(> [data-composer-card]):has(> [class*="_dock"]){padding-bottom:max(32px,env(safe-area-inset-bottom)) !important}'
+  // Pin the active chat composer to the non-scrolling body and reserve its measured height in
+  // the transcript, so scrolling messages never moves the input card or hides the last message.
+  + `${CHAT_SCROLL}{padding-bottom:var(--dsh-composer-height,0px)}`
+  + `${CHAT_SCROLL} > [data-composer-seat]{position:absolute !important;inset:auto 0 0}`
   // Keyboard up (the client patch publishes the visual viewport height): the shell shrinks to it,
   // the clearance the phone's bottom edge needed now belongs to the keyboard, and every overlay
   // card is bounded by the space actually visible above it. The shift is the pan the browser
   // applied to reveal the focused field, which the shell follows to stay inside the visible band.
   + `[data-dsh-remote-keyboard] ${FRAME}{height:var(--dsh-remote-keyboard-height,100%) !important;margin-top:var(--dsh-remote-keyboard-shift,0px) !important}`
-  // WebKit can scroll a sticky composer along with the transcript after focusing its editor.
-  // Anchor it to the non-scrolling conversation body and reserve its measured height in the chat.
-  + `[data-dsh-remote-keyboard] ${CHAT_SCROLL}{padding-bottom:var(--dsh-composer-height,0px)}`
-  + `[data-dsh-remote-keyboard] ${CHAT_SCROLL} > [data-composer-seat]{position:absolute !important;inset:auto 0 0}`
   + '[data-dsh-remote-keyboard] [class*="_root"]:not([class*="_hero"]):has(> [data-composer-card]):has(> [class*="_dock"]){padding-bottom:4px !important}'
   + '[data-dsh-remote-keyboard] [class*="hp-menu"],[data-dsh-remote-keyboard] [class*="hp-panel"],'
   + '[data-dsh-remote-keyboard] [class*="_portal"]{max-height:calc(var(--dsh-remote-keyboard-height,100dvh) - 140px) !important}'

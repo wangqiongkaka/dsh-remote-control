@@ -102,6 +102,95 @@ it('patches the drawer only on a narrow frame that came through the proxy', () =
   }
 })
 
+it('opens the left and right sidebars with one-finger swipes across the phone conversation', () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"></div>'
+    + '<main class="ui_layout__centerCol__h1"><button data-sidebar-right-expand>右侧栏</button>'
+    + '<div data-conversation-scroll>消息</div><textarea></textarea></main>'
+    + '<div data-rightbar-col></div>'
+  frame.setAttribute('data-sidebar-collapsed', '')
+  frame.setAttribute('data-rightbar-collapsed', '')
+  document.body.append(frame)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const content = frame.querySelector('[data-conversation-scroll]')!
+  const input = frame.querySelector('textarea')!
+  let leftOpens = 0
+  let rightOpens = 0
+  frame.querySelector('button')!.addEventListener('click', () => {
+    rightOpens++
+    frame.removeAttribute('data-rightbar-collapsed')
+  })
+  const disposers: (() => void)[] = []
+  const ctx = context(slots(), disposers)
+  ctx.layout.toggleSidebar = () => {
+    leftOpens++
+    frame.removeAttribute('data-sidebar-collapsed')
+  }
+  const touch = (target: Element, type: string, x: number, y: number, count = 1): void => {
+    const event = new Event(type, { bubbles: true })
+    const points = Array.from({ length: count }, (_, identifier) => ({ identifier, clientX: x, clientY: y }))
+    Object.defineProperties(event, {
+      touches: { value: type === 'touchend' ? [] : points },
+      changedTouches: { value: points },
+    })
+    target.dispatchEvent(event)
+  }
+  const swipe = (target: Element, x1: number, y1: number, x2: number, y2: number, count = 1): void => {
+    touch(target, 'touchstart', x1, y1, count)
+    touch(target, 'touchend', x2, y2, count)
+  }
+  try {
+    apply(ctx)
+    swipe(content, 20, 100, 140, 110)
+    expect(leftOpens).toBe(1)
+    swipe(content, 20, 100, 140, 110)
+    expect(leftOpens).toBe(1)
+    swipe(content, 300, 100, 180, 110)
+    expect(rightOpens).toBe(1)
+    swipe(content, 300, 100, 180, 110)
+    expect(rightOpens).toBe(1)
+
+    frame.setAttribute('data-sidebar-collapsed', '')
+    frame.setAttribute('data-rightbar-collapsed', '')
+    swipe(content, 20, 100, 65, 105)
+    swipe(content, 20, 100, 140, 190)
+    swipe(content, 20, 100, 140, 110, 2)
+    swipe(input, 20, 100, 140, 110)
+    const horizontal = document.createElement('div')
+    horizontal.style.overflowX = 'auto'
+    Object.defineProperties(horizontal, {
+      scrollWidth: { value: 300 },
+      clientWidth: { value: 100 },
+    })
+    content.append(horizontal)
+    swipe(horizontal, 20, 100, 140, 110)
+    touch(content, 'touchstart', 20, 100)
+    touch(content, 'touchcancel', 140, 110)
+    touch(content, 'touchend', 140, 110)
+    expect(leftOpens).toBe(1)
+    expect(rightOpens).toBe(1)
+
+    for (const dispose of disposers.splice(0)) dispose()
+    swipe(content, 20, 100, 140, 110)
+    expect(leftOpens).toBe(1)
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})
+
 it('closes the command launcher on a second click after its source is cleared', () => {
   const card = document.createElement('div')
   card.setAttribute('data-composer-card', '')
