@@ -107,6 +107,29 @@ it('leaves the phone composer unfocused on session entry but focuses it when tap
   }
 })
 
+it('opens the command launcher without raising the keyboard and restores typing on editor tap', () => {
+  visualViewport({ layout: 800, height: 800 })
+  const dispose = followKeyboard()
+  const { card, editor, tool } = composer()
+  tool.setAttribute('aria-haspopup', 'listbox')
+  tool.addEventListener('click', () => { editor.focus() })
+  try {
+    editor.focus()
+    tool.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    expect(document.activeElement).not.toBe(editor)
+    tool.click()
+    expect(editor.getAttribute('inputmode')).toBe('none')
+
+    editor.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    expect(editor.hasAttribute('inputmode')).toBe(false)
+    editor.focus()
+    expect(document.activeElement).toBe(editor)
+  } finally {
+    dispose()
+    card.remove()
+  }
+})
+
 it('dismisses the keyboard only after a sent draft clears', () => {
   vi.useFakeTimers()
   visualViewport({ layout: 800, height: 800 })
