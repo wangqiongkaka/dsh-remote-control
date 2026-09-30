@@ -105,6 +105,10 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // the transcript, so scrolling messages never moves the input card or hides the last message.
   + `${CHAT_SCROLL}{padding-bottom:var(--dsh-composer-height,0px);overscroll-behavior-y:none}`
   + `${CHAT_SCROLL} > [data-composer-seat]{position:absolute !important;inset:auto 0 0}`
+  // The shell lifts its sticky jump-to-latest control by the composer height, but a sticky inset
+  // counts from inside the scroller's padding, which already reserves that height: keep only the
+  // control's own 16px gap above the input card.
+  + `${CHAT_SCROLL} [class*="_toBottomSlot"]{bottom:16px !important}`
   // Keyboard up (the client patch publishes the visual viewport height): the shell shrinks to it,
   // the clearance the phone's bottom edge needed now belongs to the keyboard, and every overlay
   // card is bounded by the space actually visible above it. The shift is the pan the browser
@@ -149,5 +153,7 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // sidebar content inline at the column's track width, which the full column overrides.
   + '@media (max-width: 720px){'
   + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]{width:100vw;box-shadow:none}`
-  + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"] [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important}`
+  // Its 6px foot would park Settings on the screen's bottom edge: take the chat's bottom clearance.
+  + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"] [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important;`
+  + 'padding-bottom:max(32px,env(safe-area-inset-bottom)) !important}'
   + '}</style>'

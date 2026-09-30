@@ -18,8 +18,10 @@ it('opens the drawer full screen at phone width and keeps the tablet drawer', ()
   const phone = drawer.slice(drawer.indexOf('@media (max-width: 720px){'))
   expect(phone).not.toBe(drawer)
   expect(phone).toContain(`${open}{width:100vw;box-shadow:none}`)
-  // The shell sizes the sidebar content inline at its track width; the full column overrides it.
-  expect(phone).toContain(`${open} [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important}`)
+  // The shell sizes the sidebar content inline at its track width; the full column overrides it,
+  // and lifts Settings off the screen's bottom edge by the chat's own bottom clearance.
+  expect(phone).toContain(`${open} [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important;`
+    + 'padding-bottom:max(32px,env(safe-area-inset-bottom)) !important}')
 })
 
 it('keeps the active phone composer at the bottom while the chat scrolls without a keyboard', () => {
@@ -28,6 +30,15 @@ it('keeps the active phone composer at the bottom while the chat scrolls without
     + '[data-conversation-content] > [data-conversation-scroll]:not(:has([data-conversation-composer-overlay]))'
   expect(out).toContain(`}${chat}{padding-bottom:var(--dsh-composer-height,0px);overscroll-behavior-y:none}`)
   expect(out).toContain(`}${chat} > [data-composer-seat]{position:absolute !important;inset:auto 0 0}`)
+})
+
+// The shell lifts its sticky jump-to-latest control by the composer height; the chat's own bottom
+// padding already reserves that height, so counting it again parked the control far above the input.
+it('keeps the jump-to-latest control just above the pinned composer', () => {
+  const out = phoneDocument('<head></head>')
+  const chat = '[class*="_frame"]:has([class*="_sidebarCol"]) [data-phase="active"] > '
+    + '[data-conversation-content] > [data-conversation-scroll]:not(:has([data-conversation-composer-overlay]))'
+  expect(out).toContain(`}${chat} [class*="_toBottomSlot"]{bottom:16px !important}`)
 })
 
 it('keeps a boundary swipe in the chat instead of moving the whole phone page', () => {
