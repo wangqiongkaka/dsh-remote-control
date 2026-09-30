@@ -154,3 +154,115 @@ export function followChatPulls(): () => void {
     clearAnimation()
   }
 }
+
+/** The phone composer's tool strip; narrow-style pins its ends and turns off its native overscroll. */
+const STRIP = '[data-composer-card] > [class*="_row"]'
+
+/** The chips between the pinned ends: every tool seat, and the model seat of the trailing group. */
+const STRIP_CHIPS = ':scope > [class*="_tools"] [data-slot] > *, :scope > [class*="_trailing"] > [class*="_standardControls"] [data-slot] > *'
+
+/**
+ * Past either end of the phone composer's tool strip, stretch its chips and spring them back.
+ * WebKit's own rubber-band would drag the pinned attach, microphone and send buttons along with
+ * the strip, so the strip has none (see narrow-style) and this moves only the chips between them.
+ */
+export function followStripPulls(): () => void {
+  const LIMIT = 40
+  const DURATION = 220
+  let drag: {
+    id: number; x: number; y: number; lastX: number; strip: HTMLElement
+    horizontal?: boolean; edge?: number | undefined; side?: 1 | -1 | undefined; pull: number
+  } | undefined
+  let settling: { chips: HTMLElement[]; timer: ReturnType<typeof setTimeout> } | undefined
+  const chipsOf = (strip: HTMLElement): HTMLElement[] => [...strip.querySelectorAll<HTMLElement>(STRIP_CHIPS)]
+  const clear = (chips: HTMLElement[]): void => {
+    for (const chip of chips) {
+      chip.style.removeProperty('transform')
+      chip.style.removeProperty('transition')
+    }
+  }
+  const settle = (): void => {
+    if (!settling) return
+    clearTimeout(settling.timer)
+    clear(settling.chips)
+    settling = undefined
+  }
+  const paint = (strip: HTMLElement, pull: number): void => {
+    for (const chip of chipsOf(strip)) {
+      chip.style.transition = 'none'
+      chip.style.transform = `translateX(${pull}px)`
+    }
+  }
+  const release = (): void => {
+    const from = drag
+    drag = undefined
+    if (!from || from.pull === 0) return
+    const chips = chipsOf(from.strip)
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { clear(chips); return }
+    for (const chip of chips) {
+      chip.style.transition = `transform ${DURATION}ms ease-out`
+      chip.style.transform = 'translateX(0px)'
+    }
+    settling = { chips, timer: setTimeout(settle, DURATION) }
+  }
+  const onStart = (event: TouchEvent): void => {
+    release()
+    settle()
+    const touch = event.touches[0]
+    if (event.touches.length !== 1 || touch === undefined || !(event.target instanceof Element)) return
+    const strip = event.target.closest<HTMLElement>(STRIP)
+    if (strip) drag = { id: touch.identifier, x: touch.clientX, y: touch.clientY, lastX: touch.clientX, strip, pull: 0 }
+  }
+  const onMove = (event: TouchEvent): void => {
+    const from = drag
+    if (!from) return
+    const touch = event.touches[0]
+    if (event.touches.length !== 1 || touch === undefined || touch.identifier !== from.id) { release(); return }
+    if (from.horizontal === undefined) {
+      const dx = Math.abs(touch.clientX - from.x)
+      const dy = Math.abs(touch.clientY - from.y)
+      if (Math.max(dx, dy) < 6) return
+      from.horizontal = dx > dy
+    }
+    if (!from.horizontal) { release(); return }
+    const { strip } = from
+    const step = touch.clientX - from.lastX
+    from.lastX = touch.clientX
+    if (from.edge === undefined || from.side === undefined) {
+      // The strip scrolls natively until it reaches an end; the pull starts from where it did.
+      const atStart = strip.scrollLeft <= 0
+      const atEnd = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1
+      if (!((step > 0 && atStart) || (step < 0 && atEnd))) return
+      from.edge = touch.clientX - step
+      from.side = step > 0 ? 1 : -1
+    }
+    const over = (touch.clientX - from.edge) * from.side
+    if (over <= 0) {
+      // Back inside: hand the gesture to native scrolling again.
+      from.edge = undefined
+      from.side = undefined
+      from.pull = 0
+      clear(chipsOf(strip))
+      return
+    }
+    if (event.cancelable) event.preventDefault()
+    from.pull = from.side * Math.round(Math.min(LIMIT, over * 0.45))
+    paint(strip, from.pull)
+  }
+  const onEnd = (event: TouchEvent): void => {
+    if (drag && event.touches.length === 0) release()
+  }
+  document.addEventListener('touchstart', onStart, { passive: true })
+  document.addEventListener('touchmove', onMove, { passive: false })
+  document.addEventListener('touchend', onEnd, { passive: true })
+  document.addEventListener('touchcancel', release, { passive: true })
+  return () => {
+    document.removeEventListener('touchstart', onStart)
+    document.removeEventListener('touchmove', onMove)
+    document.removeEventListener('touchend', onEnd)
+    document.removeEventListener('touchcancel', release)
+    if (drag) clear(chipsOf(drag.strip))
+    drag = undefined
+    settle()
+  }
+}

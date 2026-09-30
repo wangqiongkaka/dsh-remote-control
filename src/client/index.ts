@@ -10,13 +10,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { RemoteControlAction, type RemoteControlInjected } from './RemoteControlAction.tsx'
 import { NARROW, SidebarToggle, proxiedFrame, type SidebarToggleInjected } from './SidebarToggle.tsx'
 import { SidebarDismiss } from './SidebarDismiss.tsx'
-import { AgentBoard, type AgentBoardInjected } from './AgentBoard.tsx'
+import { AgentBoard, type AgentBoardInjected, type HarnessRemote } from './AgentBoard.tsx'
 import { followKeyboard } from './keyboard.ts'
 import { applyDrawerSelection } from './drawer-style.ts'
 import { compactChatDefaults } from './chat-defaults.ts'
 import { hideModelsSettings } from './settings-models.ts'
 import { phoneAccount, type AccountRemote } from './account.tsx'
-import { followChatPulls, followSidebarSwipes } from './sidebar-swipe.ts'
+import { followChatPulls, followSidebarSwipes, followStripPulls } from './sidebar-swipe.ts'
 import { en, NS, zh, type RemoteControlKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -69,6 +69,7 @@ export function apply(ctx: Context): void {
     let selection: (() => void) | undefined
     let swipes: (() => void) | undefined
     let pulls: (() => void) | undefined
+    let strips: (() => void) | undefined
     let models: (() => void) | undefined
     const sync = (): void => {
       const phone = query.matches && proxiedFrame()
@@ -80,6 +81,8 @@ export function apply(ctx: Context): void {
       swipes = phone ? followSidebarSwipes(() => { ctx.layout.toggleSidebar() }) : undefined
       pulls?.()
       pulls = phone ? followChatPulls() : undefined
+      strips?.()
+      strips = phone ? followStripPulls() : undefined
       models?.()
       models = phone ? hideModelsSettings(ctx.slots) : undefined
     }
@@ -91,6 +94,7 @@ export function apply(ctx: Context): void {
       selection?.()
       swipes?.()
       pulls?.()
+      strips?.()
       models?.()
     }
   }, 'remote-control: phone patches')
@@ -152,6 +156,12 @@ export function apply(ctx: Context): void {
     inject: (): AgentBoardInjected => ({
       openSession: (sessionId) => {
         (ctx.get('uiWorkspace') as UiWorkspace | undefined)?.openSession(sessionId)
+      },
+      harnesses: async (sessionIds) => {
+        // harness-provider's Remote namespace; absent without that plugin, when the board keeps its status dots.
+        const remote = (ctx as unknown as { remote?: { harness?: HarnessRemote } }).remote?.harness
+        const result = await remote?.harnesses({ sessionIds })
+        return result?.ok === true ? result.value : {}
       },
     }),
   }, AgentBoard))

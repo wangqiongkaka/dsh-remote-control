@@ -43,13 +43,14 @@ function setNarrow(matches: boolean): void {
   })
 }
 
-function render(): void {
+function render(sessions: typeof list = list, marks: Record<string, { harness: string }> = {}): void {
   act(() => {
     root.render(createElement(AgentBoard as never, {
       t: (key: string, params?: { n?: number }) => params?.n === undefined ? key : `${key}:${params.n}`,
-      useSessions: (select: (value: typeof list) => unknown) => select(list),
+      useSessions: (select: (value: typeof list) => unknown) => select(sessions),
       useSessionStatus: (select: (value: typeof statuses) => unknown) => select(statuses),
       openSession: (id: string) => { opened.push(id) },
+      harnesses: async () => marks,
     }))
   })
 }
@@ -135,6 +136,33 @@ it('follows the column when the shell rebuilds it, and leaves with the component
   act(() => { root.unmount() })
   expect(host()).toBeNull()
   root = createRoot(mount)
+})
+
+it('turns the running spinner only while a Session runs', () => {
+  column()
+  const running = () => host()?.querySelector('.rc-agents-tile[data-state="running"] [data-state]')?.getAttribute('data-state')
+  render()
+  expect(running()).toBe('ongoing')
+  render({ ...list, ids: ['ask', 'done', 'idle'] })
+  expect(host()?.querySelector('.rc-agents-tile[data-state="running"]')?.textContent).toBe('agents.running0')
+  expect(running()).toBe('idle')
+})
+
+it('leads a row with its harness logo, breathing while it runs', async () => {
+  column()
+  render(list, { run: { harness: 'claude-code' }, done: { harness: 'codex' } })
+  await act(async () => { await Promise.resolve() })
+  const row = (title: string) => [...host()!.querySelectorAll<HTMLElement>('[data-remote-control-pick]')]
+    .find(item => item.querySelector('.rc-agents-title')?.textContent === title)!
+  expect(row('运行中').dataset.hpHarness).toBe('claude-code')
+  expect(row('运行中').hasAttribute('data-hp-running')).toBe(true)
+  expect(row('完成了').dataset.hpHarness).toBe('codex')
+  expect(row('完成了').hasAttribute('data-hp-running')).toBe(false)
+  // harness-provider's sheet draws the logo into the lead span, so the status dot steps aside.
+  expect(row('运行中').firstElementChild?.children).toHaveLength(0)
+  // No harness known: the status dot stays.
+  expect(row('等回答').hasAttribute('data-hp-harness')).toBe(false)
+  expect(row('等回答').firstElementChild?.querySelector('[data-state="warning"]')).not.toBeNull()
 })
 
 it('stays out of frames that did not come through the proxy', () => {

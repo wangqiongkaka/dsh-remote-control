@@ -34,6 +34,14 @@ const PREVIEW = 3
 /** Host commands passed through the slot injection face. */
 export interface AgentBoardInjected {
   openSession: (sessionId: SessionId) => void
+  /** Each Session's harness (dsh, codex, claude-code…); empty where harness-provider is absent. */
+  harnesses: (sessionIds: SessionId[]) => Promise<Readonly<Record<string, { harness: string }>>>
+}
+
+/** The harness-provider Remote call the board reads harnesses from. */
+export interface HarnessRemote {
+  harnesses: (request: { sessionIds: string[] }) => Promise<
+    { ok: true; value: Record<string, { harness: string }> } | { ok: false }>
 }
 
 /** Overlay props supplied by the slot renderer. */
@@ -116,6 +124,28 @@ function useCardHost(active: boolean): HTMLElement | null {
   return active && placed ? host : null
 }
 
+/**
+ * Look up each shown Session's harness once; a failed lookup is asked again with the next rows.
+ * @returns harness by Session identity, as far as known.
+ */
+function useHarnesses(rows: readonly AgentRow<SessionId>[], lookup: AgentBoardInjected['harnesses']): ReadonlyMap<string, string> {
+  const [known, setKnown] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const [asked] = useState(() => new Set<string>())
+  useEffect(() => {
+    const missing = rows.map(row => row.id).filter(id => !asked.has(id))
+    if (missing.length === 0) return
+    for (const id of missing) asked.add(id)
+    lookup(missing).then((marks) => {
+      setKnown((previous) => {
+        const next = new Map(previous)
+        for (const [id, mark] of Object.entries(marks)) next.set(id, mark.harness)
+        return next
+      })
+    }, () => { for (const id of missing) asked.delete(id) })
+  }, [rows, lookup, asked])
+  return known
+}
+
 /** A clock for relative times that ticks while the board is shown. */
 function useNow(active: boolean): number {
   const [now, setNow] = useState(Date.now)
@@ -137,11 +167,21 @@ function stateLabel(row: AgentRow<SessionId>, t: Translate): string {
   return row.pending === undefined ? t(`agents.${row.state}`) : t(`agents.pending.${row.pending}`)
 }
 
-function Row({ row, now, t, open }: { row: AgentRow<SessionId>; now: number; t: Translate; open: (id: SessionId) => void }) {
+function Row({ row, harness, now, t, open }: {
+  row: AgentRow<SessionId>; harness: string | undefined; now: number; t: Translate; open: (id: SessionId) => void
+}) {
   const meta = [stateLabel(row, t), row.workspace].filter(Boolean).join(' · ')
   return (
-    <button type="button" className="rc-agents-row" {...{ [DRAWER_PICK_ATTRIBUTE]: '' }} onClick={() => { open(row.id) }}>
-      <span className="rc-agents-lead"><StateDot state={DOT[row.state]} /></span>
+    <button
+      type="button"
+      className="rc-agents-row"
+      // harness-provider's sidebar mark sheet draws the logo into the first span, breathing while it runs.
+      data-hp-harness={harness}
+      data-hp-running={harness !== undefined && row.state === 'running' ? '' : undefined}
+      {...{ [DRAWER_PICK_ATTRIBUTE]: '' }}
+      onClick={() => { open(row.id) }}
+    >
+      <span className="rc-agents-lead">{harness === undefined && <StateDot state={DOT[row.state]} />}</span>
       <span className="rc-agents-text">
         <span className="rc-agents-title">{row.title}</span>
         <span className="rc-agents-meta" data-state={row.state}>{meta}</span>
@@ -154,6 +194,8 @@ function Row({ row, now, t, open }: { row: AgentRow<SessionId>; now: number; t: 
 function Tile({ state, count, selected, role, t, pick }: {
   state: 'all' | AgentState; count: number; selected: boolean; role?: 'tab'; t: Translate; pick: () => void
 }) {
+  // The running spinner only turns while something runs; an empty tile rests on the idle dot.
+  const dot = state === 'all' ? undefined : state === 'running' && count === 0 ? 'idle' : DOT[state]
   return (
     <button
       type="button"
@@ -163,7 +205,7 @@ function Tile({ state, count, selected, role, t, pick }: {
       {...(role === 'tab' ? { 'aria-selected': selected } : {})}
       onClick={pick}
     >
-      <span>{state !== 'all' && <StateDot state={DOT[state]} size={state === 'running' ? 12 : 10} />}{t(`agents.${state}`)}</span>
+      <span>{dot !== undefined && <StateDot state={dot} size={dot === 'ongoing' ? 12 : 10} />}{t(`agents.${state}`)}</span>
       <b>{count}</b>
     </button>
   )
@@ -181,6 +223,7 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
   const list = useSessions(value => value)
   const statuses = useSessionStatus(value => value)
   const rows = useMemo(() => agentRows(list, statuses), [list, statuses])
+  const harnessOf = useHarnesses(host === null ? [] : rows, props.harnesses)
   const [filter, setFilter] = useState<Filter>(null)
   if (host === null) return null
 
@@ -208,7 +251,7 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
         </div>
         {rows.length === 0
           ? <p className="rc-agents-empty">{t('agents.empty')}</p>
-          : rows.slice(0, PREVIEW).map(row => <Row key={row.id} row={row} now={now} t={t} open={open} />)}
+          : rows.slice(0, PREVIEW).map(row => <Row key={row.id} row={row} harness={harnessOf.get(row.id)} now={now} t={t} open={open} />)}
       </section>
       {filter !== null && (
         <div className="rc-agents-board" role="dialog" aria-label={t('agents.board')}>
@@ -231,7 +274,7 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
                 <h3><StateDot state={DOT[state]} size={state === 'running' ? 12 : 10} />{t(`agents.${state}`)}</h3>
                 <div>
                   {rows.filter(row => row.state === state)
-                    .map(row => <Row key={row.id} row={row} now={now} t={t} open={open} />)}
+                    .map(row => <Row key={row.id} row={row} harness={harnessOf.get(row.id)} now={now} t={t} open={open} />)}
                 </div>
               </section>
             ))}

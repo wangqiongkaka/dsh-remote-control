@@ -85,6 +85,27 @@ it('opens an Agent board Session through the Workspace UI navigation', () => {
   }
 })
 
+it('reads Agent board harnesses from harness-provider, and none without it', async () => {
+  const core = slots()
+  const disposers: (() => void)[] = []
+  const ctx = context(core, disposers)
+  const asked: string[][] = []
+  let reply: unknown = { ok: true, value: { s1: { harness: 'codex', delegated: false, running: true } } }
+  try {
+    apply(ctx)
+    const entry = core.entries('shell.overlay').find(item => item.options.id === 'remote-control.agents')
+    const harnesses = () => (entry?.inject as () => { harnesses: (ids: string[]) => Promise<unknown> })().harnesses
+    expect(await harnesses()(['s1'])).toEqual({})
+    Object.assign(ctx, { remote: { harness: { harnesses: async ({ sessionIds }: { sessionIds: string[] }) => { asked.push(sessionIds); return reply } } } })
+    expect(await harnesses()(['s1'])).toEqual({ s1: { harness: 'codex', delegated: false, running: true } })
+    expect(asked).toEqual([['s1']])
+    reply = { ok: false, error: { message: 'offline' } }
+    expect(await harnesses()(['s1'])).toEqual({})
+  } finally {
+    for (const dispose of disposers) dispose()
+  }
+})
+
 it('patches the drawer only on a narrow frame that came through the proxy', () => {
   const proxied = document.createElement('style')
   proxied.setAttribute('data-dsh-remote-control', '')
@@ -648,6 +669,86 @@ it('closes the command launcher on a second click after its source is cleared', 
     expect(menu.isConnected).toBe(true)
   } finally {
     for (const dispose of disposers) dispose()
+    card.remove()
+  }
+})
+
+it('springs the phone composer chips past either strip end while its pinned ends stay put', () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const card = document.createElement('div')
+  card.setAttribute('data-composer-card', '')
+  card.innerHTML = '<div class="ui_conversation__row__h1">'
+    + '<div class="ui_conversation__tools__h1"><button class="ui_conversation__add__h1">+</button>'
+    + '<div class="ui_conversation__modes__h1"><div data-slot="p"><div id="mode">自动</div></div></div>'
+    + '<div data-slot="l"><div id="harness">Claude Code</div></div></div>'
+    + '<div class="ui_conversation__trailing__h1"><div class="ui_conversation__standardControls__h1">'
+    + '<div data-slot="m"><div id="model">Opus</div></div></div>'
+    + '<div class="ui_conversation__activity__h1"><div data-slot="a"><button id="mic">mic</button></div></div>'
+    + '<button class="ui_conversation__primary__h1">发送</button></div></div>'
+  document.body.append(card)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (query: string) => ({ matches: !query.includes('prefers-reduced-motion'), addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const strip = card.firstElementChild as HTMLElement
+  Object.defineProperties(strip, { scrollWidth: { value: 600 }, clientWidth: { value: 300 } })
+  const chips = ['mode', 'harness', 'model'].map(id => document.getElementById(id)!)
+  const pinned = [card.querySelector<HTMLElement>('[class*="_add"]')!, document.getElementById('mic')!,
+    card.querySelector<HTMLElement>('[class*="_primary"]')!]
+  const touch = (type: string, x: number, y = 20): Event => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    const points = [{ identifier: 1, clientX: x, clientY: y }]
+    Object.defineProperties(event, {
+      touches: { value: type === 'touchend' ? [] : points },
+      changedTouches: { value: points },
+    })
+    chips[1]!.dispatchEvent(event)
+    return event
+  }
+  const disposers: (() => void)[] = []
+  try {
+    apply(context(slots(), disposers))
+    // At the start, a further rightward drag stretches the chips, capped, and springs back on release.
+    strip.scrollLeft = 0
+    touch('touchstart', 100)
+    touch('touchmove', 110)
+    const pull = touch('touchmove', 250)
+    expect(pull.defaultPrevented).toBe(true)
+    for (const chip of chips) expect(chip.style.transform).toBe('translateX(40px)')
+    for (const end of pinned) expect(end.style.transform).toBe('')
+    touch('touchend', 250)
+    for (const chip of chips) {
+      expect(chip.style.transform).toBe('translateX(0px)')
+      expect(chip.style.transition).toContain('transform')
+    }
+
+    // Mid-strip the drag is the strip's own scroll.
+    strip.scrollLeft = 100
+    touch('touchstart', 100)
+    touch('touchmove', 110)
+    expect(touch('touchmove', 190).defaultPrevented).toBe(false)
+    expect(chips[0]!.style.transform).toBe('')
+    touch('touchend', 190)
+
+    // At the end the pull runs the other way.
+    strip.scrollLeft = 300
+    touch('touchstart', 200)
+    touch('touchmove', 190)
+    touch('touchmove', 150)
+    expect(chips[0]!.style.transform).toBe('translateX(-23px)')
+    touch('touchend', 150)
+
+    // A vertical gesture is never a strip pull.
+    strip.scrollLeft = 0
+    touch('touchstart', 100, 20)
+    touch('touchmove', 104, 60)
+    expect(touch('touchmove', 150, 90).defaultPrevented).toBe(false)
+    expect(chips[0]!.style.transform).toBe('')
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
     card.remove()
   }
 })

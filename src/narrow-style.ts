@@ -40,10 +40,11 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // opaque pinned ends to the card's bottom corners instead of leaving square patches there. The host
   // splits those chips over two groups, so both dissolve into the row and their chips share the
   // one strip — kept as boxes, the model chip would sit fixed beside the send circle and leave
-  // the mode and harness chips a fraction of the row.
+  // the mode and harness chips a fraction of the row. No overscroll either: WebKit's rubber-band
+  // translates the whole strip, sticky ends included, so the pinned buttons would slide at its edges.
   + '[data-composer-card] > [class*="_row"]{flex-wrap:nowrap !important;gap:4px !important;'
   + 'border-radius:0 0 var(--dsw-radius-panel) var(--dsw-radius-panel);'
-  + 'overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:none}'
+  + 'overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:none;scrollbar-width:none}'
   + '[data-composer-card] > [class*="_row"]::-webkit-scrollbar{display:none}'
   + `${COMPOSER_ROW} > [class*="_tools"],${COMPOSER_ROW} > [class*="_trailing"]{display:contents}`
   // The host spaces row items apart, but its nested mode and model groups keep their own 4px
@@ -66,7 +67,8 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // which is what keeps a sliding glyph out of the pad a scroller would otherwise paint it in.
   + `${COMPOSER_ROW}{padding-left:0 !important;padding-right:0 !important}`
   + `${COMPOSER_ROW} > [class*="_tools"] > [class*="_add"]{position:sticky;left:0;z-index:2;`
-  + 'width:36px;padding-left:8px;border-radius:0;background:var(--dsw-specific-input-major)}'
+  // The host leaves the button's UA side padding in place; zero it so the glyph centres in the circle.
+  + 'width:36px;padding:0 0 0 8px;border-radius:0;background:var(--dsw-specific-input-major)}'
   + `${COMPOSER_ROW} > [class*="_tools"] > [class*="_add"]::before{content:"";position:absolute;z-index:-1;`
   + 'inset:0 0 0 8px;border-radius:999px;corner-shape:round;background:var(--dsw-specific-selector)}'
   + `${COMPOSER_ROW} > [class*="_tools"] > [class*="_add"]:hover:not(:disabled)::before{background:var(--dsw-alias-interactive-bg-hover-solid)}`
@@ -86,9 +88,9 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // A turn in flight widens the tail by one 34px circle and its gap; the floor follows it.
   + `${COMPOSER_ROW}:has(> [class*="_trailing"] > [class*="_primary"] ~ [class*="_primary"])::after{`
   + 'width:112px;margin-left:-116px}'
-  // Harness and quota chips carry the longest labels in the row; the ellipsis they already style
-  // now engages on a phone instead of letting one chip take the whole line.
-  + '[data-composer-card] > [class*="_row"] [class*="hp-chip"]{max-width:104px}'
+  // The strip scrolls, so every chip shows its whole label: lift harness-provider's own 220px cap,
+  // which would otherwise ellipsize a long harness or model name.
+  + `${COMPOSER_ROW} [class*="hp-chip"]{max-width:none}`
   // The row is a scroll container, which clips in BOTH axes — and the harness chips' menus and the
   // quota panel pop absolutely-positioned ABOVE the row from inside it, so the clip would swallow
   // them whole. While one is open its anchor stops being the positioning context: the popup then
@@ -99,7 +101,10 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + `${COMPOSER_ROW}:has([class*="hp-menu"]) [class*="hp-anchor"],`
   + `${COMPOSER_ROW}:has([class*="hp-panel"]) [class*="hp-anchor"]{position:static}`
   + `${COMPOSER_ROW} [class*="hp-menu"],${COMPOSER_ROW} [class*="hp-panel"]{bottom:50px !important}`
-  + '[data-composer-card] > [class*="_row"] [class*="_modes"],[data-composer-card] > [class*="_row"] [class*="_standardControls"]{gap:4px !important}'
+  // A plugin seat that groups its own chips (the harness selector with its quota chip) spaces them
+  // 12px apart; they share the row's 4px spacing too.
+  + '[data-composer-card] > [class*="_row"] [class*="_modes"],[data-composer-card] > [class*="_row"] [class*="_standardControls"],'
+  + '[data-composer-card] > [class*="_row"] [class*="hp-root"]{gap:4px !important}'
   // Overlay cards clamp their height against the layout viewport, which stays taller than the
   // visible area while a phone's browser chrome is drawn over it: size them by the dynamic
   // viewport so the tail of a menu is not parked under the toolbar.

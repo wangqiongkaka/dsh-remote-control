@@ -55,6 +55,30 @@ it('spaces phone composer controls evenly across the host tool groups', () => {
   expect(out).not.toContain(`${row} > [class*="_trailing"] > [class*="_standardControls"]{margin-left:auto}`)
 })
 
+// The pinned attach button draws its circle from 8px in; the UA's right padding left behind would
+// centre the + glyph 3px left of that circle.
+it('centres the attach + glyph in its redrawn circle', () => {
+  const out = phoneDocument('<head></head>')
+  expect(out).toContain('[class*="_add"]{position:sticky;left:0;z-index:2;width:36px;padding:0 0 0 8px;')
+  expect(out).toContain('inset:0 0 0 8px;border-radius:999px')
+})
+
+// The harness selector groups its chip with the quota chip 12px apart. The strip scrolls, so no
+// chip is capped: a capped quota chip painted its ring over the model chip, and labels ellipsized.
+it('keeps plugin chips on the row spacing and shows every label in full', () => {
+  const out = phoneDocument('<head></head>')
+  const row = '[data-composer-card] > [class*="_row"]'
+  expect(out).toContain(`${row} [class*="hp-root"]{gap:4px !important}`)
+  expect(out).toContain(`${row}:has(> [class*="_tools"]:not([hidden])) [class*="hp-chip"]{max-width:none}`)
+  expect(out).not.toContain('max-width:104px')
+})
+
+// WebKit's rubber-band at the strip's edges would carry the sticky end buttons along with it.
+it('keeps the pinned composer ends still at the strip edges', () => {
+  const out = phoneDocument('<head></head>')
+  expect(out).toContain('overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:none;')
+})
+
 it('keeps a boundary swipe in the chat instead of moving the whole phone page', () => {
   const out = phoneDocument('<head></head>')
   expect(out).toContain('html,body{overflow:hidden;overscroll-behavior-y:none}')
