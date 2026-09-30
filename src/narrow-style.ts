@@ -10,6 +10,13 @@ const FRAME = '[class*="_frame"]:has([class*="_sidebarCol"])'
 /** The main chat scroller; other views own their composer overlay positioning. */
 const CHAT_SCROLL = `${FRAME} [data-phase="active"] > [data-conversation-content] > [data-conversation-scroll]:not(:has([data-conversation-composer-overlay]))`
 
+/**
+ * The composer's button row while it carries a live composer. A running voice activity replaces
+ * both host groups (`hidden`) with an expanded panel that owns the row, and none of the strip
+ * rules below may touch that state.
+ */
+const COMPOSER_ROW = '[data-composer-card] > [class*="_row"]:has(> [class*="_tools"]:not([hidden]))'
+
 /** The DSH shell has no narrow-screen layout, so the proxy lends phones a small patch layer. */
 export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '@media (max-width: 720px){'
@@ -21,22 +28,68 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // Column resize handles are pointer affordances a phone cannot use, and their strips sit on
   // content at the frame edges. Class modules ship as `<package hash>_handle`.
   + '[class*="_handle"]{display:none !important}'
-  // One button row, and the LEFT group is what gives way: it scrolls inside its own box while the
-  // trailing group (model + send) stays fixed, so the send control can never be scrolled out of
-  // reach. The chips cap their labels below, which keeps the row on one line on a phone width.
-  + '[data-composer-card] > [class*="_row"]{flex-wrap:nowrap !important;gap:4px !important}'
-  + '[data-composer-card] > [class*="_row"] > [class*="_tools"]{flex:1 1 auto;min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}'
-  + '[data-composer-card] > [class*="_row"] > [class*="_tools"]::-webkit-scrollbar{display:none}'
-  + '[data-composer-card] > [class*="_row"] > [class*="_trailing"]{flex:none}'
+  // One button row, and the whole row is the strip that gives way: the round controls at either
+  // end (attach, microphone, send) hold still while every chip between them slides. The host
+  // splits those chips over two groups, so both dissolve into the row and their chips share the
+  // one strip — kept as boxes, the model chip would sit fixed beside the send circle and leave
+  // the mode and harness chips a fraction of the row.
+  + '[data-composer-card] > [class*="_row"]{flex-wrap:nowrap !important;gap:4px !important;'
+  + 'overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:none}'
+  + '[data-composer-card] > [class*="_row"]::-webkit-scrollbar{display:none}'
+  + `${COMPOSER_ROW} > [class*="_tools"],${COMPOSER_ROW} > [class*="_trailing"]{display:contents}`
+  // A strip scrolls only while its items keep their own width. A chip squeezed below its own
+  // content paints its glyphs outside its box, straight over the chip beside it, so nothing in the
+  // row shrinks; the cap below is then what keeps one long label from taking the whole strip. The
+  // host wraps every plugin seat in a `display: contents` slot element, so an item is a child of a
+  // dissolved group or a child of one of those wrappers.
+  + `${COMPOSER_ROW} > [class*="_tools"] > *:not([data-slot]),${COMPOSER_ROW} > [class*="_trailing"] > *:not([data-slot]),`
+  + `${COMPOSER_ROW} > [class*="_tools"] > [data-slot] > *,${COMPOSER_ROW} > [class*="_trailing"] > [data-slot] > *{flex:none}`
+  // The left end. The attach button is a 28px circle inside a 28px box, so a chip sliding under it
+  // still shows in the four corners the circle leaves clear and in the row's own left pad. The row
+  // hands its 8px pads to the two end controls instead: the attach button becomes a 36px box that
+  // starts at the card's edge, filled square with the card's own colour, with the host's circle
+  // redrawn inside it — a sticky box cannot sit outside its container, so the pad has to come from
+  // the button. Handing the pads over also puts the strip's edges exactly under those controls,
+  // which is what keeps a sliding glyph out of the pad a scroller would otherwise paint it in.
+  + `${COMPOSER_ROW}{padding-left:0 !important;padding-right:0 !important}`
+  + `${COMPOSER_ROW} > [class*="_tools"] > [class*="_add"]{position:sticky;left:0;z-index:2;`
+  + 'width:36px;padding-left:8px;border-radius:0;background:var(--dsw-specific-input-major)}'
+  + `${COMPOSER_ROW} > [class*="_tools"] > [class*="_add"]::before{content:"";position:absolute;z-index:-1;`
+  + 'inset:0 0 0 8px;border-radius:999px;corner-shape:round;background:var(--dsw-specific-selector)}'
+  + `${COMPOSER_ROW} > [class*="_tools"] > [class*="_add"]:hover:not(:disabled)::before{background:var(--dsw-alias-interactive-bg-hover-solid)}`
+  // The right end: the microphone and the 34px send circle, each 4px apart, which is what places
+  // the pinned tail. A turn in flight adds its own stop circle ahead of the send one.
+  + `${COMPOSER_ROW} > [class*="_trailing"] > [class*="_primary"]{position:sticky;right:8px;z-index:2}`
+  + `${COMPOSER_ROW} > [class*="_trailing"] > [class*="_primary"]:not(:last-child){right:46px}`
+  + `${COMPOSER_ROW} > [class*="_trailing"] > [class*="_activity"]{position:sticky;right:46px;z-index:2}`
+  + `${COMPOSER_ROW} > [class*="_trailing"] > [class*="_activity"]:has(~ [class*="_primary"] ~ [class*="_primary"]){right:84px}`
+  // That end needs an opaque floor of its own: the send circle dims to `opacity:.4` whenever the
+  // draft is empty and the microphone is a bare icon, so neither can hide a chip sliding under it.
+  // This pseudo-item is that floor. It stops dead at the microphone's left edge, so the last chip
+  // still reaches its own place when the strip is scrolled all the way, and it sits 4px short of
+  // its own width in the flow, so it paints the tail without adding to the strip's length.
+  + `${COMPOSER_ROW}::after{content:"";position:sticky;right:0;z-index:1;align-self:stretch;flex:none;`
+  + 'width:74px;margin-left:-78px;background:var(--dsw-specific-input-major)}'
+  // A turn in flight widens the tail by one 34px circle and its gap; the floor follows it.
+  + `${COMPOSER_ROW}:has(> [class*="_trailing"] > [class*="_primary"] ~ [class*="_primary"])::after{`
+  + 'width:112px;margin-left:-116px}'
+  // The model chip leads the pinned tail: it takes the free width, so the tail sits at the right
+  // edge of a roomy row and collapses to nothing the moment the strip overflows.
+  + `${COMPOSER_ROW} > [class*="_trailing"] > [class*="_standardControls"]{margin-left:auto}`
   // Harness and quota chips carry the longest labels in the row; the ellipsis they already style
   // now engages on a phone instead of letting one chip take the whole line.
   + '[data-composer-card] > [class*="_row"] [class*="hp-chip"]{max-width:104px}'
-  // The tools box is a scroll container, which clips in BOTH axes — and the harness chips' menus
-  // and the quota panel pop absolutely-positioned ABOVE the row from inside it, so the clip would
-  // hide them entirely. Lift the clip while one is open; it keeps its scroll while they are closed.
-  + '[data-composer-card] > [class*="_row"] > [class*="_tools"]:has([class*="hp-menu"]),'
-  + '[data-composer-card] > [class*="_row"] > [class*="_tools"]:has([class*="hp-panel"]){overflow:visible !important}'
-  + '[data-composer-card] > [class*="_row"] [class*="_tools"],[data-composer-card] > [class*="_row"] [class*="_trailing"],[data-composer-card] > [class*="_row"] [class*="_modes"],[data-composer-card] > [class*="_row"] [class*="_standardControls"]{gap:4px !important}'
+  // The row is a scroll container, which clips in BOTH axes — and the harness chips' menus and the
+  // quota panel pop absolutely-positioned ABOVE the row from inside it, so the clip would swallow
+  // them whole. While one is open its anchor stops being the positioning context: the popup then
+  // hangs off the card, which the row cannot clip (an absolutely positioned box whose containing
+  // block is outside a scroller escapes that scroller's clip), 8px above the row — 50px above the
+  // card's bottom, that being the row's own 42px, its 6px bottom pad and the 8px gap. Keeping the
+  // row a scroll container also keeps the pinned ends and the strip's position while it is open.
+  + `${COMPOSER_ROW}:has([class*="hp-menu"]) [class*="hp-anchor"],`
+  + `${COMPOSER_ROW}:has([class*="hp-panel"]) [class*="hp-anchor"]{position:static}`
+  + `${COMPOSER_ROW} [class*="hp-menu"],${COMPOSER_ROW} [class*="hp-panel"]{bottom:50px !important}`
+  + '[data-composer-card] > [class*="_row"] [class*="_modes"],[data-composer-card] > [class*="_row"] [class*="_standardControls"]{gap:4px !important}'
   // Overlay cards clamp their height against the layout viewport, which stays taller than the
   // visible area while a phone's browser chrome is drawn over it: size them by the dynamic
   // viewport so the tail of a menu is not parked under the toolbar.
