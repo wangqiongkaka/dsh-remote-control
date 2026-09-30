@@ -42,7 +42,7 @@ const POLL_INTERVAL = 250
 /** Whether an element can raise a soft keyboard when focused. */
 function isTextField(target: EventTarget | null): boolean {
   return target instanceof HTMLElement
-    && (target.isContentEditable || target.matches('input, textarea'))
+    && (target.isContentEditable || target.matches('input, textarea, [contenteditable="true"]'))
 }
 
 /**
@@ -62,6 +62,26 @@ export function followKeyboard(): () => void {
   let resting = 0
   let poll: ReturnType<typeof setInterval> | undefined
   let dismissTimer: ReturnType<typeof setTimeout> | undefined
+  let sessionBody: HTMLElement | null = null
+  let sessionId: string | null = null
+  let blockEntryFocus = false
+  const sessionObserver = new MutationObserver(() => { watchSession(true) })
+  /** The Host focuses its resident editor on mount and every session switch. */
+  const watchSession = (blurFocused: boolean): void => {
+    const body = document.querySelector<HTMLElement>('[data-conversation-content]')
+    const id = body?.getAttribute('data-conversation-session') ?? null
+    if (body === sessionBody && id === sessionId) return
+    if (body !== sessionBody) {
+      sessionObserver.disconnect()
+      sessionBody = body
+      if (body !== null) sessionObserver.observe(body, { attributes: true, attributeFilter: ['data-conversation-session'] })
+    }
+    sessionId = id
+    blockEntryFocus = id !== null
+    const active = document.activeElement
+    if (blurFocused && active instanceof HTMLElement && active.matches('[data-composer-input]')
+      && body?.contains(active)) active.blur()
+  }
   /** Write only on a real change: this runs on every viewport scroll and poll tick. */
   const write = (property: string, value: string): void => {
     if (root.style.getPropertyValue(property) !== value) root.style.setProperty(property, value)
@@ -112,6 +132,12 @@ export function followKeyboard(): () => void {
   }
   const onFocusIn = (event: FocusEvent): void => {
     if (!isTextField(event.target)) return
+    watchSession(false)
+    if (blockEntryFocus && event.target instanceof HTMLElement
+      && event.target.matches('[data-composer-input]') && sessionBody?.contains(event.target)) {
+      event.target.blur()
+      return
+    }
     focused = true
     apply()
   }
@@ -147,12 +173,22 @@ export function followKeyboard(): () => void {
     if (editor !== undefined && editor !== null) dismissCommitted(editor)
   }
   const onSubmitKey = (event: KeyboardEvent): void => {
+    if (event.key === 'Tab' || (event.target instanceof Element
+      && event.target.closest('[data-composer-card]') !== null)) blockEntryFocus = false
     if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.getModifierState('AltGraph')
       || event.repeat || event.isComposing
       || event.keyCode === 229 || (event.ctrlKey && event.metaKey)) return
     const editor = event.target instanceof Element ? event.target.closest('[data-composer-input]') : null
     if (editor instanceof HTMLElement && !editor.hasAttribute('data-composer-composing')) dismissCommitted(editor)
   }
+  const onPointerDown = (event: PointerEvent): void => {
+    if (!(event.target instanceof Element)) return
+    watchSession(false)
+    if (sessionBody?.contains(event.target) && event.target.closest('[data-composer-card]') !== null) {
+      blockEntryFocus = false
+    }
+  }
+  watchSession(true)
   apply()
   viewport.addEventListener('resize', apply)
   viewport.addEventListener('scroll', apply)
@@ -160,6 +196,7 @@ export function followKeyboard(): () => void {
   window.addEventListener('orientationchange', apply)
   document.addEventListener('focusin', onFocusIn)
   document.addEventListener('focusout', onFocusOut)
+  document.addEventListener('pointerdown', onPointerDown, true)
   document.addEventListener('click', onSubmitClick, true)
   document.addEventListener('keydown', onSubmitKey, true)
   return () => {
@@ -171,8 +208,10 @@ export function followKeyboard(): () => void {
     window.removeEventListener('orientationchange', apply)
     document.removeEventListener('focusin', onFocusIn)
     document.removeEventListener('focusout', onFocusOut)
+    document.removeEventListener('pointerdown', onPointerDown, true)
     document.removeEventListener('click', onSubmitClick, true)
     document.removeEventListener('keydown', onSubmitKey, true)
+    sessionObserver.disconnect()
     root.removeAttribute(KEYBOARD_ATTRIBUTE)
     root.style.removeProperty(KEYBOARD_HEIGHT_VARIABLE)
     root.style.removeProperty(KEYBOARD_SHIFT_VARIABLE)

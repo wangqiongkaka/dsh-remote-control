@@ -71,6 +71,42 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+it('leaves the phone composer unfocused on session entry but focuses it when tapped', async () => {
+  visualViewport({ layout: 800, height: 800 })
+  const { card, editor } = composer()
+  const body = document.createElement('div')
+  body.setAttribute('data-conversation-content', '')
+  body.setAttribute('data-conversation-session', 'session-1')
+  body.append(card)
+  document.body.append(body)
+  const dispose = followKeyboard()
+  try {
+    // The Host focuses its resident editor after a session mounts.
+    editor.focus()
+    expect(document.activeElement).not.toBe(editor)
+    editor.focus()
+    expect(document.activeElement).not.toBe(editor)
+
+    editor.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    editor.focus()
+    expect(document.activeElement).toBe(editor)
+
+    // Switching sessions keeps the same editor DOM node, so a focused draft must release it.
+    body.setAttribute('data-conversation-session', 'session-2')
+    await Promise.resolve()
+    expect(document.activeElement).not.toBe(editor)
+    editor.focus()
+    expect(document.activeElement).not.toBe(editor)
+
+    editor.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    editor.focus()
+    expect(document.activeElement).toBe(editor)
+  } finally {
+    dispose()
+    body.remove()
+  }
+})
+
 it('dismisses the keyboard only after a sent draft clears', () => {
   vi.useFakeTimers()
   visualViewport({ layout: 800, height: 800 })
