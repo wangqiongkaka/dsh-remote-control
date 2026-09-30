@@ -177,9 +177,77 @@ it('opens the left and right sidebars with one-finger swipes across the phone co
     expect(leftOpens).toBe(1)
     expect(rightOpens).toBe(1)
 
+    swipe(content, 300, 100, 245, 105)
+    expect(rightOpens).toBe(2)
+    frame.setAttribute('data-rightbar-collapsed', '')
+    swipe(content, 20, 100, 75, 105)
+    expect(leftOpens).toBe(2)
+
     for (const dispose of disposers.splice(0)) dispose()
     swipe(content, 20, 100, 140, 110)
-    expect(leftOpens).toBe(1)
+    expect(leftOpens).toBe(2)
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})
+
+it('closes an open phone sidebar with a reverse swipe inside that sidebar', () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div data-left-content>左栏</div></div>'
+    + '<main class="ui_layout__centerCol__h1"><div data-conversation-scroll>消息</div>'
+    + '<button data-sidebar-right-expand>右栏</button></main>'
+    + '<div data-rightbar-col><div data-sidebar-right-panel="fullscreen" data-sidebar-right-open>'
+    + '<div data-right-content>右栏内容</div><button data-sidebar-right-toggle>收起</button></div></div>'
+  frame.setAttribute('data-sidebar-collapsed', '')
+  frame.setAttribute('data-rightbar-collapsed', '')
+  document.body.append(frame)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const disposers: (() => void)[] = []
+  const ctx = context(slots(), disposers)
+  ctx.layout.toggleSidebar = () => {
+    frame.toggleAttribute('data-sidebar-collapsed')
+  }
+  frame.querySelector('[data-sidebar-right-expand]')!.addEventListener('click', () => {
+    frame.removeAttribute('data-rightbar-collapsed')
+  })
+  frame.querySelector('[data-sidebar-right-toggle]')!.addEventListener('click', () => {
+    frame.setAttribute('data-rightbar-collapsed', '')
+  })
+  const swipe = (target: Element, x1: number, x2: number): void => {
+    for (const [type, x] of [['touchstart', x1], ['touchend', x2]] as const) {
+      const event = new Event(type, { bubbles: true })
+      const point = { identifier: 0, clientX: x, clientY: 100 }
+      Object.defineProperties(event, {
+        touches: { value: type === 'touchend' ? [] : [point] },
+        changedTouches: { value: [point] },
+      })
+      target.dispatchEvent(event)
+    }
+  }
+  try {
+    apply(ctx)
+    swipe(frame.querySelector('[data-conversation-scroll]')!, 20, 140)
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(false)
+    swipe(frame.querySelector('[data-left-content]')!, 140, 85)
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
+
+    swipe(frame.querySelector('[data-conversation-scroll]')!, 300, 180)
+    expect(frame.hasAttribute('data-rightbar-collapsed')).toBe(false)
+    swipe(frame.querySelector('[data-right-content]')!, 180, 235)
+    expect(frame.hasAttribute('data-rightbar-collapsed')).toBe(true)
   } finally {
     for (const dispose of disposers) dispose()
     proxy.remove()

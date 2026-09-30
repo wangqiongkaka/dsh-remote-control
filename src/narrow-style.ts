@@ -25,6 +25,8 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + 'html,body{overflow:hidden;overscroll-behavior-y:none}'
   // iOS zooms the whole page when a focused field is under 16px.
   + 'input,textarea,select,[contenteditable="true"]{font-size:16px !important}'
+  // The session utilities are desktop actions; keep the separate sidebar corner control.
+  + `${FRAME} header[data-window-drag] [class*="_headerUtilities"]{display:none !important}`
   // The placeholder is not an editable element, so it keeps the 15px chat size beside a 16px
   // draft; match them so the hint reads at the size of the text that replaces it.
   + '[data-composer-card] [class*="_placeholder"]{font-size:16px !important}'
@@ -103,7 +105,8 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '[class*="_root"]:not([class*="_hero"]):has(> [data-composer-card]):has(> [class*="_dock"]){padding-bottom:max(32px,env(safe-area-inset-bottom)) !important}'
   // Pin the active chat composer to the non-scrolling body and reserve its measured height in
   // the transcript, so scrolling messages never moves the input card or hides the last message.
-  + `${CHAT_SCROLL}{padding-bottom:var(--dsh-composer-height,0px);overscroll-behavior-y:none}`
+  + `${CHAT_SCROLL}{padding-bottom:var(--dsh-composer-height,0px);overscroll-behavior-y:none;scrollbar-width:none;scrollbar-gutter:auto}`
+  + `${CHAT_SCROLL}::-webkit-scrollbar{display:none}`
   + `${CHAT_SCROLL} > [data-composer-seat]{position:absolute !important;inset:auto 0 0}`
   // Keyboard up (the client patch publishes the visual viewport height): the shell shrinks to it,
   // the clearance the phone's bottom edge needed now belongs to the keyboard, and every overlay
