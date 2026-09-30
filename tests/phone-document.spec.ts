@@ -75,6 +75,12 @@ it('hides the session header utilities on phones while leaving the corner contro
   expect(phone).not.toContain('[data-conversation-header-corner]{display:none')
 })
 
+it('keeps the phone session actions beside the right sidebar control', () => {
+  const phone = phoneDocument('<head></head>')
+  const frame = '[class*="_frame"]:has([class*="_sidebarCol"])'
+  expect(phone).toContain(`${frame} header[data-window-drag] [class*="_headerActions"]{margin-left:auto}`)
+})
+
 it('appends the resize hint to the viewport meta the app already declares', () => {
   const out = phoneDocument('<head><meta name="viewport" content="width=device-width, initial-scale=1" /></head>')
   expect(out).toContain('content="width=device-width, initial-scale=1, interactive-widget=resizes-content"')
