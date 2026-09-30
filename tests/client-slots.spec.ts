@@ -312,6 +312,97 @@ it('closes an open phone sidebar with a reverse swipe inside that sidebar', () =
   }
 })
 
+// The right panel's expanded state persists per Session, so a phone page reloaded from the
+// background reopens on it: coming back lands on the left drawer instead, until the first touch.
+it('lands the phone on the left drawer on load and on every return to the foreground', async () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.setAttribute('data-sidebar-collapsed', '')
+  frame.setAttribute('data-rightbar-collapsed', '')
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"></div><main class="ui_layout__centerCol__h1"></main>'
+    + '<div data-rightbar-col><div data-sidebar-right-panel="fullscreen" data-sidebar-right-open>'
+    + '<button data-sidebar-right-toggle>收起</button></div></div>'
+  document.body.append(frame)
+  const panel = frame.querySelector('[data-sidebar-right-panel]')!
+  panel.querySelector('button')!.addEventListener('click', () => { panel.removeAttribute('data-sidebar-right-open') })
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  let visibility = 'visible'
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility })
+  const tick = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0) })
+  const disposers: (() => void)[] = []
+  const ctx = context(slots(), disposers)
+  let toggles = 0
+  // The shell renders a toggle later, as React does.
+  ctx.layout.toggleSidebar = () => {
+    toggles++
+    setTimeout(() => { frame.toggleAttribute('data-sidebar-collapsed') }, 0)
+  }
+  const drawerOpen = (): boolean => !frame.hasAttribute('data-sidebar-collapsed')
+  const rightOpen = (): boolean => panel.hasAttribute('data-sidebar-right-open')
+  try {
+    apply(ctx)
+    await tick()
+    await tick()
+    expect(rightOpen()).toBe(false)
+    expect(drawerOpen()).toBe(true)
+    expect(toggles).toBe(1)
+
+    // The Session's saved right panel shows up late and its opening folds the drawer.
+    panel.setAttribute('data-sidebar-right-open', '')
+    frame.setAttribute('data-sidebar-collapsed', '')
+    await tick()
+    await tick()
+    expect(rightOpen()).toBe(false)
+    expect(drawerOpen()).toBe(true)
+    expect(toggles).toBe(2)
+
+    // After the first touch the page is the user's.
+    const touch = new Event('touchstart', { bubbles: true })
+    const point = { identifier: 0, clientX: 100, clientY: 100 }
+    Object.defineProperties(touch, { touches: { value: [point] }, changedTouches: { value: [point] } })
+    document.body.dispatchEvent(touch)
+    frame.setAttribute('data-sidebar-collapsed', '')
+    panel.setAttribute('data-sidebar-right-open', '')
+    await tick()
+    expect(drawerOpen()).toBe(false)
+    expect(rightOpen()).toBe(true)
+
+    visibility = 'hidden'
+    document.dispatchEvent(new Event('visibilitychange'))
+    await tick()
+    expect(toggles).toBe(2)
+    visibility = 'visible'
+    document.dispatchEvent(new Event('visibilitychange'))
+    await tick()
+    await tick()
+    expect(rightOpen()).toBe(false)
+    expect(drawerOpen()).toBe(true)
+    expect(toggles).toBe(3)
+
+    for (const dispose of disposers.splice(0)) dispose()
+    frame.setAttribute('data-sidebar-collapsed', '')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await tick()
+    await tick()
+    expect(drawerOpen()).toBe(false)
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+    Reflect.deleteProperty(document, 'visibilityState')
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})
+
 // A phone frame has no room for a right track (the shell's computeColumns gives it 0), so the right
 // panel opens fullscreen over a frame that keeps `data-rightbar-collapsed`: open is the panel's own
 // `data-sidebar-right-open`, and a reverse swipe must close it all the same.

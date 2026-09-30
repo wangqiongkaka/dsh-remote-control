@@ -31,6 +31,62 @@ function scrollRoom(target: Element, area: Element): { back: boolean; forward: b
   return room
 }
 
+const FRAME = '[class*="_frame"]:has([class*="_sidebarCol"])'
+const RIGHT_TOGGLE = '[data-sidebar-right-panel][data-sidebar-right-open] [data-sidebar-right-toggle]'
+/** How long a landing keeps up with the shell restoring its panels, unless a touch ends it first. */
+const LANDING = 10_000
+
+/**
+ * Land on the left drawer whenever the phone page loads or comes back to the foreground. The right
+ * panel's expanded state persists per Session, so a page the phone reloaded from the background
+ * would otherwise reopen on it, and its opening folds the drawer: until the user's first touch,
+ * every render that shows the right panel is answered by closing it and reopening the drawer.
+ */
+export function landOnDrawer(openLeft: () => void): () => void {
+  let observer: MutationObserver | undefined
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let first: ReturnType<typeof setTimeout> | undefined
+  // toggleSidebar flips the shell's state and renders later: ask once until the drawer shows open.
+  let asked = false
+  const settle = (): void => {
+    const frame = document.querySelector(FRAME)
+    if (frame === null) return
+    frame.querySelector<HTMLButtonElement>(RIGHT_TOGGLE)?.click()
+    if (!frame.hasAttribute('data-sidebar-collapsed')) asked = false
+    else if (!asked) {
+      asked = true
+      openLeft()
+    }
+  }
+  const stop = (): void => {
+    observer?.disconnect()
+    observer = undefined
+    clearTimeout(timer)
+    clearTimeout(first)
+    document.removeEventListener('touchstart', stop, true)
+  }
+  const land = (): void => {
+    stop()
+    asked = false
+    observer = new MutationObserver(settle)
+    observer.observe(document.body, {
+      subtree: true, childList: true, attributes: true,
+      attributeFilter: ['data-sidebar-collapsed', 'data-sidebar-right-open'],
+    })
+    document.addEventListener('touchstart', stop, { capture: true, passive: true })
+    timer = setTimeout(stop, LANDING)
+    // The shell may not have rendered yet, or be mid-render: look once it has had its turn.
+    first = setTimeout(settle, 0)
+  }
+  const onVisible = (): void => { if (document.visibilityState === 'visible') land() }
+  document.addEventListener('visibilitychange', onVisible)
+  land()
+  return () => {
+    stop()
+    document.removeEventListener('visibilitychange', onVisible)
+  }
+}
+
 /** Observe single-finger swipes without blocking native scrolling or clicks. */
 export function followSidebarSwipes(openLeft: () => void): () => void {
   let start: {
