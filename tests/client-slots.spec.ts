@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { SlotCore } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { apply } from '../dist/client/index.js'
 
 // jsdom ships neither of these; the apply-time phone effect and the slot entries ask for both.
@@ -396,6 +396,79 @@ it('lands the phone on the left drawer on load and on every return to the foregr
     proxy.remove()
     frame.remove()
     Reflect.deleteProperty(document, 'visibilityState')
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})
+
+// A touch screen never shows a Session row's hover strip, so a long press is the phone's way to its
+// "…" menu (pin, rename, fork, archive), and the lift that ends it must not also open the row.
+it('opens a drawer Session row menu with a long press on the phone', () => {
+  vi.useFakeTimers()
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ws__sessionRow__h1" data-row-key="session:s1">'
+    + '<span data-title>会话</span><span class="ws__rowActions__h1"><span class="ui__root__h1">'
+    + '<button data-trigger>…</button></span><button data-archive>归档</button></span></div></div>'
+  document.body.append(frame)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  let menus = 0
+  frame.querySelector('[data-trigger]')!.addEventListener('click', () => { menus++ })
+  const title = frame.querySelector('[data-title]')!
+  const touch = (target: Element, type: string, x = 100, y = 100): Event => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    const point = { identifier: 0, clientX: x, clientY: y }
+    Object.defineProperties(event, {
+      touches: { value: type === 'touchend' ? [] : [point] },
+      changedTouches: { value: [point] },
+    })
+    target.dispatchEvent(event)
+    return event
+  }
+  const disposers: (() => void)[] = []
+  try {
+    apply(context(slots(), disposers))
+    touch(title, 'touchstart')
+    vi.advanceTimersByTime(500)
+    expect(menus).toBe(1)
+    expect(touch(title, 'touchend').defaultPrevented).toBe(true)
+
+    // A tap stays a tap.
+    touch(title, 'touchstart')
+    vi.advanceTimersByTime(200)
+    expect(touch(title, 'touchend').defaultPrevented).toBe(false)
+    vi.advanceTimersByTime(1000)
+    expect(menus).toBe(1)
+
+    // A scroll or swipe is not a press, and the strip's own buttons keep their taps.
+    touch(title, 'touchstart')
+    touch(title, 'touchmove', 100, 130)
+    vi.advanceTimersByTime(1000)
+    touch(frame.querySelector('[data-archive]')!, 'touchstart')
+    vi.advanceTimersByTime(1000)
+    expect(menus).toBe(1)
+
+    const menu = new Event('contextmenu', { bubbles: true, cancelable: true })
+    title.dispatchEvent(menu)
+    expect(menu.defaultPrevented).toBe(true)
+
+    for (const dispose of disposers.splice(0)) dispose()
+    touch(title, 'touchstart')
+    vi.advanceTimersByTime(1000)
+    expect(menus).toBe(1)
+  } finally {
+    for (const dispose of disposers) dispose()
+    vi.useRealTimers()
+    proxy.remove()
+    frame.remove()
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),

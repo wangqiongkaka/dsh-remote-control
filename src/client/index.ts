@@ -15,7 +15,7 @@ import { followKeyboard } from './keyboard.ts'
 import { applyDrawerSelection } from './drawer-style.ts'
 import { compactChatDefaults } from './chat-defaults.ts'
 import { hideModelsSettings } from './settings-models.ts'
-import { followChatPulls, followSidebarSwipes, followStripPulls, landOnDrawer } from './sidebar-swipe.ts'
+import { followChatPulls, followSidebarSwipes, followRowHolds, followStripPulls, landOnDrawer } from './sidebar-swipe.ts'
 import { en, NS, zh, type RemoteControlKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -71,6 +71,7 @@ export function apply(ctx: Context): void {
     let strips: (() => void) | undefined
     let models: (() => void) | undefined
     let landing: (() => void) | undefined
+    let holds: (() => void) | undefined
     const sync = (): void => {
       const phone = query.matches && proxiedFrame()
       follow?.()
@@ -87,6 +88,8 @@ export function apply(ctx: Context): void {
       models = phone ? hideModelsSettings(ctx.slots) : undefined
       landing?.()
       landing = phone ? landOnDrawer(() => { ctx.layout.toggleSidebar() }) : undefined
+      holds?.()
+      holds = phone ? followRowHolds() : undefined
     }
     sync()
     query.addEventListener('change', sync)
@@ -99,6 +102,7 @@ export function apply(ctx: Context): void {
       strips?.()
       models?.()
       landing?.()
+      holds?.()
     }
   }, 'remote-control: phone patches')
   // Any page that came through the proxy keeps Chat preferences in memory only (see chat-defaults),

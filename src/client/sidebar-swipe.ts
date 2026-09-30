@@ -87,6 +87,66 @@ export function landOnDrawer(openLeft: () => void): () => void {
   }
 }
 
+const SESSION_ROW = '[class*="_sidebarCol"] [class*="_sessionRow"]'
+const HOLD = 500
+const HOLD_SLOP = 10
+
+/**
+ * Long-press a drawer Session row to open its "…" menu (pin, rename, fork, archive). A touch screen
+ * never shows the row's hover strip (see drawer-style), so this is the phone's way to those actions.
+ * The row's trigger is the strip's first button; the lift that ends the press is kept from also
+ * tapping the row open.
+ */
+export function followRowHolds(): () => void {
+  let hold: { x: number; y: number; timer: ReturnType<typeof setTimeout> } | undefined
+  let fired = false
+  const cancel = (): void => {
+    if (hold !== undefined) clearTimeout(hold.timer)
+    hold = undefined
+  }
+  const onStart = (event: TouchEvent): void => {
+    cancel()
+    fired = false
+    const touch = event.touches[0]
+    if (event.touches.length !== 1 || touch === undefined || !(event.target instanceof Element)
+      || event.target.closest('[class*="_rowActions"]')) return
+    const trigger = event.target.closest(SESSION_ROW)?.querySelector<HTMLButtonElement>('[class*="_rowActions"] button')
+    if (!trigger) return
+    hold = { x: touch.clientX, y: touch.clientY, timer: setTimeout(() => {
+      hold = undefined
+      fired = true
+      trigger.click()
+    }, HOLD) }
+  }
+  const onMove = (event: TouchEvent): void => {
+    const touch = event.touches[0]
+    if (hold === undefined || touch === undefined) return
+    if (Math.hypot(touch.clientX - hold.x, touch.clientY - hold.y) > HOLD_SLOP) cancel()
+  }
+  const onEnd = (event: TouchEvent): void => {
+    cancel()
+    if (fired) event.preventDefault()
+    fired = false
+  }
+  // Android answers a long press with the context menu as well.
+  const onContextMenu = (event: Event): void => {
+    if (event.target instanceof Element && event.target.closest(SESSION_ROW)) event.preventDefault()
+  }
+  document.addEventListener('touchstart', onStart, { passive: true })
+  document.addEventListener('touchmove', onMove, { passive: true })
+  document.addEventListener('touchend', onEnd, { passive: false })
+  document.addEventListener('touchcancel', cancel, { passive: true })
+  document.addEventListener('contextmenu', onContextMenu)
+  return () => {
+    cancel()
+    document.removeEventListener('touchstart', onStart)
+    document.removeEventListener('touchmove', onMove)
+    document.removeEventListener('touchend', onEnd)
+    document.removeEventListener('touchcancel', cancel)
+    document.removeEventListener('contextmenu', onContextMenu)
+  }
+}
+
 /** Observe single-finger swipes without blocking native scrolling or clicks. */
 export function followSidebarSwipes(openLeft: () => void): () => void {
   let start: {
