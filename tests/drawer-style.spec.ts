@@ -62,8 +62,15 @@ it('raises the drawer rows to touch height at phone width', () => {
   expect(phone).toContain('[class*="_sessionRow"]{height:40px !important}')
   expect(phone).toContain('[class*="_sessionOverflowButton"]{height:36px !important}')
   expect(phone).toContain('[class*="_logoRow"] button[class*="_toggle"]{width:40px !important;height:40px !important}')
-  // Only the button itself: its label, mask and shortcut spans share the class prefix.
-  expect(phone).toContain('button[class*="_newSession"]{height:44px !important}')
+  dispose()
+})
+
+// The Agent card takes the seat: the shell's New Session button goes, a Workspace row's stays.
+it('hides the sidebar New Session button in the drawer', () => {
+  const dispose = applyDrawerSelection()
+  const css = sheet()?.textContent ?? ''
+  expect(css).toContain('[class*="_sidebarCol"] button[class*="_newSession"]{display:none !important}')
+  expect(css).not.toContain('button[class*="_newSession"]{height')
   dispose()
 })
 

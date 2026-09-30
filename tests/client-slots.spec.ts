@@ -59,8 +59,27 @@ it('adds the drawer dismissal layer to the frame-wide overlay list', () => {
   const disposers: (() => void)[] = []
   try {
     apply(context(core, disposers))
-    expect(core.entries('shell.overlay')).toHaveLength(1)
-    expect(core.entries('shell.overlay')[0]?.options.id).toBe('remote-control.dismiss')
+    expect(core.entries('shell.overlay').map(entry => entry.options.id))
+      .toEqual(expect.arrayContaining(['remote-control.dismiss', 'remote-control.agents']))
+  } finally {
+    for (const dispose of disposers) dispose()
+  }
+})
+
+it('opens an Agent board Session through the Workspace UI navigation', () => {
+  const core = slots()
+  const disposers: (() => void)[] = []
+  const opened: string[] = []
+  const ctx = context(core, disposers)
+  Object.assign(ctx, {
+    get: (name: string) => name === 'uiWorkspace' ? { openSession: (id: string) => { opened.push(id) } } : undefined,
+  })
+  try {
+    apply(ctx)
+    const entry = core.entries('shell.overlay').find(item => item.options.id === 'remote-control.agents')
+    const inject = entry?.inject as (() => { openSession: (id: string) => void }) | undefined
+    inject?.().openSession('session-1')
+    expect(opened).toEqual(['session-1'])
   } finally {
     for (const dispose of disposers) dispose()
   }

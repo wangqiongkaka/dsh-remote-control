@@ -4,12 +4,13 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { RemoteControlAction, type RemoteControlInjected } from './RemoteControlAction.tsx'
 import { NARROW, SidebarToggle, proxiedFrame, type SidebarToggleInjected } from './SidebarToggle.tsx'
 import { SidebarDismiss } from './SidebarDismiss.tsx'
+import { AgentBoard, type AgentBoardInjected } from './AgentBoard.tsx'
 import { followKeyboard } from './keyboard.ts'
 import { applyDrawerSelection } from './drawer-style.ts'
 import { compactChatDefaults } from './chat-defaults.ts'
@@ -143,6 +144,17 @@ export function apply(ctx: Context): void {
       toggleSidebar: () => { ctx.layout.toggleSidebar() },
     }),
   }, SidebarToggle))
+  // The drawer's Agent card and board, in New Session's seat (proxy narrow frames only).
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'remote-control.agents',
+    locale: NS,
+    inject: (): AgentBoardInjected => ({
+      openSession: (sessionId) => {
+        (ctx.get('uiWorkspace') as UiWorkspace | undefined)?.openSession(sessionId)
+      },
+    }),
+  }, AgentBoard))
   // The drawer's dismissal layer: session picks and the blank scrim beside the
   // drawer both fold it back onto the Conversation (proxy narrow frames only).
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({

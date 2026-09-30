@@ -34,6 +34,8 @@ const CARD = '[class*="_sidebarCol"] [role="tree"] > [class*="_groupSection"]'
  */
 const DRAWER_SELECTION_STYLE = '[class*="_sessionRow"][aria-selected="true"]'
   + '{background:var(--dsw-specific-sidebar-nav-item-active) !important}'
+  // The Agent card takes New Session's seat; a Workspace row's own New Session button stays.
+  + '[class*="_sidebarCol"] button[class*="_newSession"]{display:none !important}'
   + '@media (hover: none){'
   // No latched fill behind the finger, on any row of the list.
   + '[class*="_sessionRow"]:hover:not([aria-selected="true"]),'
@@ -59,11 +61,9 @@ const DRAWER_SELECTION_STYLE = '[class*="_sessionRow"][aria-selected="true"]'
   + `${CARD}{padding:4px;border-radius:16px;box-shadow:inset 0 0 0 0.5px var(--dsw-alias-border-l3)}`
   + `${CARD} + [class*="_groupSection"]{margin-top:8px !important}`
   + `${CARD} > [class*="_projectRow"] [class*="_title"]{font-weight:600}`
-  // At phone width the drawer is the whole screen: rows grow to thumb size, and so do New Session
-  // (the button only; its label spans share the class prefix) and the logo row's collapse control,
-  // which is the drawer's only way back there.
+  // At phone width the drawer is the whole screen: rows grow to thumb size, and so does the logo
+  // row's collapse control, which is the drawer's only way back there.
   + '@media (max-width: 720px){'
-  + 'button[class*="_newSession"]{height:44px !important}'
   + '[class*="_projectRow"]{height:44px !important}'
   + '[class*="_sessionRow"]{height:40px !important}'
   + '[class*="_sessionOverflowButton"]{height:36px !important}'

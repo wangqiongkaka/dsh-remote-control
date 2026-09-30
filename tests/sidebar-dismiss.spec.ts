@@ -53,6 +53,16 @@ it('folds the drawer after choosing Plugins or Automations', () => {
   expect(drawerNavigationPick(pick('[class*="_panelRow"] span'))).toBe(false)
 })
 
+it('folds the drawer after opening a Session from the Agent board', () => {
+  const card = document.createElement('div')
+  card.innerHTML = '<button type="button">查看全部</button>'
+    + '<button type="button" data-remote-control-pick><span class="title">会话</span></button>'
+  pick('.ui_layout__sidebarCol__h1').append(card)
+  expect(drawerNavigationPick(pick('[data-remote-control-pick] .title'))).toBe(true)
+  // The card's own controls only switch the board view.
+  expect(drawerNavigationPick(card.firstElementChild)).toBe(false)
+})
+
 it('keeps the trailing action strip and off-drawer rows to themselves', () => {
   expect(drawerNavigationPick(pick('.ui_workspace__iconButton__h1'))).toBe(false)
   expect(drawerNavigationPick(pick('[data-row-key="session:z"]'))).toBe(false)

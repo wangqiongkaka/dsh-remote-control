@@ -12,9 +12,12 @@ import { useEffect, useRef } from 'react'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { proxiedFrame, useNarrow, type SidebarToggleInjected } from './SidebarToggle.tsx'
 
+/** Marks this plugin's own drawer rows that open a Session (the Agent board's). */
+export const DRAWER_PICK_ATTRIBUTE = 'data-remote-control-pick'
+
 /** Drawer picks that navigate away from the current page. */
 const NAVIGATION_PICK = '[data-row-key^="session:"], [class*="_searchResultRow"], [class*="_newSession"], '
-  + '[class*="_panelList"] button[class*="_panelRow"]'
+  + `[class*="_panelList"] button[class*="_panelRow"], [${DRAWER_PICK_ATTRIBUTE}]`
 
 /** Whether the drawer sidebar is expanded at the frame containing the element. */
 export function drawerOpen(from: Element): boolean {
