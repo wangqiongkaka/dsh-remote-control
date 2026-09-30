@@ -65,6 +65,14 @@ export function followKeyboard(): () => void {
   let sessionBody: HTMLElement | null = null
   let sessionId: string | null = null
   let blockEntryFocus = false
+  let commandEditor: HTMLElement | null = null
+  let commandInputMode: string | null = null
+  const restoreInputMode = (): void => {
+    if (commandEditor === null) return
+    if (commandInputMode === null) commandEditor.removeAttribute('inputmode')
+    else commandEditor.setAttribute('inputmode', commandInputMode)
+    commandEditor = null
+  }
   const sessionObserver = new MutationObserver(() => { watchSession(true) })
   /** The Host focuses its resident editor on mount and every session switch. */
   const watchSession = (blurFocused: boolean): void => {
@@ -184,6 +192,24 @@ export function followKeyboard(): () => void {
   const onPointerDown = (event: PointerEvent): void => {
     if (!(event.target instanceof Element)) return
     watchSession(false)
+    const launcher = event.target.closest('button[aria-haspopup="listbox"][class*="_add"]')
+    const editor = launcher instanceof HTMLButtonElement && !launcher.disabled
+      ? launcher.closest('[data-composer-card]')?.querySelector<HTMLElement>('[data-composer-input]')
+      : null
+    if (editor !== undefined && editor !== null) {
+      if (commandEditor !== editor) {
+        restoreInputMode()
+        commandEditor = editor
+        commandInputMode = editor.getAttribute('inputmode')
+        editor.setAttribute('inputmode', 'none')
+      }
+      editor.blur()
+    } else {
+      const previous = commandEditor
+      // A focused editor needs a new focus transition for a direct tap to reopen the keyboard.
+      if (event.target.closest('[data-composer-input]') === previous) previous?.blur()
+      restoreInputMode()
+    }
     if (sessionBody?.contains(event.target) && event.target.closest('[data-composer-card]') !== null) {
       blockEntryFocus = false
     }
@@ -212,6 +238,7 @@ export function followKeyboard(): () => void {
     document.removeEventListener('click', onSubmitClick, true)
     document.removeEventListener('keydown', onSubmitKey, true)
     sessionObserver.disconnect()
+    restoreInputMode()
     root.removeAttribute(KEYBOARD_ATTRIBUTE)
     root.style.removeProperty(KEYBOARD_HEIGHT_VARIABLE)
     root.style.removeProperty(KEYBOARD_SHIFT_VARIABLE)
