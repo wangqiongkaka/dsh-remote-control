@@ -28,17 +28,22 @@ it('keeps the active phone composer at the bottom while the chat scrolls without
   const out = phoneDocument('<head></head>')
   const chat = '[class*="_frame"]:has([class*="_sidebarCol"]) [data-phase="active"] > '
     + '[data-conversation-content] > [data-conversation-scroll]:not(:has([data-conversation-composer-overlay]))'
-  expect(out).toContain(`}${chat}{padding-bottom:var(--dsh-composer-height,0px);overscroll-behavior-y:none;`)
+  expect(out).toContain(`}${chat}{overscroll-behavior-y:none;`)
   expect(out).toContain(`}${chat} > [data-composer-seat]{position:absolute !important;inset:auto 0 0}`)
+  // The composer's room is a trailing spacer, not the scroller's bottom padding: WebKit leaves that
+  // padding out of the scroll range while the transcript still fits the scroller, so a short chat
+  // taller than the room above the composer could not scroll its last lines out from under it.
+  expect(out).toContain(`}${chat}::after{content:"";flex:none;height:var(--dsh-composer-height,0px)}`)
+  expect(out).not.toContain('padding-bottom:var(--dsh-composer-height')
 })
 
-// The shell lifts its sticky jump-to-latest control by the composer height; the chat's own bottom
-// padding already reserves that height, so counting it again parked the control far above the input.
+// The shell's sticky jump-to-latest control rides the scroller's bottom edge, under the pinned
+// composer; it clears the composer's measured height plus an 8px gap.
 it('keeps the jump-to-latest control just above the pinned composer', () => {
   const out = phoneDocument('<head></head>')
   const chat = '[class*="_frame"]:has([class*="_sidebarCol"]) [data-phase="active"] > '
     + '[data-conversation-content] > [data-conversation-scroll]:not(:has([data-conversation-composer-overlay]))'
-  expect(out).toContain(`}${chat} [class*="_toBottomSlot"]{bottom:8px !important}`)
+  expect(out).toContain(`}${chat} [class*="_toBottomSlot"]{bottom:calc(var(--dsh-composer-height,0px) + 8px) !important}`)
 })
 
 it('clips the phone toolbar backgrounds to the composer’s rounded bottom corners', () => {
@@ -64,7 +69,7 @@ it('hides the phone chat scrollbar without reserving its gutter', () => {
   const out = phoneDocument('<head></head>')
   const chat = '[class*="_frame"]:has([class*="_sidebarCol"]) [data-phase="active"] > '
     + '[data-conversation-content] > [data-conversation-scroll]:not(:has([data-conversation-composer-overlay]))'
-  expect(out).toContain(`${chat}{padding-bottom:var(--dsh-composer-height,0px);overscroll-behavior-y:none;scrollbar-width:none;scrollbar-gutter:auto}`)
+  expect(out).toContain(`${chat}{overscroll-behavior-y:none;scrollbar-width:none;scrollbar-gutter:auto}`)
   expect(out).toContain(`${chat}::-webkit-scrollbar{display:none}`)
 })
 

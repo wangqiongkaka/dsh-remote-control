@@ -110,13 +110,16 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '[class*="_root"]:not([class*="_hero"]):has(> [data-composer-card]):has(> [class*="_dock"]){padding-bottom:max(32px,env(safe-area-inset-bottom)) !important}'
   // Pin the active chat composer to the non-scrolling body and reserve its measured height in
   // the transcript, so scrolling messages never moves the input card or hides the last message.
-  + `${CHAT_SCROLL}{padding-bottom:var(--dsh-composer-height,0px);overscroll-behavior-y:none;scrollbar-width:none;scrollbar-gutter:auto}`
+  // The room is a trailing spacer rather than the scroller's bottom padding: WebKit leaves that
+  // padding out of the scroll range while the transcript still fits the scroller, so a short chat
+  // (taller than the room above the composer, not yet than the scroller) kept its last lines under it.
+  + `${CHAT_SCROLL}{overscroll-behavior-y:none;scrollbar-width:none;scrollbar-gutter:auto}`
   + `${CHAT_SCROLL}::-webkit-scrollbar{display:none}`
+  + `${CHAT_SCROLL}::after{content:"";flex:none;height:var(--dsh-composer-height,0px)}`
   + `${CHAT_SCROLL} > [data-composer-seat]{position:absolute !important;inset:auto 0 0}`
-  // The shell lifts its sticky jump-to-latest control by the composer height, but a sticky inset
-  // counts from inside the scroller's padding, which already reserves that height: keep only an
-  // 8px gap above the input card.
-  + `${CHAT_SCROLL} [class*="_toBottomSlot"]{bottom:8px !important}`
+  // The shell's sticky jump-to-latest control rides the scroller's bottom edge, which the pinned
+  // composer covers: lift it by the composer's measured height plus an 8px gap.
+  + `${CHAT_SCROLL} [class*="_toBottomSlot"]{bottom:calc(var(--dsh-composer-height,0px) + 8px) !important}`
   // Keyboard up (the client patch publishes the visual viewport height): the shell shrinks to it,
   // the clearance the phone's bottom edge needed now belongs to the keyboard, and every overlay
   // card is bounded by the space actually visible above it. The shift is the pan the browser
