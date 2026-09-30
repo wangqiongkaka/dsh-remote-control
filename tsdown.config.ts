@@ -35,6 +35,7 @@ export default [
       'client/index': 'src/client/index.ts',
       'client/keyboard': 'src/client/keyboard.ts',
       'client/drawer-style': 'src/client/drawer-style.ts',
+      'client/account': 'src/client/account.tsx',
       'client/SidebarDismiss': 'src/client/SidebarDismiss.tsx',
       'phone-document': 'src/phone-document.ts',
     },

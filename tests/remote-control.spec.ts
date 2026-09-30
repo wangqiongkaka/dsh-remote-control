@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer, request as httpRequest, type IncomingMessage, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,7 +8,7 @@ import { gzipSync } from 'node:zlib'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import { afterEach, expect, it, vi } from 'vitest'
-import { apply, type Config } from '../dist/index.js'
+import { apply, hostClientVersion, type Config } from '../dist/index.js'
 
 let directory: string | undefined
 let backend: Server | undefined
@@ -388,4 +388,23 @@ it.skipIf(process.platform === 'win32')('serves tailnet peers alone when access 
   expect(response.status).toBe(200)
   expect(await response.json())
     .toMatchObject({ url: expect.stringContaining('https://host.tailnet.ts.net/?pair=') })
+})
+
+// Account calls tell Platform which client build asked; the phone borrows the Host's own version
+// from the Host's module tree instead of reporting one it made up.
+it('reads the Host client version from the first module tree that has the account package', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-rc-version-'))
+  try {
+    const pkg = join(root, 'node_modules', '@deepseek-ai', 'dsh-deepseek-account')
+    await mkdir(pkg, { recursive: true })
+    await writeFile(join(pkg, 'package.json'), JSON.stringify({
+      name: '@deepseek-ai/dsh-deepseek-account', version: '9.8.7', exports: { './package.json': './package.json' },
+    }))
+    const entry = join(root, 'entry.js')
+    const missing = join(tmpdir(), 'dsh-rc-no-such-tree', 'entry.js')
+    expect(hostClientVersion([undefined, missing, entry])).toBe('9.8.7')
+    expect(hostClientVersion([missing])).toBeUndefined()
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
 })
