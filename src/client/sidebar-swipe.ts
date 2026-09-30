@@ -11,9 +11,32 @@ function scrollsHorizontally(target: Element, center: Element): boolean {
   return false
 }
 
+/**
+ * Inside an open drawer a sideways drag never clicks the control under it, so only a field that
+ * owns its own drag (and an open menu) keeps a closing swipe to itself.
+ */
+const DRAWER_OWN_DRAG = 'input,textarea,select,[contenteditable], [role="dialog"]'
+
+/**
+ * Which ways the horizontal scrollers between a touch and its area can still scroll: a drag that
+ * would move one of them is that scroller's, not the drawer's.
+ */
+function scrollRoom(target: Element, area: Element): { back: boolean; forward: boolean } {
+  const room = { back: false, forward: false }
+  for (let element: Element | null = target; element !== null && element !== area; element = element.parentElement) {
+    if (element.scrollWidth <= element.clientWidth || !/^(auto|scroll)$/.test(getComputedStyle(element).overflowX)) continue
+    if (element.scrollLeft > 0) room.back = true
+    if (element.scrollLeft + element.clientWidth < element.scrollWidth - 1) room.forward = true
+  }
+  return room
+}
+
 /** Observe single-finger swipes without blocking native scrolling or clicks. */
 export function followSidebarSwipes(openLeft: () => void): () => void {
-  let start: { id: number; x: number; y: number; frame: Element; area: 'center' | 'left' | 'right' } | undefined
+  let start: {
+    id: number; x: number; y: number; frame: Element; area: 'center' | 'left' | 'right'
+    room: { back: boolean; forward: boolean }
+  } | undefined
   const onStart = (event: TouchEvent): void => {
     start = undefined
     if (event.touches.length !== 1 || !(event.target instanceof Element)) return
@@ -23,12 +46,14 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     const right = target.closest('[data-sidebar-right-panel][data-sidebar-right-open]')
     const area = center ?? left ?? right
     const frame = area?.closest('[class*="_frame"]:has([class*="_sidebarCol"])')
-    if (!area || !frame || target.closest(INTERACTIVE)
-      || scrollsHorizontally(target, area)) return
+    if (!area || !frame) return
+    // The conversation keeps every control and sideways scroller to itself; an open drawer lets a
+    // closing swipe start on its rows and tabs (see DRAWER_OWN_DRAG and the direction check below).
+    if (center ? target.closest(INTERACTIVE) || scrollsHorizontally(target, area) : target.closest(DRAWER_OWN_DRAG)) return
     const touch = event.touches[0]
     if (touch === undefined) return
     start = { id: touch.identifier, x: touch.clientX, y: touch.clientY, frame,
-      area: center ? 'center' : left ? 'left' : 'right' }
+      area: center ? 'center' : left ? 'left' : 'right', room: scrollRoom(target, area) }
   }
   const onEnd = (event: TouchEvent): void => {
     const from = start
@@ -41,9 +66,9 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     const dy = touch.clientY - from.y
     if (Math.abs(dx) < MIN_SWIPE || Math.abs(dx) < Math.abs(dy) * 1.5) return
     if (from.area === 'left') {
-      if (dx < 0 && !from.frame.hasAttribute('data-sidebar-collapsed')) openLeft()
+      if (dx < 0 && !from.room.forward && !from.frame.hasAttribute('data-sidebar-collapsed')) openLeft()
     } else if (from.area === 'right') {
-      if (dx > 0 && !from.frame.hasAttribute('data-rightbar-collapsed')) {
+      if (dx > 0 && !from.room.back && !from.frame.hasAttribute('data-rightbar-collapsed')) {
         from.frame.querySelector<HTMLButtonElement>('[data-sidebar-right-panel][data-sidebar-right-open] [data-sidebar-right-toggle]')?.click()
       }
     } else if (dx > 0 && from.frame.hasAttribute('data-sidebar-collapsed')) openLeft()

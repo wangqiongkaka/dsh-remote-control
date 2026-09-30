@@ -11,17 +11,35 @@ it('adds the keyboard-aware viewport meta to a document that ships none', () => 
 it('opens the drawer full screen at phone width and keeps the tablet drawer', () => {
   const out = phoneDocument('<html><head></head><body></body></html>')
   const drawer = out.slice(out.indexOf('<style data-dsh-remote-control-drawer>'))
-  const open = '[class*="_frame"]:has([class*="_sidebarCol"]):not([data-sidebar-collapsed]) [class*="_sidebarCol"]'
+  const frame = '[class*="_frame"]:has([class*="_sidebarCol"])'
+  const open = `${frame}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]`
+  const column = `${frame}[data-rightbar-collapsed] [class*="_sidebarCol"],${open}`
   // Tablets keep the 320px drawer beside the dimmed page.
-  expect(drawer).toContain(`${open}{position:fixed;top:0;bottom:0;left:0;width:min(84vw,320px)`)
-  // A phone gets the whole screen, with nothing left for the scrim's shadow to dim.
+  expect(drawer).toContain(`${column}{position:fixed;top:0;bottom:0;left:0;width:min(84vw,320px);z-index:30}`)
+  // A phone gets the whole screen.
   const phone = drawer.slice(drawer.indexOf('@media (max-width: 720px){'))
   expect(phone).not.toBe(drawer)
-  expect(phone).toContain(`${open}{width:100vw;box-shadow:none}`)
+  expect(phone).toContain(`${column}{width:100vw}`)
   // The shell sizes the sidebar content inline at its track width; the full column overrides it,
   // and lifts Settings off the screen's bottom edge by the chat's own bottom clearance.
   expect(phone).toContain(`${open} [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important;`
     + 'padding-bottom:max(32px,env(safe-area-inset-bottom)) !important}')
+})
+
+// The left drawer popped in and out while the right panel slid: it now slides on the right panel's
+// own duration and curve, parks hidden off-screen once closed, and the scrim fades with it.
+it('slides the phone drawer in and out like the right panel', () => {
+  const out = phoneDocument('<html><head></head><body></body></html>')
+  const drawer = out.slice(out.indexOf('<style data-dsh-remote-control-drawer>'))
+  const frame = '[class*="_frame"]:has([class*="_sidebarCol"])'
+  const slide = 'transform var(--ds-transition-duration-slow,.3s) var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1))'
+  expect(drawer).toContain(`${frame}[data-rightbar-collapsed][data-sidebar-collapsed] [class*="_sidebarCol"]{transform:translateX(-100%);`
+    + `visibility:hidden;transition:${slide},visibility 0s linear var(--ds-transition-duration-slow,.3s)}`)
+  expect(drawer).toContain(`${frame}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]{transform:none;visibility:visible;transition:${slide}}`)
+  expect(drawer).toContain('[data-remote-control-scrim]{position:fixed;inset:0;z-index:25;background:rgb(0 0 0/.4);opacity:0;pointer-events:none;')
+  expect(drawer).toContain(`${frame}:not([data-sidebar-collapsed]) [data-remote-control-scrim]{opacity:1;pointer-events:auto}`)
+  expect(drawer).toContain('@media (prefers-reduced-motion: reduce){')
+  expect(drawer).not.toContain('box-shadow:0 0 0 100vmax')
 })
 
 it('keeps the active phone composer at the bottom while the chat scrolls without a keyboard', () => {

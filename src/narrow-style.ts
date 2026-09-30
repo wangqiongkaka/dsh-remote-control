@@ -7,6 +7,14 @@
  */
 const FRAME = '[class*="_frame"]:has([class*="_sidebarCol"])'
 
+/** The sidebar column as the phone drawer: always while it is open, and closed too while no right panel holds a track. */
+const DRAWER = `${FRAME}[data-rightbar-collapsed] [class*="_sidebarCol"],${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]`
+
+/** The shell's slow duration and in-out curve, which the right panel slides on. */
+const SLOW = 'var(--ds-transition-duration-slow,.3s)'
+const EASE = 'var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1))'
+const SLIDE = `transform ${SLOW} ${EASE}`
+
 /** The main chat scroller; other views own their composer overlay positioning. */
 const CHAT_SCROLL = `${FRAME} [data-phase="active"] > [data-conversation-content] > [data-conversation-scroll]:not(:has([data-conversation-composer-overlay]))`
 
@@ -159,18 +167,31 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '<style data-dsh-remote-control-drawer>'
   + '@media (max-width: 1023px){'
   + `${FRAME}[data-rightbar-collapsed]{grid-template-columns:0 minmax(0,1fr) 0 !important}`
-  + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]{position:fixed;top:0;bottom:0;`
-  + 'left:0;width:min(84vw,320px);z-index:30;box-shadow:0 0 0 100vmax rgb(0 0 0/.4)}'
-  // The dismissal scrim fills the frame beside the drawer column and only takes taps while the
-  // drawer is expanded (the client's SidebarDismiss owns the element and its toggle).
-  + '[data-remote-control-scrim]{position:fixed;inset:0;z-index:25;display:none}'
-  + `${FRAME}:not([data-sidebar-collapsed]) [data-remote-control-scrim]{display:block}`
+  // The drawer slides in from the left edge and back out on the right panel's own slide (the shell's
+  // slow duration and in-out curve); closed, it parks off-screen and goes hidden once the slide ends,
+  // so it takes no taps or tab stops. A frame whose right panel holds a track keeps the shell's own
+  // geometry for a closed drawer.
+  + `${DRAWER}{position:fixed;top:0;bottom:0;left:0;width:min(84vw,320px);z-index:30}`
+  + `${FRAME}[data-rightbar-collapsed][data-sidebar-collapsed] [class*="_sidebarCol"]{transform:translateX(-100%);`
+  + `visibility:hidden;transition:${SLIDE},visibility 0s linear ${SLOW}}`
+  // The shell swaps the closing sidebar's content for its rail partway through: fade it out with
+  // the shell's own 150ms content fade instead of showing rail icons in the sliding panel.
+  + `${FRAME}[data-rightbar-collapsed][data-sidebar-collapsed] [class*="_sidebarCol"] > *{opacity:0;transition:opacity .15s}`
+  + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]{transform:none;visibility:visible;transition:${SLIDE}}`
+  // The dismissal scrim fills the frame beside the drawer and dims it, fading with the slide; it only
+  // takes taps while the drawer is expanded (the client's SidebarDismiss owns the element and its toggle).
+  + `[data-remote-control-scrim]{position:fixed;inset:0;z-index:25;background:rgb(0 0 0/.4);opacity:0;pointer-events:none;`
+  + `transition:opacity ${SLOW} ${EASE}}`
+  + `${FRAME}:not([data-sidebar-collapsed]) [data-remote-control-scrim]{opacity:1;pointer-events:auto}`
+  + '@media (prefers-reduced-motion: reduce){'
+  + `${FRAME} [class*="_sidebarCol"],${FRAME} [class*="_sidebarCol"] > *,[data-remote-control-scrim]{transition:none !important}`
+  + '}'
   + '}'
   // A phone has no room to keep beside the drawer: there the open sidebar takes the whole screen,
   // and the collapse control in the sidebar's own logo row is the way back. The shell sizes the
   // sidebar content inline at the column's track width, which the full column overrides.
   + '@media (max-width: 720px){'
-  + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]{width:100vw;box-shadow:none}`
+  + `${DRAWER}{width:100vw}`
   // Its 6px foot would park Settings on the screen's bottom edge: take the chat's bottom clearance.
   + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"] [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important;`
   + 'padding-bottom:max(32px,env(safe-area-inset-bottom)) !important}'

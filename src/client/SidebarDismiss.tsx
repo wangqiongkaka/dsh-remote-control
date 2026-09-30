@@ -2,10 +2,10 @@
  * Click-away dismissal for the proxy's narrow drawer sidebar. A tap on a
  * navigation pick inside the drawer (session row, search result, New Session, panel page)
  * and a tap on the blank scrim beside it fold the drawer to reveal the selected
- * page. The proxy's patch layer owns the scrim's
- * visibility (`data-remote-control-scrim` is display-blocked only while the
- * drawer column is expanded) and keeps that column above the scrim, so the
- * column keeps its own taps.
+ * page. The proxy's patch layer owns the scrim's look (it dims the page and
+ * fades with the drawer's slide, taking taps only while the drawer column is
+ * expanded) and keeps that column above the scrim, so the column keeps its
+ * own taps.
  */
 
 import { useEffect, useRef } from 'react'

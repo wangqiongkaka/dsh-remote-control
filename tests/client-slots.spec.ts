@@ -314,6 +314,69 @@ it('closes an open phone sidebar with a reverse swipe inside that sidebar', () =
   }
 })
 
+// An open sidebar is mostly controls (file rows, tabs, session actions) inside scrollers that also
+// scroll sideways: a closing swipe that starts on them still closes, unless a text field has it or
+// the scroller underneath can still scroll that way.
+it('closes an open phone sidebar from a swipe that starts on its controls', () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><button data-left-row>会话</button></div>'
+    + '<main class="ui_layout__centerCol__h1"></main>'
+    + '<div data-rightbar-col><div data-sidebar-right-panel="fullscreen" data-sidebar-right-open>'
+    + '<div data-files style="overflow-x:auto"><button data-file>src/client/AgentBoard.tsx</button></div>'
+    + '<input data-filter><button data-sidebar-right-toggle>收起</button></div></div>'
+  document.body.append(frame)
+  const files = frame.querySelector<HTMLElement>('[data-files]')!
+  Object.defineProperties(files, { scrollWidth: { value: 500 }, clientWidth: { value: 300 } })
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const disposers: (() => void)[] = []
+  const ctx = context(slots(), disposers)
+  ctx.layout.toggleSidebar = () => { frame.toggleAttribute('data-sidebar-collapsed') }
+  frame.querySelector('[data-sidebar-right-toggle]')!.addEventListener('click', () => {
+    frame.setAttribute('data-rightbar-collapsed', '')
+  })
+  const swipe = (target: Element, x1: number, x2: number): void => {
+    for (const [type, x] of [['touchstart', x1], ['touchend', x2]] as const) {
+      const event = new Event(type, { bubbles: true })
+      const point = { identifier: 0, clientX: x, clientY: 100 }
+      Object.defineProperties(event, {
+        touches: { value: type === 'touchend' ? [] : [point] },
+        changedTouches: { value: [point] },
+      })
+      target.dispatchEvent(event)
+    }
+  }
+  try {
+    apply(ctx)
+    // A text field keeps its own drag, and a list scrolled right takes the swipe back to its start.
+    swipe(frame.querySelector('[data-filter]')!, 100, 220)
+    files.scrollLeft = 60
+    swipe(frame.querySelector('[data-file]')!, 100, 220)
+    expect(frame.hasAttribute('data-rightbar-collapsed')).toBe(false)
+    // At the list's start there is nothing left to scroll: the swipe over a file row closes the panel.
+    files.scrollLeft = 0
+    swipe(frame.querySelector('[data-file]')!, 100, 220)
+    expect(frame.hasAttribute('data-rightbar-collapsed')).toBe(true)
+
+    swipe(frame.querySelector('[data-left-row]')!, 220, 100)
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})
+
 // Chat preferences are page-local on a proxied page (the Host persists them for loopback pages
 // only), so every phone load would open at Detailed; the remote page starts both at Compact.
 it('starts remote chat work steps and performance usage at compact, once per registration', async () => {
