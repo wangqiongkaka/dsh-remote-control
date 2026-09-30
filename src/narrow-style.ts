@@ -34,21 +34,27 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // content at the frame edges. Class modules ship as `<package hash>_handle`.
   + '[class*="_handle"]{display:none !important}'
   // One button row, and the whole row is the strip that gives way: the round controls at either
-  // end (attach, microphone, send) hold still while every chip between them slides. The host
+  // end (attach, microphone, send) hold still while every chip between them slides. Clip its
+  // opaque pinned ends to the card's bottom corners instead of leaving square patches there. The host
   // splits those chips over two groups, so both dissolve into the row and their chips share the
   // one strip — kept as boxes, the model chip would sit fixed beside the send circle and leave
   // the mode and harness chips a fraction of the row.
   + '[data-composer-card] > [class*="_row"]{flex-wrap:nowrap !important;gap:4px !important;'
+  + 'border-radius:0 0 var(--dsw-radius-panel) var(--dsw-radius-panel);'
   + 'overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:none}'
   + '[data-composer-card] > [class*="_row"]::-webkit-scrollbar{display:none}'
   + `${COMPOSER_ROW} > [class*="_tools"],${COMPOSER_ROW} > [class*="_trailing"]{display:contents}`
+  // The host spaces row items apart, but its nested mode and model groups keep their own 4px
+  // gaps. Dissolve those boxes too so every visible control shares the row's spacing.
+  + `${COMPOSER_ROW} > [class*="_tools"] > [class*="_modes"],`
+  + `${COMPOSER_ROW} > [class*="_trailing"] > [class*="_standardControls"]{display:contents}`
   // A strip scrolls only while its items keep their own width. A chip squeezed below its own
   // content paints its glyphs outside its box, straight over the chip beside it, so nothing in the
   // row shrinks; the cap below is then what keeps one long label from taking the whole strip. The
   // host wraps every plugin seat in a `display: contents` slot element, so an item is a child of a
   // dissolved group or a child of one of those wrappers.
   + `${COMPOSER_ROW} > [class*="_tools"] > *:not([data-slot]),${COMPOSER_ROW} > [class*="_trailing"] > *:not([data-slot]),`
-  + `${COMPOSER_ROW} > [class*="_tools"] > [data-slot] > *,${COMPOSER_ROW} > [class*="_trailing"] > [data-slot] > *{flex:none}`
+  + `${COMPOSER_ROW} [data-slot] > *{flex:none}`
   // The left end. The attach button is a 28px circle inside a 28px box, so a chip sliding under it
   // still shows in the four corners the circle leaves clear and in the row's own left pad. The row
   // hands its 8px pads to the two end controls instead: the attach button becomes a 36px box that
@@ -78,9 +84,6 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // A turn in flight widens the tail by one 34px circle and its gap; the floor follows it.
   + `${COMPOSER_ROW}:has(> [class*="_trailing"] > [class*="_primary"] ~ [class*="_primary"])::after{`
   + 'width:112px;margin-left:-116px}'
-  // The model chip leads the pinned tail: it takes the free width, so the tail sits at the right
-  // edge of a roomy row and collapses to nothing the moment the strip overflows.
-  + `${COMPOSER_ROW} > [class*="_trailing"] > [class*="_standardControls"]{margin-left:auto}`
   // Harness and quota chips carry the longest labels in the row; the ellipsis they already style
   // now engages on a phone instead of letting one chip take the whole line.
   + '[data-composer-card] > [class*="_row"] [class*="hp-chip"]{max-width:104px}'
@@ -109,9 +112,9 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + `${CHAT_SCROLL}::-webkit-scrollbar{display:none}`
   + `${CHAT_SCROLL} > [data-composer-seat]{position:absolute !important;inset:auto 0 0}`
   // The shell lifts its sticky jump-to-latest control by the composer height, but a sticky inset
-  // counts from inside the scroller's padding, which already reserves that height: keep only the
-  // control's own 16px gap above the input card.
-  + `${CHAT_SCROLL} [class*="_toBottomSlot"]{bottom:16px !important}`
+  // counts from inside the scroller's padding, which already reserves that height: keep only an
+  // 8px gap above the input card.
+  + `${CHAT_SCROLL} [class*="_toBottomSlot"]{bottom:8px !important}`
   // Keyboard up (the client patch publishes the visual viewport height): the shell shrinks to it,
   // the clearance the phone's bottom edge needed now belongs to the keyboard, and every overlay
   // card is bounded by the space actually visible above it. The shift is the pan the browser

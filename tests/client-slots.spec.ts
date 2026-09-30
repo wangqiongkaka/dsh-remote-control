@@ -309,6 +309,144 @@ it('starts remote chat work steps and performance usage at compact, once per reg
   }
 })
 
+it('pulls to load earlier messages only at the top of the phone conversation', () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"></div>'
+    + '<main class="ui_layout__centerCol__h1"><div data-conversation-scroll>'
+    + '<div data-chat-flow><div class="ui_chat__older__h1"><button>加载更早</button></div>'
+    + '<p>会话内容</p></div></div></main>'
+  document.body.append(frame)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (query: string) => ({ matches: !query.includes('prefers-reduced-motion'), addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const scroller = frame.querySelector<HTMLElement>('[data-conversation-scroll]')!
+  const column = frame.querySelector<HTMLElement>('[data-chat-flow]')!
+  const message = frame.querySelector('p')!
+  const button = frame.querySelector('button')!
+  Object.defineProperties(scroller, {
+    scrollHeight: { value: 900 },
+    clientHeight: { value: 400 },
+  })
+  let loads = 0
+  button.addEventListener('click', () => { loads++ })
+  const touch = (type: string, y: number, count = 1): Event => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    const points = Array.from({ length: count }, (_, index) => ({ identifier: index + 1, clientX: 160, clientY: y }))
+    Object.defineProperties(event, {
+      touches: { value: type === 'touchend' ? [] : points },
+      changedTouches: { value: points },
+    })
+    message.dispatchEvent(event)
+    return event
+  }
+  const disposers: (() => void)[] = []
+  try {
+    apply(context(slots(), disposers))
+    touch('touchstart', 190)
+    expect(touch('touchmove', 90).defaultPrevented).toBe(false)
+    touch('touchend', 90)
+    touch('touchstart', 100)
+    const pull = touch('touchmove', 190)
+    expect(pull.defaultPrevented).toBe(true)
+    expect(column.style.transform).toMatch(/translateY\([1-9]/u)
+    touch('touchend', 190)
+    expect(loads).toBe(1)
+    expect(column.style.transform).toBe('translateY(0px)')
+    expect(column.style.transition).toContain('transform')
+
+    scroller.scrollTop = 100
+    touch('touchstart', 100)
+    expect(touch('touchmove', 190).defaultPrevented).toBe(false)
+    touch('touchend', 190)
+    expect(loads).toBe(1)
+
+    scroller.scrollTop = 0
+    button.disabled = true
+    touch('touchstart', 100)
+    touch('touchmove', 190)
+    touch('touchend', 190)
+    expect(loads).toBe(1)
+
+    button.disabled = false
+    touch('touchstart', 100)
+    touch('touchmove', 190)
+    touch('touchstart', 190, 2)
+    expect(column.style.transform).toBe('translateY(0px)')
+    touch('touchend', 190)
+    expect(loads).toBe(1)
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+  }
+})
+
+it('rebounds an upward pull at the bottom without moving the composer', () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"></div>'
+    + '<main class="ui_layout__centerCol__h1"><div data-conversation-scroll>'
+    + '<div data-chat-flow><p>会话内容</p></div><div data-composer-seat>输入框</div></div></main>'
+  document.body.append(frame)
+  let reducedMotion = false
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (query: string) => ({ matches: query.includes('prefers-reduced-motion') ? reducedMotion : true,
+      addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const scroller = frame.querySelector<HTMLElement>('[data-conversation-scroll]')!
+  const column = frame.querySelector<HTMLElement>('[data-chat-flow]')!
+  const message = frame.querySelector('p')!
+  Object.defineProperties(scroller, {
+    scrollHeight: { value: 900 },
+    clientHeight: { value: 400 },
+  })
+  scroller.scrollTop = 500
+  const touch = (type: string, y: number): Event => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    const point = { identifier: 1, clientX: 160, clientY: y }
+    Object.defineProperties(event, {
+      touches: { value: type === 'touchend' ? [] : [point] },
+      changedTouches: { value: [point] },
+    })
+    message.dispatchEvent(event)
+    return event
+  }
+  const disposers: (() => void)[] = []
+  try {
+    apply(context(slots(), disposers))
+    touch('touchstart', 90)
+    expect(touch('touchmove', 190).defaultPrevented).toBe(false)
+    touch('touchend', 190)
+    touch('touchstart', 190)
+    expect(touch('touchmove', 90).defaultPrevented).toBe(true)
+    expect(column.style.transform).toMatch(/translateY\(-/u)
+    touch('touchend', 90)
+    expect(column.style.transform).toBe('translateY(0px)')
+    expect(column.style.transition).toContain('transform')
+    expect(frame.querySelector('[data-composer-seat]')?.getAttribute('style')).toBeNull()
+
+    reducedMotion = true
+    touch('touchstart', 190)
+    touch('touchmove', 90)
+    touch('touchend', 90)
+    expect(column.style.transform).toBe('')
+    expect(column.style.transition).toBe('')
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+  }
+})
+
 it('closes the command launcher on a second click after its source is cleared', () => {
   const card = document.createElement('div')
   card.setAttribute('data-composer-card', '')
