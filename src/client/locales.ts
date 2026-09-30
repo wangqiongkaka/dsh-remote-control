@@ -16,8 +16,9 @@ export const zh = {
   oneUse: '链接只能配对一次。若需重新配对，请停止后重新开启。',
   sidebar: '侧边栏',
   qrUnavailable: '二维码暂不可用，请复制链接在手机上打开。',
-  paired: '已有手机配对。可在手机上直接切换到这个工作区；若要配对另一台设备，请停止后重新开启。',
-  pairedUntil: '手机访问有效期至',
+  paired: '手机已连接，可在手机上直接使用这个工作区。',
+  pairedAnother: '要配对另一台设备，请先停止远程控制。',
+  pairedUntil: '访问有效期至',
 } as const
 
 /** Keys shared by the remote-control dictionaries. */
@@ -37,6 +38,7 @@ export const en: Record<RemoteControlKey, string> = {
   oneUse: 'The link pairs one device. Stop and start again to pair another device.',
   sidebar: 'Sidebar',
   qrUnavailable: 'QR code unavailable. Copy the link and open it on your phone.',
-  paired: 'A phone is already paired. Switch to this workspace on the phone; to pair another device, stop and start again.',
-  pairedUntil: 'Phone access expires',
+  paired: 'A phone is connected and can use this workspace directly.',
+  pairedAnother: 'To pair another device, stop remote control first.',
+  pairedUntil: 'Access expires',
 }

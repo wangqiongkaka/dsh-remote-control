@@ -14,6 +14,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
+import { phoneDocument } from './phone-document.ts'
 
 export const name = 'dsh-remote-control'
 export const inject = ['connection', 'webServer', 'workspaceRegistry']
@@ -176,44 +177,6 @@ function loopbackHeaders(headers: IncomingHttpHeaders, port: number, dshCookie: 
   return headers
 }
 
-/** The DSH shell has no narrow-screen layout, so the proxy lends phones a small patch layer. */
-const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
-  + '@media (max-width: 720px){'
-  // iOS zooms the whole page when a focused field is under 16px.
-  + 'input,textarea,select,[contenteditable="true"]{font-size:16px !important}'
-  // Column resize handles are pointer affordances a phone cannot use, and their strips sit on
-  // content at the frame edges. Class modules ship as `<package hash>_handle`.
-  + '[class*="_handle"]{display:none !important}'
-  // Keep the composer controls together and lift the status strip clear of the phone's bottom edge.
-  + '[data-composer-card] > [class*="_row"]{flex-wrap:nowrap !important;gap:4px !important;overflow-x:auto;scrollbar-width:none}'
-  + '[data-composer-card] > [class*="_row"]::-webkit-scrollbar{display:none}'
-  + '[data-composer-card] > [class*="_row"] > [class*="_tools"]{flex:none}'
-  + '[data-composer-card] > [class*="_row"] [class*="_tools"],[data-composer-card] > [class*="_row"] [class*="_trailing"],[data-composer-card] > [class*="_row"] [class*="_modes"],[data-composer-card] > [class*="_row"] [class*="_standardControls"]{gap:4px !important}'
-  + '[class*="_root"]:not([class*="_hero"]):has(> [data-composer-card]):has(> [class*="_dock"]){padding-bottom:max(32px,env(safe-area-inset-bottom)) !important}'
-  // Settings has a fixed desktop nav; stack it above the content on phones.
-  + '[data-shortcut-modal="settings"]{flex-direction:column !important;width:calc(100vw - 24px) !important;max-width:none !important;height:calc(100dvh - 32px) !important}'
-  + '[data-shortcut-modal="settings"] > nav{width:auto !important;padding:14px 16px 8px !important;gap:10px !important}'
-  + '[data-shortcut-modal="settings"] [class*="_navTitle"]{padding:0 40px 0 0 !important}'
-  + '[data-shortcut-modal="settings"] [class*="_navList"]{flex-direction:row !important;flex:none;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}'
-  + '[data-shortcut-modal="settings"] [class*="_navList"]::-webkit-scrollbar{display:none}'
-  + '[data-shortcut-modal="settings"] [class*="_navCell"]{flex:none;height:40px !important;padding:8px 10px !important}'
-  + '[data-shortcut-modal="settings"] > [class*="_content"]{min-height:0}'
-  + '[data-shortcut-modal="settings"] [class*="_header"]:has([class*="_close"]){position:absolute;top:12px;right:12px;height:28px !important;padding:0 !important;z-index:1}'
-  + '[data-shortcut-modal="settings"] [class*="_options"]{padding:0 16px 20px !important}'
-  + '[data-shortcut-modal="settings"] [class*="_themeCube"]{flex:1 1 0;min-width:0;padding:12px 4px}'
-  + '[data-shortcut-modal="settings"] [class*="_rowText"]{padding-right:0 !important}'
-  + '}</style>'
-  // The shell keeps a 56px icon rail whenever it is not a desktop window (AppFrame's collapsedWidth),
-  // which a phone cannot spare: the closed sidebar takes no track at all, and the header control in
-  // `conversation.header.leading` opens it. The rule stays off frames that give the right panel a
-  // track, where the shell's own three-track geometry still applies.
-  + '<style data-dsh-remote-control-drawer>'
-  + '@media (max-width: 1023px){'
-  + '[class*="_frame"][data-rightbar-collapsed]{grid-template-columns:0 minmax(0,1fr) 0 !important}'
-  + '[class*="_frame"]:not([data-sidebar-collapsed]) [class*="_sidebarCol"]{position:fixed;top:0;bottom:0;'
-  + 'left:0;width:min(84vw,320px);z-index:30;box-shadow:0 0 0 100vmax rgb(0 0 0/.4)}'
-  + '}</style>'
-
 /** Largest HTML document worth rewriting; anything bigger streams through untouched. */
 const HTML_LIMIT = 512 * 1024
 
@@ -246,9 +209,7 @@ function sendHtml(reply: IncomingMessage, res: ServerResponse, headers: Incoming
       return
     }
     const body = Buffer.concat(chunks).toString('utf8')
-    const head = /<head[^>]*>/iu.exec(body)
-    const at = head === null ? 0 : head.index + head[0].length
-    const out = Buffer.from(body.slice(0, at) + NARROW_SCREEN_STYLE + body.slice(at), 'utf8')
+    const out = Buffer.from(phoneDocument(body), 'utf8')
     const rewritten: IncomingHttpHeaders = { ...headers, 'content-length': String(out.length) }
     delete rewritten['transfer-encoding']
     res.writeHead(reply.statusCode ?? 502, rewritten)

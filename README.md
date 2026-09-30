@@ -24,6 +24,8 @@ pnpm dsh plugin --profile web add file:/Users/wangqiongkaka/AIProjetcs/dsh-plugi
 
 在电脑的 DSH Web 中打开任一会话，点击标题旁的链接图标。插件显示二维码和可复制链接。链接五分钟内只能配对一台手机；配对成功后浏览器会话默认持续十二小时。点击「停止远程控制」会关闭代理和前台 Funnel，立即撤销该次手机访问。链接过期前再次打开弹窗会复用同一链接，过期后自动换新链接。在其他工作区打开弹窗不会重启隧道；已配对时弹窗只显示配对状态，手机保持连接，可在手机上自行切换工作区。需要配对另一台手机时，停止后重新开启。
 
+手机窗口由代理注入一层窄屏补丁：侧边栏变成覆盖式抽屉（点击会话、搜索结果或「新建会话」后自动收起并回到会话页面，点击抽屉右侧的空白遮罩也会收起）；抽屉里当前会话用侧边栏自身的选中底色标出，手指划过或点过的行不再残留与选中态同款的高亮（这一条由客户端插件注入，刷新页面即生效，不必重启 DSH）；输入框工具行保持单行，左侧按钮组放不下时在自己那一侧横向滚动，右侧的模型与发送按钮固定不动，harness 与配额标签过长时省略；行内向上弹出的菜单（harness 切换、权限模式、配额详情）打开时会临时解除该行的滚动裁剪；浮层高度按动态视口计算，不会被浏览器工具栏截断。软键盘适配分两条路：代理把文档的 viewport meta 补成 `interactive-widget=resizes-content`（Chromium 会让布局视口随键盘收缩），其余浏览器由客户端接管——它把键盘算成「当前可见高度（两个视口里较小的那个）相对手机静息高度的下降量」，判定到键盘弹起就把外壳压到可见高度，并把被聚焦的输入框滚进可视区（WebKit 只在用户开始打字时才滚动它），键盘收起后立即恢复。
+
 插件只在本机回环地址上代理已有的 DSH Web 服务。Tailscale 提供 HTTPS 入口（`access: tailnet` 时入口只在 tailnet 内可达，手机需登录同一 tailnet）；插件校验请求来源、消耗一次性配对凭证，并以独立 HttpOnly Cookie 授权手机。DSH 的本地浏览器 Cookie 不会发给手机。若本机已有 Funnel 配置，插件会拒绝启动以免覆盖它；唯一的例外是上一次 DSH 进程退出时遗留的 Foreground 会话（其回环后端已随该进程消失，清掉这条残留也会让孤立的 `tailscale funnel` 退出）。电脑关闭 DSH 或断开 Tailscale 后，远程入口不可用。
 
 可通过 profile 的 `cordis.patch.yml` 覆盖 `remote-control` 行的 `tailscaleBinary`、`access`、`funnelPort`（443、8443 或 10000）、`invitationTtlMs`、`browserTtlMs`、`startupTimeoutMs` 和 `stopTimeoutMs`。`access` 默认 `public`，用 `tailscale funnel` 开公网入口；改为 `tailnet` 则用 `tailscale serve`，只有同一 tailnet 内的设备能打开链接，不再暴露公网入口（公网入口会把这些请求中继到本机，链路慢时首屏会很慢）。Funnel 的命令形式参见 [Tailscale CLI 文档](https://tailscale.com/docs/reference/tailscale-cli/funnel)。

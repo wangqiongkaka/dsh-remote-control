@@ -8,7 +8,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { RemoteControlAction, type RemoteControlInjected } from './RemoteControlAction.tsx'
-import { SidebarToggle, type SidebarToggleInjected } from './SidebarToggle.tsx'
+import { NARROW, SidebarToggle, proxiedFrame, type SidebarToggleInjected } from './SidebarToggle.tsx'
+import { SidebarDismiss } from './SidebarDismiss.tsx'
+import { followKeyboard } from './keyboard.ts'
+import { applyDrawerSelection } from './drawer-style.ts'
 import { en, NS, zh, type RemoteControlKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -33,6 +36,47 @@ async function command(action: 'start' | 'stop', workspaceId?: string): Promise<
 
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'remote-control: dictionaries')
+  ctx.effect(() => {
+    const closeLauncher = (event: MouseEvent): void => {
+      if (!(event.target instanceof Element)) return
+      const launcher = event.target.closest('button[aria-haspopup="listbox"][class*="_add"]')
+      const card = launcher?.closest('[data-composer-card]')
+      const editor = card?.querySelector('[data-composer-input]')
+      if (!card?.querySelector('[data-trigger-menu]') || !editor) return
+      // The host refocuses before toggling and loses the launcher's source. Let its
+      // existing Escape route close the open menu without running that click handler.
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      editor.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', code: 'Escape', bubbles: true, cancelable: true,
+      }))
+    }
+    document.addEventListener('click', closeLauncher, true)
+    return () => { document.removeEventListener('click', closeLauncher, true) }
+  }, 'remote-control: command launcher close')
+  // Two phone-only patches arm together on a narrow proxied frame: the soft keyboard covers the
+  // shell's layout viewport instead of shrinking it (iOS WebKit keeps the layout viewport whole),
+  // and the drawer needs the shell's own selection fill so the current session stops matching a
+  // finger's latched hover. Both are dropped the moment the frame stops being a phone one.
+  ctx.effect(() => {
+    const query = window.matchMedia(NARROW)
+    let follow: (() => void) | undefined
+    let selection: (() => void) | undefined
+    const sync = (): void => {
+      const phone = query.matches && proxiedFrame()
+      follow?.()
+      follow = phone ? followKeyboard() : undefined
+      selection?.()
+      selection = phone ? applyDrawerSelection() : undefined
+    }
+    sync()
+    query.addEventListener('change', sync)
+    return () => {
+      query.removeEventListener('change', sync)
+      follow?.()
+      selection?.()
+    }
+  }, 'remote-control: phone patches')
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities',
     id: 'remote-control',
@@ -65,4 +109,13 @@ export function apply(ctx: Context): void {
       toggleSidebar: () => { ctx.layout.toggleSidebar() },
     }),
   }, SidebarToggle))
+  // The drawer's dismissal layer: session picks and the blank scrim beside the
+  // drawer both fold it back onto the Conversation (proxy narrow frames only).
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'remote-control.dismiss',
+    inject: (): SidebarToggleInjected => ({
+      toggleSidebar: () => { ctx.layout.toggleSidebar() },
+    }),
+  }, SidebarDismiss))
 }

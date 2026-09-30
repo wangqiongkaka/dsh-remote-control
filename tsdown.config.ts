@@ -29,4 +29,17 @@ export default [
       codeSplitting: false,
     },
   },
+  {
+    entry: {
+      index: 'src/index.ts',
+      'client/index': 'src/client/index.ts',
+      'client/keyboard': 'src/client/keyboard.ts',
+      'client/drawer-style': 'src/client/drawer-style.ts',
+      'client/SidebarDismiss': 'src/client/SidebarDismiss.tsx',
+      'phone-document': 'src/phone-document.ts',
+    },
+    outDir: 'dist', format: 'esm', platform: 'node', clean: false,
+    fixedExtension: false, dts: true,
+    external: [/^@deepseek-ai\//, /^react(?:\/|$)/, /^qrcode(?:\/|$)/],
+  },
 ] satisfies UserConfig[]

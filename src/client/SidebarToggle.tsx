@@ -7,7 +7,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { NS } from './locales.ts'
 
 /** The frame width below which the shell collapses the sidebar and the proxy takes the rail away. */
-const NARROW = '(max-width: 1023px)'
+export const NARROW = '(max-width: 1023px)'
 
 /** Host commands passed through the slot injection face. */
 export interface SidebarToggleInjected {
@@ -18,7 +18,7 @@ export interface SidebarToggleInjected {
 export type SidebarToggleProps = PropsLocale<typeof NS> & InjectFace<SidebarToggleInjected>
 
 /** Track the narrow-frame state both the shell and the proxy's patch layer key on. */
-function useNarrow(): boolean {
+export function useNarrow(): boolean {
   const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW).matches)
   useEffect(() => {
     const query = window.matchMedia(NARROW)
@@ -30,6 +30,11 @@ function useNarrow(): boolean {
   return narrow
 }
 
+/** Whether this frame came through the remote proxy, whose patch layer the drawer keys on. */
+export function proxiedFrame(): boolean {
+  return document.querySelector('style[data-dsh-remote-control]') !== null
+}
+
 /**
  * Show the sidebar control only on a narrow frame that came through the remote proxy: there the
  * patch layer removed the rail, and this is the one way back to the panel. A local narrow window
@@ -37,7 +42,7 @@ function useNarrow(): boolean {
  */
 export function SidebarToggle(props: SidebarToggleProps): React.JSX.Element | null {
   const narrow = useNarrow()
-  if (!narrow || document.querySelector('style[data-dsh-remote-control]') === null) return null
+  if (!narrow || !proxiedFrame()) return null
   const { t } = props
   return <button type="button" aria-label={t('sidebar')} title={t('sidebar')}
     style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28,

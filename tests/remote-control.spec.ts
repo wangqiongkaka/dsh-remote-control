@@ -8,7 +8,7 @@ import { gzipSync } from 'node:zlib'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import { afterEach, expect, it, vi } from 'vitest'
-import { apply, type Config } from '../src/index.ts'
+import { apply, type Config } from '../dist/index.js'
 
 let directory: string | undefined
 let backend: Server | undefined
@@ -180,6 +180,16 @@ else if (args[0] === 'funnel') {
   expect(markup).toContain('<main>DSH Web</main>')
   // The phone gets the proxy's narrow-screen layer on top of the shell it forwards.
   expect(markup).toContain('data-dsh-remote-control')
+  // The drawer layer carries the dismissal scrim's visibility rules.
+  expect(markup).toContain('[data-remote-control-scrim]')
+  // The composer row hands the scroll to its left group and lifts that clip while a menu is open.
+  expect(markup).toContain('[data-composer-card] > [class*="_row"] > [class*="_tools"]:has([class*="hp-menu"])')
+  // A document without a viewport meta gets the keyboard-aware one.
+  expect(markup).toContain('interactive-widget=resizes-content')
+  // The keyboard patch's stylesheet is present for the client attribute it keys on.
+  expect(markup).toContain('[data-dsh-remote-keyboard]')
+  // While typing, the composer is anchored outside the chat scroller's scrolling geometry.
+  expect(markup).toContain('[data-composer-seat]{position:absolute !important;inset:auto 0 0}')
   compressedHtml = true
   const compressed = await request('/', {
     cookie: cookie ?? '', accept: 'text/html',
