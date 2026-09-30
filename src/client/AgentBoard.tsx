@@ -9,7 +9,7 @@
  * Session.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   IconChevronLeftOutlineRegular, IconChevronRightOutlineRegular, relativeTime, StateDot, type StateDotState,
@@ -17,7 +17,7 @@ import {
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { AGENT_STATES, agentRows, type AgentRow, type AgentState } from './agent-board.ts'
+import { AGENT_STATES, agentRows, completionHistory, historyRows, type AgentRow, type AgentState, type CompletionRecord } from './agent-board.ts'
 import { proxiedFrame, useNarrow } from './SidebarToggle.tsx'
 import { DRAWER_PICK_ATTRIBUTE } from './SidebarDismiss.tsx'
 import { NS } from './locales.ts'
@@ -30,6 +30,16 @@ const ANCHOR = '[class*="_sidebarCol"] button[class*="_newSession"]'
 
 /** How many Sessions the card previews. */
 const PREVIEW = 3
+const HISTORY_KEY = 'dsh-remote-control.agent-history.v1'
+
+function savedHistory(): CompletionRecord<SessionId>[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
+    if (!Array.isArray(value)) return []
+    return value.filter((entry): entry is CompletionRecord<SessionId> =>
+      typeof entry?.id === 'string' && typeof entry.completedAt === 'number' && Number.isFinite(entry.completedAt)).slice(0, 5)
+  } catch { return [] }
+}
 
 /** Host commands passed through the slot injection face. */
 export interface AgentBoardInjected {
@@ -223,7 +233,24 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
   const list = useSessions(value => value)
   const statuses = useSessionStatus(value => value)
   const rows = useMemo(() => agentRows(list, statuses), [list, statuses])
-  const harnessOf = useHarnesses(host === null ? [] : rows, props.harnesses)
+  const [history, setHistory] = useState(savedHistory)
+  const previous = useRef<typeof statuses>()
+  useEffect(() => {
+    if (!active || list.phase !== 'ready') { previous.current = undefined; return }
+    const before = previous.current
+    previous.current = statuses
+    setHistory(current => {
+      const next = completionHistory(list, statuses, before, current)
+      return next.length === current.length && next.every((entry, index) =>
+        entry.id === current[index]?.id && entry.completedAt === current[index]?.completedAt) ? current : next
+    })
+  }, [active, list, statuses])
+  useEffect(() => {
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)) } catch { /* Storage may be disabled. */ }
+  }, [history])
+  const completed = useMemo(() => historyRows(list, statuses, history), [list, statuses, history])
+  const markedRows = useMemo(() => [...rows, ...completed], [rows, completed])
+  const harnessOf = useHarnesses(host === null ? [] : markedRows, props.harnesses)
   const [filter, setFilter] = useState<Filter>(null)
   if (host === null) return null
 
@@ -234,6 +261,7 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
     openSession(id)
   }
   const shown = AGENT_STATES.filter(state => (filter === 'all' || filter === state) && counts[state] > 0)
+  const showHistory = (filter === 'all' || filter === 'done') && completed.length > 0
 
   return createPortal(
     <>
@@ -268,7 +296,7 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
             ))}
           </div>
           <div className="rc-agents-list">
-            {shown.length === 0 && <p className="rc-agents-empty">{t('agents.empty')}</p>}
+            {shown.length === 0 && !showHistory && <p className="rc-agents-empty">{t('agents.empty')}</p>}
             {shown.map(state => (
               <section key={state} className="rc-agents-group">
                 <h3><StateDot state={DOT[state]} size={state === 'running' ? 12 : 10} />{t(`agents.${state}`)}</h3>
@@ -278,6 +306,12 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
                 </div>
               </section>
             ))}
+            {showHistory && (
+              <section className="rc-agents-group rc-agents-history">
+                <h3><StateDot state="done" size={10} />{t('agents.history')}</h3>
+                <div>{completed.map(row => <Row key={row.id} row={row} harness={harnessOf.get(row.id)} now={now} t={t} open={open} />)}</div>
+              </section>
+            )}
           </div>
         </div>
       )}

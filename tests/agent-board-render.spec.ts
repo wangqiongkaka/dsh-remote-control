@@ -8,6 +8,7 @@ import { AGENTS_ATTRIBUTE, AgentBoard } from '../dist/client/AgentBoard.js'
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 const list = {
+  phase: 'ready' as 'pending' | 'ready',
   ids: ['ask', 'run', 'done', 'idle'],
   byId: {
     ask: { displayTitle: '等回答', cwd: '/w/dsh-remote-control', running: false, blank: false, updatedAt: 3 },
@@ -43,14 +44,18 @@ function setNarrow(matches: boolean): void {
   })
 }
 
-function render(sessions: typeof list = list, marks: Record<string, { harness: string }> = {}): void {
+function render(
+  sessions: typeof list = list,
+  marks: Record<string, { harness: string }> = {},
+  snapshot: typeof statuses = statuses,
+): void {
   act(() => {
     root.render(createElement(AgentBoard as never, {
       t: (key: string, params?: { n?: number }) => params?.n === undefined ? key : `${key}:${params.n}`,
       useSessions: (select: (value: typeof list) => unknown) => select(sessions),
-      useSessionStatus: (select: (value: typeof statuses) => unknown) => select(statuses),
+      useSessionStatus: (select: (value: typeof statuses) => unknown) => select(snapshot),
       openSession: (id: string) => { opened.push(id) },
-      harnesses: async () => marks,
+      harnesses: async (ids: string[]) => Object.fromEntries(ids.flatMap(id => marks[id] ? [[id, marks[id]]] : [])),
     }))
   })
 }
@@ -66,6 +71,7 @@ function click(element: Element | null | undefined): void {
 
 beforeEach(() => {
   document.body.innerHTML = ''
+  localStorage.clear()
   proxy = document.createElement('style')
   proxy.setAttribute('data-dsh-remote-control', '')
   document.head.append(proxy)
@@ -74,6 +80,53 @@ beforeEach(() => {
   mount = document.createElement('div')
   document.body.append(mount)
   root = createRoot(mount)
+})
+
+it('keeps read completions in a separate board history after remounting', () => {
+  column()
+  render()
+  click(host()?.querySelector('.rc-agents-head'))
+  expect(host()?.querySelector('.rc-agents-history')).toBeNull()
+
+  const read = new Map(statuses)
+  read.set('done', { running: false, pendingInteraction: undefined, completionUnread: false })
+  render(list, {}, read)
+  expect(host()?.querySelector('.rc-agents-tile[data-state="done"]')?.textContent).toBe('agents.done0')
+  expect(host()?.querySelector('.rc-agents-history h3')?.textContent).toBe('agents.history')
+  expect(host()?.querySelector('.rc-agents-history .rc-agents-title')?.textContent).toBe('完成了')
+
+  act(() => { root.unmount() })
+  root = createRoot(mount)
+  render(list, {}, read)
+  click(host()?.querySelector('.rc-agents-head'))
+  expect(host()?.querySelector('.rc-agents-history .rc-agents-title')?.textContent).toBe('完成了')
+  click(host()?.querySelector('.rc-agents-history [data-remote-control-pick]'))
+  expect(opened).toEqual(['done'])
+})
+
+it('restores the Harness icon for a completed history row', async () => {
+  localStorage.setItem('dsh-remote-control.agent-history.v1', JSON.stringify([{ id: 'done', completedAt: 1 }]))
+  column()
+  const read = new Map(statuses)
+  read.set('done', { running: false, pendingInteraction: undefined, completionUnread: false })
+  render(list, { done: { harness: 'codex' } }, read)
+  await act(async () => { await Promise.resolve() })
+  click(host()?.querySelector('.rc-agents-head'))
+  expect((host()?.querySelector('.rc-agents-history [data-remote-control-pick]') as HTMLElement).dataset.hpHarness).toBe('codex')
+})
+
+it('does not erase saved history while the Session list is loading', () => {
+  const entry = { id: 'done', completedAt: 1 }
+  localStorage.setItem('dsh-remote-control.agent-history.v1', JSON.stringify([entry]))
+  column()
+  render({ ...list, phase: 'pending', ids: [] })
+  expect(JSON.parse(localStorage.getItem('dsh-remote-control.agent-history.v1') ?? '[]')).toEqual([entry])
+
+  const read = new Map(statuses)
+  read.set('done', { running: false, pendingInteraction: undefined, completionUnread: false })
+  render(list, {}, read)
+  click(host()?.querySelector('.rc-agents-head'))
+  expect(host()?.querySelector('.rc-agents-history .rc-agents-title')?.textContent).toBe('完成了')
 })
 
 afterEach(() => {

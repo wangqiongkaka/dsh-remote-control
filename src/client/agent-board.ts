@@ -1,9 +1,9 @@
 /**
  * The drawer's Agent board rows, sorted out of the Session list and the unified Session status.
  *
- * A Session is on the board while it needs the user (a pending interaction), while it runs, or
- * once it stopped and nobody has looked at it yet (the host's completion reminder, cleared by
- * opening the Session). The precedence is the Workspace browser's own: a pending interaction
+ * A Session is on the live board while it needs the user (a pending interaction), while it runs,
+ * or once it stopped and nobody has looked at it yet (the host's completion reminder). The
+ * precedence is the Workspace browser's own: a pending interaction
  * outranks activity, which outranks the completion reminder. Like that browser, the board skips
  * subagent children and blank Sessions.
  */
@@ -45,6 +45,12 @@ export interface AgentRow<Id extends string = string> {
   pending?: PendingKind
 }
 
+/** One recently completed Session, kept after its unread reminder is cleared. */
+export interface CompletionRecord<Id extends string = string> {
+  id: Id
+  completedAt: number
+}
+
 function pendingKind(kind: string | undefined): PendingKind | undefined {
   return kind === 'approval' || kind === 'plan-review' || kind === 'question' ? kind : undefined
 }
@@ -81,4 +87,41 @@ export function agentRows<Id extends string>(
   }
   return rows.sort((a, b) => AGENT_STATES.indexOf(a.state) - AGENT_STATES.indexOf(b.state)
     || b.updatedAt - a.updatedAt)
+}
+
+/** Keep the five most recent actual completions, including those already being viewed. */
+export function completionHistory<Id extends string>(
+  list: { readonly ids: readonly Id[]; readonly byId: Readonly<Record<Id, SummaryFacts>> },
+  statuses: ReadonlyMap<Id, StatusFacts>,
+  previous: ReadonlyMap<Id, StatusFacts> | undefined,
+  history: readonly CompletionRecord<Id>[],
+): CompletionRecord<Id>[] {
+  const entries = new Map(history.filter(entry => list.ids.includes(entry.id)).map(entry => [entry.id, entry]))
+  for (const id of list.ids) {
+    const summary = list.byId[id]
+    if (summary.origin === 'subagent' || summary.blank) continue
+    const current = statuses.get(id)
+    if (current === undefined || pendingKind(current.pendingInteraction?.kind) !== undefined) continue
+    const before = previous?.get(id)
+    if ((before?.running === true && current.running === false)
+      || (current.completionUnread && before?.completionUnread !== true)) {
+      entries.set(id, { id, completedAt: summary.updatedAt })
+    }
+  }
+  return [...entries.values()].sort((a, b) => b.completedAt - a.completedAt).slice(0, 5)
+}
+
+/** Read completed rows stay separate from the live unread-completion group. */
+export function historyRows<Id extends string>(
+  list: { readonly ids: readonly Id[]; readonly byId: Readonly<Record<Id, SummaryFacts>> },
+  statuses: ReadonlyMap<Id, StatusFacts>,
+  history: readonly CompletionRecord<Id>[],
+): AgentRow<Id>[] {
+  return history.flatMap(({ id, completedAt }) => {
+    const summary = list.byId[id]
+    const status = statuses.get(id)
+    if (!list.ids.includes(id) || summary === undefined || summary.origin === 'subagent' || summary.blank
+      || status?.completionUnread || status?.pendingInteraction || (status?.running ?? summary.running)) return []
+    return [{ id, title: summary.displayTitle, workspace: basename(summary.cwd), updatedAt: completedAt, state: 'done' as const }]
+  })
 }

@@ -142,6 +142,16 @@ it('hides the session header utilities on phones while leaving the corner contro
   expect(phone).not.toContain('[data-conversation-header-corner]{display:none')
 })
 
+it('keeps Harness settings readable and aligns switches with their descriptions on phones', () => {
+  const phone = phoneDocument('<head></head>').split('<style data-dsh-remote-control-drawer>')[0]
+  const settings = '[data-shortcut-modal="settings"]'
+  expect(phone).toContain(`${settings} .hp-set-title{font-size:16px;line-height:24px;`)
+  expect(phone).toContain(`${settings} .hp-set-hint{font-size:14px;line-height:21px}`)
+  expect(phone).toContain(`${settings} .hp-set-row:has(.hp-switch){flex-direction:row;align-items:center;`)
+  expect(phone).toContain(`${settings} .hp-set-control .hp-delegate-harness{max-width:100%;overflow-x:auto;`)
+  expect(phone).toContain(`${settings} .hp-set-control input.hp-set-number{width:88px !important;text-align:center !important}`)
+})
+
 it('keeps the phone session actions beside the right sidebar control', () => {
   const phone = phoneDocument('<head></head>')
   const frame = '[class*="_frame"]:has([class*="_sidebarCol"])'
