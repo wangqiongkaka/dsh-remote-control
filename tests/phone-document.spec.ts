@@ -38,7 +38,21 @@ it('keeps the jump-to-latest control just above the pinned composer', () => {
   const out = phoneDocument('<head></head>')
   const chat = '[class*="_frame"]:has([class*="_sidebarCol"]) [data-phase="active"] > '
     + '[data-conversation-content] > [data-conversation-scroll]:not(:has([data-conversation-composer-overlay]))'
-  expect(out).toContain(`}${chat} [class*="_toBottomSlot"]{bottom:16px !important}`)
+  expect(out).toContain(`}${chat} [class*="_toBottomSlot"]{bottom:8px !important}`)
+})
+
+it('clips the phone toolbar backgrounds to the composer’s rounded bottom corners', () => {
+  const out = phoneDocument('<head></head>')
+  expect(out).toContain('[data-composer-card] > [class*="_row"]{flex-wrap:nowrap !important;gap:4px !important;'
+    + 'border-radius:0 0 var(--dsw-radius-panel) var(--dsw-radius-panel);overflow-x:auto;overflow-y:hidden')
+})
+
+it('spaces phone composer controls evenly across the host tool groups', () => {
+  const out = phoneDocument('<head></head>')
+  const row = '[data-composer-card] > [class*="_row"]:has(> [class*="_tools"]:not([hidden]))'
+  expect(out).toContain(`${row} > [class*="_tools"] > [class*="_modes"],`
+    + `${row} > [class*="_trailing"] > [class*="_standardControls"]{display:contents}`)
+  expect(out).not.toContain(`${row} > [class*="_trailing"] > [class*="_standardControls"]{margin-left:auto}`)
 })
 
 it('keeps a boundary swipe in the chat instead of moving the whole phone page', () => {
