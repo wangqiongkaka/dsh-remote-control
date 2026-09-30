@@ -1,4 +1,4 @@
-/** Product copy for the remote-control dialog and the remote page's account section. */
+/** Product copy for the optional remote-control dialog. */
 
 export const NS = 'remote-control'
 
@@ -19,14 +19,6 @@ export const zh = {
   paired: '手机已连接，可在手机上直接使用这个工作区。',
   pairedAnother: '要配对另一台设备，请先停止远程控制。',
   pairedUntil: '访问有效期至',
-  account: '账号与余额',
-  accountSignedIn: '已登录 DeepSeek',
-  accountLoading: '正在加载…',
-  accountUnavailable: '暂时无法读取',
-  accountBalance: '余额',
-  accountBonus: '赠送余额',
-  accountUsage: '查看用量明细',
-  accountDesktopHint: '登录、退出和充值请在电脑上操作。',
   'agents.title': 'Agent 运行',
   'agents.board': 'Agent 看板',
   'agents.viewAll': '查看全部',
@@ -67,14 +59,6 @@ export const en: Record<RemoteControlKey, string> = {
   paired: 'A phone is connected and can use this workspace directly.',
   pairedAnother: 'To pair another device, stop remote control first.',
   pairedUntil: 'Access expires',
-  account: 'Account',
-  accountSignedIn: 'Signed in to DeepSeek',
-  accountLoading: 'Loading…',
-  accountUnavailable: 'Unavailable right now',
-  accountBalance: 'Balance',
-  accountBonus: 'Bonus balance',
-  accountUsage: 'View usage details',
-  accountDesktopHint: 'Sign in, sign out and top up on the Desktop app.',
   'agents.title': 'Agents',
   'agents.board': 'Agent board',
   'agents.viewAll': 'View all',

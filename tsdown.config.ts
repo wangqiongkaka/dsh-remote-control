@@ -36,7 +36,6 @@ export default [
       'client/index': 'src/client/index.ts',
       'client/keyboard': 'src/client/keyboard.ts',
       'client/drawer-style': 'src/client/drawer-style.ts',
-      'client/account': 'src/client/account.tsx',
       'client/SidebarDismiss': 'src/client/SidebarDismiss.tsx',
       'client/agent-board': 'src/client/agent-board.ts',
       'client/AgentBoard': 'src/client/AgentBoard.tsx',

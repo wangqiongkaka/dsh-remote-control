@@ -4,7 +4,6 @@ import { SlotCore } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { expect, it } from 'vitest'
 import { apply } from '../dist/client/index.js'
-import { formatBalance } from '../dist/client/account.js'
 
 // jsdom ships neither of these; the apply-time phone effect and the slot entries ask for both.
 Object.defineProperty(window, 'matchMedia', {
@@ -28,11 +27,10 @@ function slots(): SlotCore {
   return core
 }
 
-function context(core: SlotCore, disposers: (() => void)[] = [], remote: object = {}): Context {
+function context(core: SlotCore, disposers: (() => void)[] = []): Context {
   return {
-    remote,
     effect: (register: () => () => void) => { disposers.push(register()) },
-    locale: { register: () => () => {}, bind: () => (key: string) => key, getSnapshot: () => ({ active: 'zh-CN' }) },
+    locale: { register: () => () => {} },
     slots: {
       register: core.register.bind(core),
       inject: (_name: string, register: () => () => void) => register(),
@@ -671,99 +669,6 @@ it('hides the Models section from phone Settings and leaves it when selected', a
   }
 })
 
-// The Host registers Account & balance only in the Desktop renderer; a proxied page gets its own
-// read-only section over the same account calls, reported under the Host's client version.
-it('shows the signed-in account and balance on a proxied page', async () => {
-  const proxied = document.createElement('style')
-  proxied.setAttribute('data-dsh-remote-control', '')
-  const fetchBefore = globalThis.fetch
-  const settle = () => new Promise(resolve => setTimeout(resolve, 0))
-  const signedIn = { status: 'credential-stored', links: { usageUrl: 'https://platform.example/usage', topUpUrl: '' }, attempt: null }
-  /**
-   * Account calls as the Host serves them, recording the client identity each read carried. This
-   * plugin injects `remote` only, and cordis refuses `ctx.remote.account` without its own inject:
-   * the namespace is reachable through `ctx.get('remote.account')` alone.
-   */
-  const remote = (view: object, calls: string[]) => ({
-    get account(): never { throw new Error('cannot get property "remote.account" without inject') },
-    namespace: {
-      watch: async function* () { yield view },
-      getProfile: async (client: { version: string }) => {
-        calls.push(`profile:${client.version}`)
-        return { ok: true, value: { status: 'ready', value: { id: null, name: '王琼', contact: 'w***@gmail.com', avatarUrl: null } } }
-      },
-      getBalance: async (client: { version: string }) => {
-        calls.push(`balance:${client.version}`)
-        return { ok: true, value: { status: 'ready', value: [{ currency: 'CNY', balance: '1234.567' }], bonusWallets: [{ currency: 'CNY', balance: '0' }] } }
-      },
-    },
-    $stream: (options: { open: (signal: AbortSignal) => AsyncIterable<unknown> }) => {
-      const lifetime = new AbortController()
-      return {
-        async* [Symbol.asyncIterator]() {
-          for await (const value of options.open(lifetime.signal)) yield { value, accept: () => {} }
-        },
-        dispose: async () => { lifetime.abort() },
-      }
-    },
-  })
-  const activate = async (options: { proxy: boolean; view: object; version?: string }) => {
-    if (options.proxy) document.head.append(proxied)
-    else proxied.remove()
-    globalThis.fetch = (async () => Response.json(
-      options.version === undefined ? { active: true } : { active: true, clientVersion: options.version })) as typeof fetch
-    const calls: string[] = []
-    const core = slots()
-    const disposers: (() => void)[] = []
-    const host = remote(options.view, calls)
-    const ctx = context(core, disposers, host)
-    Object.assign(ctx, { get: (name: string) => name === 'remote.account' ? host.namespace : undefined })
-    apply(ctx)
-    await settle()
-    await settle()
-    const section = core.entries('settings.section').find(entry => entry.options.id === 'account')
-    return { calls, section, dispose: () => { for (const dispose of disposers) dispose() } }
-  }
-  try {
-    const phone = await activate({ proxy: true, view: signedIn, version: '0.2.0-rc.2' })
-    expect(phone.section?.options.order).toBe(-10)
-    expect(phone.calls.sort()).toEqual(['balance:0.2.0-rc.2', 'profile:0.2.0-rc.2'])
-    const store = (phone.section?.inject?.() as { store: { getSnapshot: () => unknown } }).store
-    expect(store.getSnapshot()).toMatchObject({
-      usageUrl: 'https://platform.example/usage',
-      profile: { status: 'ready', value: { name: '王琼' } },
-      balance: { status: 'ready', value: [{ currency: 'CNY', balance: '1234.567' }] },
-    })
-    phone.dispose()
-
-    // Signed out, the section stays away, as it does on Desktop.
-    const signedOut = await activate({ proxy: true, view: { ...signedIn, status: 'signed-out' }, version: '0.2.0-rc.2' })
-    expect(signedOut.section).toBeUndefined()
-    signedOut.dispose()
-
-    // Without the Host's version there is nothing honest to report: no section, no account call.
-    const unknown = await activate({ proxy: true, view: signedIn })
-    expect(unknown.section).toBeUndefined()
-    expect(unknown.calls).toEqual([])
-    unknown.dispose()
-
-    // A local page leaves account UI to the Host.
-    const local = await activate({ proxy: false, view: signedIn, version: '0.2.0-rc.2' })
-    expect(local.section).toBeUndefined()
-    local.dispose()
-  } finally {
-    proxied.remove()
-    globalThis.fetch = fetchBefore
-  }
-})
-
-it('formats balances the way the Desktop account section does', () => {
-  expect(formatBalance('1234.567', '¥')).toBe('¥1,234.56')
-  expect(formatBalance('0', '¥')).toBe('¥0.00')
-  expect(formatBalance('0.004', '$')).toBe('<$0.01')
-  expect(formatBalance('1000000', '$')).toBe('$1,000,000.00')
-  expect(formatBalance('-12.5', '¥')).toBe('-¥12.50')
-})
 
 it('closes the command launcher on a second click after its source is cleared', () => {
   const card = document.createElement('div')
