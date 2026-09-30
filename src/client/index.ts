@@ -13,6 +13,7 @@ import { SidebarDismiss } from './SidebarDismiss.tsx'
 import { followKeyboard } from './keyboard.ts'
 import { applyDrawerSelection } from './drawer-style.ts'
 import { compactChatDefaults } from './chat-defaults.ts'
+import { hideModelsSettings } from './settings-models.ts'
 import { followChatPulls, followSidebarSwipes } from './sidebar-swipe.ts'
 import { en, NS, zh, type RemoteControlKey } from './locales.ts'
 
@@ -66,6 +67,7 @@ export function apply(ctx: Context): void {
     let selection: (() => void) | undefined
     let swipes: (() => void) | undefined
     let pulls: (() => void) | undefined
+    let models: (() => void) | undefined
     const sync = (): void => {
       const phone = query.matches && proxiedFrame()
       follow?.()
@@ -76,6 +78,8 @@ export function apply(ctx: Context): void {
       swipes = phone ? followSidebarSwipes(() => { ctx.layout.toggleSidebar() }) : undefined
       pulls?.()
       pulls = phone ? followChatPulls() : undefined
+      models?.()
+      models = phone ? hideModelsSettings(ctx.slots) : undefined
     }
     sync()
     query.addEventListener('change', sync)
@@ -85,6 +89,7 @@ export function apply(ctx: Context): void {
       selection?.()
       swipes?.()
       pulls?.()
+      models?.()
     }
   }, 'remote-control: phone patches')
   // Any page that came through the proxy keeps Chat preferences in memory only (see chat-defaults),

@@ -21,6 +21,7 @@ function slots(): SlotCore {
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
       'shell.overlay': { kind: 'list', scope: 'root' },
       'settings.general.item': { kind: 'list', scope: 'root' },
+      'settings.section': { kind: 'list', scope: 'root' },
     },
   }, (() => null) as never)
   return core
@@ -444,6 +445,65 @@ it('rebounds an upward pull at the bottom without moving the composer', () => {
     for (const dispose of disposers) dispose()
     proxy.remove()
     frame.remove()
+  }
+})
+
+// Models configuration is a desktop task; the phone's Settings keep every other section.
+it('hides the Models section from phone Settings and leaves it when selected', async () => {
+  const proxied = document.createElement('style')
+  proxied.setAttribute('data-dsh-remote-control', '')
+  const modal = document.createElement('div')
+  modal.setAttribute('data-shortcut-modal', 'settings')
+  const cell = (label: string, current = false): string => '<button type="button" class="s_navCell"'
+    + (current ? ' aria-current="true"' : '') + `><svg></svg><span class="s_navLabel">${label}</span></button>`
+  const activate = (narrow: boolean, installProxyStyle: boolean): { core: SlotCore; dispose: () => void } => {
+    if (installProxyStyle) document.head.append(proxied)
+    else proxied.remove()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: narrow, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+    const core = slots()
+    core.register({ name: 'settings.section', id: 'general', order: 0, label: '通用' } as never, (() => null) as never)
+    core.register({ name: 'settings.section', id: 'models', order: 10, label: () => '模型' } as never, (() => null) as never)
+    const disposers: (() => void)[] = []
+    apply(context(core, disposers))
+    return { core, dispose: () => { for (const dispose of disposers) dispose() } }
+  }
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0))
+  const button = (label: string) => [...modal.querySelectorAll('button')]
+    .find(candidate => candidate.textContent === label)!
+  try {
+    // The Settings dialog opens on Models (a remembered choice): the phone hides it and moves on.
+    modal.innerHTML = `<nav><div class="s_navList">${cell('通用')}${cell('模型', true)}</div></nav>`
+    document.body.append(modal)
+    let picked = ''
+    modal.addEventListener('click', (event) => { picked = (event.target as Element).textContent ?? '' })
+    const phone = activate(true, true)
+    expect(button('模型').style.display).toBe('none')
+    expect(button('通用').style.display).toBe('')
+    expect(picked).toBe('通用')
+    // A dialog opened later is handled too.
+    modal.innerHTML = `<nav><div class="s_navList">${cell('通用', true)}${cell('模型')}</div></nav>`
+    await settle()
+    expect(button('模型').style.display).toBe('none')
+    phone.dispose()
+    // Disposing the phone patch gives the row back.
+    expect(button('模型').style.display).toBe('')
+
+    // A local window keeps its Models section.
+    modal.innerHTML = `<nav><div class="s_navList">${cell('通用', true)}${cell('模型')}</div></nav>`
+    const local = activate(true, false)
+    await settle()
+    expect(button('模型').style.display).toBe('')
+    local.dispose()
+  } finally {
+    proxied.remove()
+    modal.remove()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
   }
 })
 
