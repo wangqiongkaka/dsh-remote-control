@@ -20,6 +20,7 @@ function slots(): SlotCore {
       'conversation.header.leading': { kind: 'single', scope: 'root' },
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
       'shell.overlay': { kind: 'list', scope: 'root' },
+      'settings.general.item': { kind: 'list', scope: 'root' },
     },
   }, (() => null) as never)
   return core
@@ -32,6 +33,8 @@ function context(core: SlotCore, disposers: (() => void)[] = []): Context {
     slots: {
       register: core.register.bind(core),
       inject: (_name: string, register: () => () => void) => register(),
+      entries: core.entries.bind(core),
+      subscribe: core.subscribe.bind(core),
     },
     layout: { toggleSidebar: () => {} },
   } as unknown as Context
@@ -256,6 +259,53 @@ it('closes an open phone sidebar with a reverse swipe inside that sidebar', () =
       configurable: true,
       value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
     })
+  }
+})
+
+// Chat preferences are page-local on a proxied page (the Host persists them for loopback pages
+// only), so every phone load would open at Detailed; the remote page starts both at Compact.
+it('starts remote chat work steps and performance usage at compact, once per registration', async () => {
+  const proxied = document.createElement('style')
+  proxied.setAttribute('data-dsh-remote-control', '')
+  /** One Chat settings row, registered the way the shell's Chat plugin does. */
+  const row = (core: SlotCore, id: string, setter: string, calls: string[]): void => {
+    core.register({
+      name: 'settings.general.item', id,
+      inject: () => ({ [setter]: (mode: string) => { calls.push(`${id}:${mode}`) } }),
+    } as never, (() => null) as never)
+  }
+  const activate = (installProxyStyle: boolean): { calls: string[]; core: SlotCore; dispose: () => void } => {
+    if (installProxyStyle) document.head.append(proxied)
+    else proxied.remove()
+    const calls: string[] = []
+    const core = slots()
+    row(core, 'transcript-view', 'setTranscriptView', calls)
+    row(core, 'link-opening', 'setLinkOpening', calls)
+    const disposers: (() => void)[] = []
+    apply(context(core, disposers))
+    return { calls, core, dispose: () => { for (const dispose of disposers) dispose() } }
+  }
+  try {
+    const remote = activate(true)
+    expect(remote.calls).toEqual(['transcript-view:compact'])
+    // A row the Chat plugin registers later still starts at Compact...
+    row(remote.core, 'performance-usage', 'setPerformanceUsage', remote.calls)
+    await Promise.resolve()
+    expect(remote.calls).toEqual(['transcript-view:compact', 'performance-usage:compact'])
+    // ...and later ledger changes leave a choice made on the phone alone.
+    row(remote.core, 'other', 'setOther', remote.calls)
+    await Promise.resolve()
+    expect(remote.calls).toEqual(['transcript-view:compact', 'performance-usage:compact'])
+    remote.dispose()
+
+    // A local page keeps the shell's own defaults and its persisted choice.
+    const local = activate(false)
+    row(local.core, 'performance-usage', 'setPerformanceUsage', local.calls)
+    await Promise.resolve()
+    expect(local.calls).toEqual([])
+    local.dispose()
+  } finally {
+    proxied.remove()
   }
 })
 

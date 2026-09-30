@@ -12,6 +12,7 @@ import { NARROW, SidebarToggle, proxiedFrame, type SidebarToggleInjected } from 
 import { SidebarDismiss } from './SidebarDismiss.tsx'
 import { followKeyboard } from './keyboard.ts'
 import { applyDrawerSelection } from './drawer-style.ts'
+import { compactChatDefaults } from './chat-defaults.ts'
 import { followSidebarSwipes } from './sidebar-swipe.ts'
 import { en, NS, zh, type RemoteControlKey } from './locales.ts'
 
@@ -82,6 +83,9 @@ export function apply(ctx: Context): void {
       swipes?.()
     }
   }, 'remote-control: phone patches')
+  // Any page that came through the proxy keeps Chat preferences in memory only (see chat-defaults),
+  // whatever its width: it opens at Compact work steps and performance usage.
+  ctx.effect(() => proxiedFrame() ? compactChatDefaults(ctx.slots) : () => {}, 'remote-control: compact chat')
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities',
     id: 'remote-control',
