@@ -10,7 +10,8 @@
  * The same latch also costs a tap. A row changes shape on hover — it grows its trailing action
  * strip, drops the timestamp, swaps the folder icon for a chevron — and WebKit reads a tap that
  * first produces such a change as the hover, so opening a session took two taps. On a touch device
- * every row therefore keeps its resting shape.
+ * session and search rows therefore keep their resting shape. Project actions must instead stay
+ * visible because they contain the button that creates a session in that project.
  *
  * The drawer also groups the list into one outlined card per top-level Workspace, and at phone
  * width (where the proxy opens the drawer full screen) gives its rows touch-sized heights.
@@ -38,10 +39,10 @@ const DRAWER_SELECTION_STYLE = '[class*="_sessionRow"][aria-selected="true"]'
   + '[class*="_sessionRow"]:hover:not([aria-selected="true"]),'
   + '[class*="_searchResultRow"]:hover:not([aria-selected="true"]),'
   + '[class*="_projectRow"]:hover{background:transparent !important}'
-  // No latched layout either. An open row menu is the user's own state and keeps its shape.
+  // No latched layout on session/search rows. Project actions include New Session, so keep them visible.
   + '[class*="_sessionRow"]:hover:not([class*="_menuOpen"]) [class*="_rowActions"],'
-  + '[class*="_searchResultRow"]:hover:not([class*="_menuOpen"]) [class*="_rowActions"],'
-  + '[class*="_projectRow"]:hover:not([class*="_menuOpen"]) [class*="_rowActions"]{display:none !important}'
+  + '[class*="_searchResultRow"]:hover:not([class*="_menuOpen"]) [class*="_rowActions"]{display:none !important}'
+  + '[class*="_projectRow"] [class*="_rowActions"]{display:inline-flex !important}'
   + '[class*="_sessionRow"]:hover:not([class*="_menuOpen"]) [class*="_time"]{display:revert !important}'
   + '[class*="_sessionRow"]:hover:not([class*="_menuOpen"]) [class*="_pinIndicator"]{display:inline-flex !important}'
   + '[class*="_projectRow"]:hover [class*="_chevron"]{display:none !important}'

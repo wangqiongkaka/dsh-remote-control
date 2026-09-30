@@ -12,6 +12,7 @@ import { NARROW, SidebarToggle, proxiedFrame, type SidebarToggleInjected } from 
 import { SidebarDismiss } from './SidebarDismiss.tsx'
 import { followKeyboard } from './keyboard.ts'
 import { applyDrawerSelection } from './drawer-style.ts'
+import { followSidebarSwipes } from './sidebar-swipe.ts'
 import { en, NS, zh, type RemoteControlKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -62,12 +63,15 @@ export function apply(ctx: Context): void {
     const query = window.matchMedia(NARROW)
     let follow: (() => void) | undefined
     let selection: (() => void) | undefined
+    let swipes: (() => void) | undefined
     const sync = (): void => {
       const phone = query.matches && proxiedFrame()
       follow?.()
       follow = phone ? followKeyboard() : undefined
       selection?.()
       selection = phone ? applyDrawerSelection() : undefined
+      swipes?.()
+      swipes = phone ? followSidebarSwipes(() => { ctx.layout.toggleSidebar() }) : undefined
     }
     sync()
     query.addEventListener('change', sync)
@@ -75,6 +79,7 @@ export function apply(ctx: Context): void {
       query.removeEventListener('change', sync)
       follow?.()
       selection?.()
+      swipes?.()
     }
   }, 'remote-control: phone patches')
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({

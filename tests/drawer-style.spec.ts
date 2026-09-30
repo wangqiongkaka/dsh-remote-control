@@ -24,7 +24,7 @@ it('separates the current session from a latched hover in the drawer', () => {
 
 // WebKit treats a tap that first produces a hover-only layout change as the hover, so a row that
 // grows its action strip or drops its timestamp on that tap needs a second one to open.
-it('keeps every row at its resting shape on a touch device', () => {
+it('keeps session and search rows at their resting shape on a touch device', () => {
   const dispose = applyDrawerSelection()
   const css = sheet()?.textContent ?? ''
   expect(css).toContain('[class*="_rowActions"]{display:none !important}')
@@ -64,6 +64,14 @@ it('raises the drawer rows to touch height at phone width', () => {
   expect(phone).toContain('[class*="_logoRow"] button[class*="_toggle"]{width:40px !important;height:40px !important}')
   // Only the button itself: its label, mask and shortcut spans share the class prefix.
   expect(phone).toContain('button[class*="_newSession"]{height:44px !important}')
+  dispose()
+})
+
+it('keeps project actions visible on touch so a session can be created', () => {
+  const dispose = applyDrawerSelection()
+  const css = sheet()?.textContent ?? ''
+  expect(css).toContain('[class*="_projectRow"] [class*="_rowActions"]{display:inline-flex !important}')
+  expect(css).not.toContain('[class*="_projectRow"]:hover:not([class*="_menuOpen"]) [class*="_rowActions"]{display:none !important}')
   dispose()
 })
 
