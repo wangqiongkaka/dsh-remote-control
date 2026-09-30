@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, expect, it } from 'vitest'
-import { drawerOpen, drawerSessionPick } from '../dist/client/SidebarDismiss.js'
+import { drawerOpen, drawerNavigationPick } from '../dist/client/SidebarDismiss.js'
 
 /**
  * Minimal drawer DOM: the frame carries data-sidebar-collapsed exactly as
@@ -18,6 +18,8 @@ function drawer(collapsed: boolean): void {
     + '<div class="ui_workspace__sessionRow__h1" data-row-key="session:a"><span class="ui_workspace__title__h1">标题</span></div>'
     + '<button class="ui_sidebar__newSession__h1">新建</button>'
     + '<div class="ui_workspace__searchResultRow__h1">结果</div>'
+    + '<nav class="ui_sidebar__panelList__h1"><button class="ui_sidebar__panelRow__h1"><span>插件</span></button>'
+    + '<button class="ui_sidebar__panelRow__h1"><span>自动化任务</span></button></nav>'
     + '<div class="ui_workspace__sessionRow__h1" data-row-key="session:b">'
     + '<span class="ui_workspace__rowActions__h1"><button class="ui_workspace__iconButton__h1">…</button></span>'
     + '</div>'
@@ -38,21 +40,29 @@ function pick(selector: string): Element {
 }
 
 it('folds the drawer on a session row, a search result, and New Session', () => {
-  expect(drawerSessionPick(pick('[data-row-key="session:a"] > .ui_workspace__title__h1'))).toBe(true)
-  expect(drawerSessionPick(pick('.ui_workspace__searchResultRow__h1'))).toBe(true)
-  expect(drawerSessionPick(pick('.ui_sidebar__newSession__h1'))).toBe(true)
+  expect(drawerNavigationPick(pick('[data-row-key="session:a"] > .ui_workspace__title__h1'))).toBe(true)
+  expect(drawerNavigationPick(pick('.ui_workspace__searchResultRow__h1'))).toBe(true)
+  expect(drawerNavigationPick(pick('.ui_sidebar__newSession__h1'))).toBe(true)
+})
+
+it('folds the drawer after choosing Plugins or Automations', () => {
+  const rows = document.querySelectorAll('[class*="_panelRow"] span')
+  expect(rows).toHaveLength(2)
+  for (const row of rows) expect(drawerNavigationPick(row)).toBe(true)
+  drawer(true)
+  expect(drawerNavigationPick(pick('[class*="_panelRow"] span'))).toBe(false)
 })
 
 it('keeps the trailing action strip and off-drawer rows to themselves', () => {
-  expect(drawerSessionPick(pick('.ui_workspace__iconButton__h1'))).toBe(false)
-  expect(drawerSessionPick(pick('[data-row-key="session:z"]'))).toBe(false)
-  expect(drawerSessionPick(document)).toBe(false)
-  expect(drawerSessionPick(null)).toBe(false)
+  expect(drawerNavigationPick(pick('.ui_workspace__iconButton__h1'))).toBe(false)
+  expect(drawerNavigationPick(pick('[data-row-key="session:z"]'))).toBe(false)
+  expect(drawerNavigationPick(document)).toBe(false)
+  expect(drawerNavigationPick(null)).toBe(false)
 })
 
 it('reports the drawer open only while the frame has no collapse mark', () => {
   expect(drawerOpen(pick('[data-row-key="session:a"]'))).toBe(true)
   drawer(true)
   expect(drawerOpen(pick('[data-row-key="session:a"]'))).toBe(false)
-  expect(drawerSessionPick(pick('[data-row-key="session:a"]'))).toBe(false)
+  expect(drawerNavigationPick(pick('[data-row-key="session:a"]'))).toBe(false)
 })

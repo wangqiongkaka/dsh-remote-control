@@ -61,6 +61,7 @@ export function followKeyboard(): () => void {
   /** The tallest area the phone has reported while no keyboard was up; a keyboard only lowers it. */
   let resting = 0
   let poll: ReturnType<typeof setInterval> | undefined
+  let dismissTimer: ReturnType<typeof setTimeout> | undefined
   /** Write only on a real change: this runs on every viewport scroll and poll tick. */
   const write = (property: string, value: string): void => {
     if (root.style.getPropertyValue(property) !== value) root.style.setProperty(property, value)
@@ -120,6 +121,38 @@ export function followKeyboard(): () => void {
     // thing that can notice the keyboard closing.
     syncPoll()
   }
+  /** Let the host handle the gesture, then dismiss only a committed or processing submission. */
+  const dismissCommitted = (editor: HTMLElement): void => {
+    const card = editor.closest('[data-composer-card]')
+    if (document.activeElement !== editor || editor.getAttribute('contenteditable') !== 'true' || card === null) return
+    const hadText = (editor.textContent?.trim() ?? '') !== ''
+    const hadRail = card.querySelector('[class*="_rail"]') !== null
+    const beforePhase = editor.getAttribute('data-phase')
+    if (!hadText && !hadRail) return
+    if (dismissTimer !== undefined) clearTimeout(dismissTimer)
+    dismissTimer = setTimeout(() => {
+      dismissTimer = undefined
+      const phase = editor.getAttribute('data-phase')
+      const processing = phase !== beforePhase && (phase === 'adjudicating' || phase === 'submitting')
+      if (document.activeElement === editor && editor.isConnected
+        && (processing || ((editor.textContent?.trim() ?? '') === ''
+          && (!hadRail || card.querySelector('[class*="_rail"]') === null)))) editor.blur()
+    }, 0)
+  }
+  const onSubmitClick = (event: MouseEvent): void => {
+    if (!(event.target instanceof Element)) return
+    const button = event.target.closest('button[class*="_primary"]')
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return
+    const editor = button.closest('[data-composer-card]')?.querySelector<HTMLElement>('[data-composer-input]')
+    if (editor !== undefined && editor !== null) dismissCommitted(editor)
+  }
+  const onSubmitKey = (event: KeyboardEvent): void => {
+    if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.getModifierState('AltGraph')
+      || event.repeat || event.isComposing
+      || event.keyCode === 229 || (event.ctrlKey && event.metaKey)) return
+    const editor = event.target instanceof Element ? event.target.closest('[data-composer-input]') : null
+    if (editor instanceof HTMLElement && !editor.hasAttribute('data-composer-composing')) dismissCommitted(editor)
+  }
   apply()
   viewport.addEventListener('resize', apply)
   viewport.addEventListener('scroll', apply)
@@ -127,14 +160,19 @@ export function followKeyboard(): () => void {
   window.addEventListener('orientationchange', apply)
   document.addEventListener('focusin', onFocusIn)
   document.addEventListener('focusout', onFocusOut)
+  document.addEventListener('click', onSubmitClick, true)
+  document.addEventListener('keydown', onSubmitKey, true)
   return () => {
     if (poll !== undefined) clearInterval(poll)
+    if (dismissTimer !== undefined) clearTimeout(dismissTimer)
     viewport.removeEventListener('resize', apply)
     viewport.removeEventListener('scroll', apply)
     window.removeEventListener('resize', apply)
     window.removeEventListener('orientationchange', apply)
     document.removeEventListener('focusin', onFocusIn)
     document.removeEventListener('focusout', onFocusOut)
+    document.removeEventListener('click', onSubmitClick, true)
+    document.removeEventListener('keydown', onSubmitKey, true)
     root.removeAttribute(KEYBOARD_ATTRIBUTE)
     root.style.removeProperty(KEYBOARD_HEIGHT_VARIABLE)
     root.style.removeProperty(KEYBOARD_SHIFT_VARIABLE)

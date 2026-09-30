@@ -28,7 +28,7 @@ it('keeps the active phone composer at the bottom while the chat scrolls without
   const out = phoneDocument('<head></head>')
   const chat = '[class*="_frame"]:has([class*="_sidebarCol"]) [data-phase="active"] > '
     + '[data-conversation-content] > [data-conversation-scroll]:not(:has([data-conversation-composer-overlay]))'
-  expect(out).toContain(`}${chat}{padding-bottom:var(--dsh-composer-height,0px);overscroll-behavior-y:none}`)
+  expect(out).toContain(`}${chat}{padding-bottom:var(--dsh-composer-height,0px);overscroll-behavior-y:none;`)
   expect(out).toContain(`}${chat} > [data-composer-seat]{position:absolute !important;inset:auto 0 0}`)
 })
 
@@ -44,6 +44,21 @@ it('keeps the jump-to-latest control just above the pinned composer', () => {
 it('keeps a boundary swipe in the chat instead of moving the whole phone page', () => {
   const out = phoneDocument('<head></head>')
   expect(out).toContain('html,body{overflow:hidden;overscroll-behavior-y:none}')
+})
+
+it('hides the phone chat scrollbar without reserving its gutter', () => {
+  const out = phoneDocument('<head></head>')
+  const chat = '[class*="_frame"]:has([class*="_sidebarCol"]) [data-phase="active"] > '
+    + '[data-conversation-content] > [data-conversation-scroll]:not(:has([data-conversation-composer-overlay]))'
+  expect(out).toContain(`${chat}{padding-bottom:var(--dsh-composer-height,0px);overscroll-behavior-y:none;scrollbar-width:none;scrollbar-gutter:auto}`)
+  expect(out).toContain(`${chat}::-webkit-scrollbar{display:none}`)
+})
+
+it('hides the session header utilities on phones while leaving the corner control', () => {
+  const phone = phoneDocument('<head></head>')
+  const frame = '[class*="_frame"]:has([class*="_sidebarCol"])'
+  expect(phone).toContain(`${frame} header[data-window-drag] [class*="_headerUtilities"]{display:none !important}`)
+  expect(phone).not.toContain('[data-conversation-header-corner]{display:none')
 })
 
 it('appends the resize hint to the viewport meta the app already declares', () => {

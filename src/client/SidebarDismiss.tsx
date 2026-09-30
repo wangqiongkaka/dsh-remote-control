@@ -1,8 +1,8 @@
 /**
  * Click-away dismissal for the proxy's narrow drawer sidebar. A tap on a
- * session pick inside the drawer (session row, search result, New Session)
- * and a tap on the blank scrim beside it both fold the drawer back and land
- * the phone on the Conversation. The proxy's patch layer owns the scrim's
+ * navigation pick inside the drawer (session row, search result, New Session, panel page)
+ * and a tap on the blank scrim beside it fold the drawer to reveal the selected
+ * page. The proxy's patch layer owns the scrim's
  * visibility (`data-remote-control-scrim` is display-blocked only while the
  * drawer column is expanded) and keeps that column above the scrim, so the
  * column keeps its own taps.
@@ -12,8 +12,9 @@ import { useEffect, useRef } from 'react'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { proxiedFrame, useNarrow, type SidebarToggleInjected } from './SidebarToggle.tsx'
 
-/** Drawer picks that navigate to a Session: session rows, search results, New Session. */
-const SESSION_PICK = '[data-row-key^="session:"], [class*="_searchResultRow"], [class*="_newSession"]'
+/** Drawer picks that navigate away from the current page. */
+const NAVIGATION_PICK = '[data-row-key^="session:"], [class*="_searchResultRow"], [class*="_newSession"], '
+  + '[class*="_panelList"] button[class*="_panelRow"]'
 
 /** Whether the drawer sidebar is expanded at the frame containing the element. */
 export function drawerOpen(from: Element): boolean {
@@ -22,15 +23,15 @@ export function drawerOpen(from: Element): boolean {
 }
 
 /**
- * Whether a document click landed on a session pick inside the expanded
+ * Whether a document click landed on a navigation pick inside the expanded
  * drawer: the pick must sit in the sidebar column, outside the trailing
  * action strip (menus, pin, fork keep their taps to themselves), and the
  * drawer must still be open at its frame.
  */
-export function drawerSessionPick(target: EventTarget | null): boolean {
+export function drawerNavigationPick(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false
   if (target.closest('[class*="_rowActions"]') !== null) return false
-  const pick = target.closest(SESSION_PICK)
+  const pick = target.closest(NAVIGATION_PICK)
   return pick !== null && pick.closest('[class*="_sidebarCol"]') !== null && drawerOpen(pick)
 }
 
@@ -40,7 +41,7 @@ export type SidebarDismissProps = InjectFace<SidebarToggleInjected>
 /**
  * Render the drawer's dismissal layer: a transparent scrim (the proxy's patch
  * layer dims the page and gates the scrim's visibility) plus a capture-phase
- * document listener for taps on the drawer's own session picks.
+ * document listener for taps on the drawer's own navigation picks.
  * @returns the scrim, or null off a proxied narrow frame.
  */
 export function SidebarDismiss(props: SidebarDismissProps): React.JSX.Element | null {
@@ -54,7 +55,7 @@ export function SidebarDismiss(props: SidebarDismissProps): React.JSX.Element | 
     // row the tap is still travelling to — before that handler ran, which cost the tap its session.
     // A macrotask lands the fold after the whole dispatch instead, still within the same touch.
     const onPick = (event: Event): void => {
-      if (!drawerSessionPick(event.target)) return
+      if (!drawerNavigationPick(event.target)) return
       setTimeout(() => { toggle.current() }, 0)
     }
     document.addEventListener('click', onPick, true)

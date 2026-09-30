@@ -48,6 +48,20 @@ function focusField(): HTMLTextAreaElement {
   return field
 }
 
+function composer(): { card: HTMLElement; editor: HTMLElement; send: HTMLButtonElement; tool: HTMLButtonElement } {
+  const card = document.createElement('div')
+  card.setAttribute('data-composer-card', '')
+  card.innerHTML = '<div data-composer-input contenteditable="true" tabindex="0">草稿</div>'
+    + '<button class="_primary">发送</button><button class="_add">工具</button>'
+  document.body.append(card)
+  return {
+    card,
+    editor: card.querySelector<HTMLElement>('[data-composer-input]')!,
+    send: card.querySelector<HTMLButtonElement>('button._primary')!,
+    tool: card.querySelector<HTMLButtonElement>('button._add')!,
+  }
+}
+
 afterEach(() => {
   Reflect.deleteProperty(window, 'visualViewport')
   document.documentElement.removeAttribute(KEYBOARD_ATTRIBUTE)
@@ -55,6 +69,91 @@ afterEach(() => {
   document.documentElement.style.removeProperty(KEYBOARD_SHIFT_VARIABLE)
   vi.useRealTimers()
   vi.restoreAllMocks()
+})
+
+it('dismisses the keyboard only after a sent draft clears', () => {
+  vi.useFakeTimers()
+  visualViewport({ layout: 800, height: 800 })
+  const dispose = followKeyboard()
+  const { card, editor, send, tool } = composer()
+  try {
+    editor.focus()
+    send.click()
+    vi.advanceTimersByTime(0)
+    expect(document.activeElement).toBe(editor)
+
+    tool.addEventListener('click', () => { editor.textContent = '' })
+    tool.click()
+    vi.advanceTimersByTime(0)
+    expect(document.activeElement).toBe(editor)
+
+    editor.textContent = '草稿'
+    send.addEventListener('click', () => { editor.textContent = '' })
+    send.click()
+    vi.advanceTimersByTime(0)
+    expect(document.activeElement).not.toBe(editor)
+
+    const rail = document.createElement('div')
+    rail.className = 'ui_attachment__rail__h1'
+    card.append(rail)
+    editor.focus()
+    send.click()
+    vi.advanceTimersByTime(0)
+    expect(document.activeElement).toBe(editor)
+    send.addEventListener('click', () => { rail.remove() })
+    send.click()
+    vi.advanceTimersByTime(0)
+    expect(document.activeElement).not.toBe(editor)
+  } finally {
+    dispose()
+    card.remove()
+  }
+})
+
+it('dismisses after Enter submits but preserves Shift+Enter and IME composition', () => {
+  vi.useFakeTimers()
+  visualViewport({ layout: 800, height: 800 })
+  const dispose = followKeyboard()
+  const { card, editor } = composer()
+  try {
+    editor.focus()
+    editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true }))
+    vi.advanceTimersByTime(0)
+    expect(document.activeElement).toBe(editor)
+
+    editor.setAttribute('data-composer-composing', '')
+    editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    vi.advanceTimersByTime(0)
+    expect(document.activeElement).toBe(editor)
+    editor.removeAttribute('data-composer-composing')
+
+    editor.addEventListener('keydown', () => { editor.textContent = '' })
+    editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    vi.advanceTimersByTime(0)
+    expect(document.activeElement).not.toBe(editor)
+  } finally {
+    dispose()
+    card.remove()
+  }
+})
+
+it('dismisses when a submitted command enters processing before clearing its draft', () => {
+  vi.useFakeTimers()
+  visualViewport({ layout: 800, height: 800 })
+  const dispose = followKeyboard()
+  const { card, editor, send } = composer()
+  try {
+    editor.textContent = '/goal review'
+    editor.setAttribute('data-phase', 'claimed')
+    editor.focus()
+    send.addEventListener('click', () => { editor.setAttribute('data-phase', 'submitting') })
+    send.click()
+    vi.advanceTimersByTime(0)
+    expect(document.activeElement).not.toBe(editor)
+  } finally {
+    dispose()
+    card.remove()
+  }
 })
 
 it('shrinks the shell to the visual viewport while a keyboard is up', () => {
