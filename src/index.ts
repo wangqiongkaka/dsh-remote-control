@@ -7,8 +7,6 @@ import {
   type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse,
 } from 'node:http'
 import { promisify } from 'node:util'
-import { createRequire } from 'node:module'
-import { realpathSync } from 'node:fs'
 import { connect, type AddressInfo } from 'node:net'
 import type { Duplex } from 'node:stream'
 import type { Context } from '@deepseek-ai/cordis'
@@ -17,35 +15,6 @@ import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { phoneDocument } from './phone-document.ts'
-
-/** The Host process's entry script, through any bin symlink (a globally linked `dsh`, say). */
-function hostEntry(): string | undefined {
-  const entry = process.argv[1]
-  if (entry === undefined) return undefined
-  try { return realpathSync(entry) } catch { return entry }
-}
-
-/**
- * The Host's client version, as its own client reports it to Platform on account calls. The Host
- * inlines it into its client build, and every Host package ships that same version, so it is read
- * from the account package in the first module tree that has one: the Host process's entry first,
- * then this plugin's own tree.
- * @param from - module paths or URLs to resolve from, in order.
- * @returns the version, or undefined when no tree has the package.
- */
-export function hostClientVersion(from: readonly (string | undefined)[] = [hostEntry(), import.meta.url]): string | undefined {
-  for (const origin of from) {
-    if (origin === undefined) continue
-    try {
-      const manifest: unknown = createRequire(origin)('@deepseek-ai/dsh-deepseek-account/package.json')
-      const version = typeof manifest === 'object' && manifest !== null && 'version' in manifest ? manifest.version : undefined
-      if (typeof version === 'string' && version !== '') return version
-    } catch {
-      // Not in this tree; try the next one.
-    }
-  }
-  return undefined
-}
 
 export const name = 'dsh-remote-control'
 export const inject = ['connection', 'webServer', 'workspaceRegistry']
@@ -536,14 +505,12 @@ export function apply(ctx: Context, config: Config): void {
       throw error
     }
   }
-  const clientVersion = hostClientVersion()
   ctx.effect(() => ctx.connection.fetch.register({
     path: '/api/remote-control', methods: ['GET', 'POST'], requestBody: 'buffered',
     fetch: async (request) => {
-      // The remote page's account section reports the Host's client version (client/account.tsx).
-      if (request.method === 'GET') return Response.json({ ...active === undefined
+      if (request.method === 'GET') return Response.json(active === undefined
         ? { active: false }
-        : { active: true, paired: active.proxy.paired(), pairedUntil: active.proxy.pairedUntil() }, clientVersion })
+        : { active: true, paired: active.proxy.paired(), pairedUntil: active.proxy.pairedUntil() })
       let body: unknown
       try { body = await request.json() } catch { return new Response('Invalid JSON', { status: 400 }) }
       if (!record(body)) return new Response('Invalid request', { status: 400 })

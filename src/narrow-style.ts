@@ -7,6 +7,14 @@
  */
 const FRAME = '[class*="_frame"]:has([class*="_sidebarCol"])'
 
+/** The sidebar column as the phone drawer: always while it is open, and closed too while no right panel holds a track. */
+const DRAWER = `${FRAME}[data-rightbar-collapsed] [class*="_sidebarCol"],${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]`
+
+/** The shell's slow duration and in-out curve, which the right panel slides on. */
+const SLOW = 'var(--ds-transition-duration-slow,.3s)'
+const EASE = 'var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1))'
+const SLIDE = `transform ${SLOW} ${EASE}`
+
 /** The main chat scroller; other views own their composer overlay positioning. */
 const CHAT_SCROLL = `${FRAME} [data-phase="active"] > [data-conversation-content] > [data-conversation-scroll]:not(:has([data-conversation-composer-overlay]))`
 
@@ -40,10 +48,11 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // opaque pinned ends to the card's bottom corners instead of leaving square patches there. The host
   // splits those chips over two groups, so both dissolve into the row and their chips share the
   // one strip — kept as boxes, the model chip would sit fixed beside the send circle and leave
-  // the mode and harness chips a fraction of the row.
+  // the mode and harness chips a fraction of the row. No overscroll either: WebKit's rubber-band
+  // translates the whole strip, sticky ends included, so the pinned buttons would slide at its edges.
   + '[data-composer-card] > [class*="_row"]{flex-wrap:nowrap !important;gap:4px !important;'
   + 'border-radius:0 0 var(--dsw-radius-panel) var(--dsw-radius-panel);'
-  + 'overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:none}'
+  + 'overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:none;scrollbar-width:none}'
   + '[data-composer-card] > [class*="_row"]::-webkit-scrollbar{display:none}'
   + `${COMPOSER_ROW} > [class*="_tools"],${COMPOSER_ROW} > [class*="_trailing"]{display:contents}`
   // The host spaces row items apart, but its nested mode and model groups keep their own 4px
@@ -66,7 +75,8 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // which is what keeps a sliding glyph out of the pad a scroller would otherwise paint it in.
   + `${COMPOSER_ROW}{padding-left:0 !important;padding-right:0 !important}`
   + `${COMPOSER_ROW} > [class*="_tools"] > [class*="_add"]{position:sticky;left:0;z-index:2;`
-  + 'width:36px;padding-left:8px;border-radius:0;background:var(--dsw-specific-input-major)}'
+  // The host leaves the button's UA side padding in place; zero it so the glyph centres in the circle.
+  + 'width:36px;padding:0 0 0 8px;border-radius:0;background:var(--dsw-specific-input-major)}'
   + `${COMPOSER_ROW} > [class*="_tools"] > [class*="_add"]::before{content:"";position:absolute;z-index:-1;`
   + 'inset:0 0 0 8px;border-radius:999px;corner-shape:round;background:var(--dsw-specific-selector)}'
   + `${COMPOSER_ROW} > [class*="_tools"] > [class*="_add"]:hover:not(:disabled)::before{background:var(--dsw-alias-interactive-bg-hover-solid)}`
@@ -86,9 +96,9 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // A turn in flight widens the tail by one 34px circle and its gap; the floor follows it.
   + `${COMPOSER_ROW}:has(> [class*="_trailing"] > [class*="_primary"] ~ [class*="_primary"])::after{`
   + 'width:112px;margin-left:-116px}'
-  // Harness and quota chips carry the longest labels in the row; the ellipsis they already style
-  // now engages on a phone instead of letting one chip take the whole line.
-  + '[data-composer-card] > [class*="_row"] [class*="hp-chip"]{max-width:104px}'
+  // The strip scrolls, so every chip shows its whole label: lift harness-provider's own 220px cap,
+  // which would otherwise ellipsize a long harness or model name.
+  + `${COMPOSER_ROW} [class*="hp-chip"]{max-width:none}`
   // The row is a scroll container, which clips in BOTH axes — and the harness chips' menus and the
   // quota panel pop absolutely-positioned ABOVE the row from inside it, so the clip would swallow
   // them whole. While one is open its anchor stops being the positioning context: the popup then
@@ -99,7 +109,10 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + `${COMPOSER_ROW}:has([class*="hp-menu"]) [class*="hp-anchor"],`
   + `${COMPOSER_ROW}:has([class*="hp-panel"]) [class*="hp-anchor"]{position:static}`
   + `${COMPOSER_ROW} [class*="hp-menu"],${COMPOSER_ROW} [class*="hp-panel"]{bottom:50px !important}`
-  + '[data-composer-card] > [class*="_row"] [class*="_modes"],[data-composer-card] > [class*="_row"] [class*="_standardControls"]{gap:4px !important}'
+  // A plugin seat that groups its own chips (the harness selector with its quota chip) spaces them
+  // 12px apart; they share the row's 4px spacing too.
+  + '[data-composer-card] > [class*="_row"] [class*="_modes"],[data-composer-card] > [class*="_row"] [class*="_standardControls"],'
+  + '[data-composer-card] > [class*="_row"] [class*="hp-root"]{gap:4px !important}'
   // Overlay cards clamp their height against the layout viewport, which stays taller than the
   // visible area while a phone's browser chrome is drawn over it: size them by the dynamic
   // viewport so the tail of a menu is not parked under the toolbar.
@@ -116,6 +129,11 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + `${CHAT_SCROLL}{overscroll-behavior-y:none;scrollbar-width:none;scrollbar-gutter:auto}`
   + `${CHAT_SCROLL}::-webkit-scrollbar{display:none}`
   + `${CHAT_SCROLL}::after{content:"";flex:none;height:var(--dsh-composer-height,0px)}`
+  // The host insets the transcript 16px inside the composer's own 16px clearance, which leaves a
+  // phone's text barely 84% of the screen: line it up with the input card instead. The turn rail
+  // lives in that inset and would sit over the text's line ends, so a phone goes without it.
+  + `${FRAME} [class*="_scroll"]:has(> [class*="_column"][data-chat-flow]){padding-left:16px !important;padding-right:16px !important}`
+  + `${FRAME} [class*="_slot"]:has(+ [class*="_root"] > [class*="_scroll"] > [data-chat-flow]){display:none !important}`
   + `${CHAT_SCROLL} > [data-composer-seat]{position:absolute !important;inset:auto 0 0}`
   // The shell's sticky jump-to-latest control rides the scroller's bottom edge, which the pinned
   // composer covers: lift it by the composer's measured height plus an 8px gap.
@@ -152,18 +170,35 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '<style data-dsh-remote-control-drawer>'
   + '@media (max-width: 1023px){'
   + `${FRAME}[data-rightbar-collapsed]{grid-template-columns:0 minmax(0,1fr) 0 !important}`
-  + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]{position:fixed;top:0;bottom:0;`
-  + 'left:0;width:min(84vw,320px);z-index:30;box-shadow:0 0 0 100vmax rgb(0 0 0/.4)}'
-  // The dismissal scrim fills the frame beside the drawer column and only takes taps while the
-  // drawer is expanded (the client's SidebarDismiss owns the element and its toggle).
-  + '[data-remote-control-scrim]{position:fixed;inset:0;z-index:25;display:none}'
-  + `${FRAME}:not([data-sidebar-collapsed]) [data-remote-control-scrim]{display:block}`
+  // The shell auto-places its three columns in order. A fixed drawer leaves that flow, and the
+  // conversation would then take the zero-width first track and vanish: pin both to their own.
+  + `${FRAME} > [class*="_centerCol"]{grid-column:2;grid-row:1}`
+  + `${FRAME} > [data-rightbar-col]{grid-column:3;grid-row:1}`
+  // The drawer slides in from the left edge and back out on the right panel's own slide (the shell's
+  // slow duration and in-out curve); closed, it parks off-screen and goes hidden once the slide ends,
+  // so it takes no taps or tab stops. A frame whose right panel holds a track keeps the shell's own
+  // geometry for a closed drawer.
+  + `${DRAWER}{position:fixed;top:0;bottom:0;left:0;width:min(84vw,320px);z-index:30}`
+  + `${FRAME}[data-rightbar-collapsed][data-sidebar-collapsed] [class*="_sidebarCol"]{transform:translateX(-100%);`
+  + `visibility:hidden;transition:${SLIDE},visibility 0s linear ${SLOW}}`
+  // The shell swaps the closing sidebar's content for its rail partway through: fade it out with
+  // the shell's own 150ms content fade instead of showing rail icons in the sliding panel.
+  + `${FRAME}[data-rightbar-collapsed][data-sidebar-collapsed] [class*="_sidebarCol"] > *{opacity:0;transition:opacity .15s}`
+  + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]{transform:none;visibility:visible;transition:${SLIDE}}`
+  // The dismissal scrim fills the frame beside the drawer and dims it, fading with the slide; it only
+  // takes taps while the drawer is expanded (the client's SidebarDismiss owns the element and its toggle).
+  + `[data-remote-control-scrim]{position:fixed;inset:0;z-index:25;background:rgb(0 0 0/.4);opacity:0;pointer-events:none;`
+  + `transition:opacity ${SLOW} ${EASE}}`
+  + `${FRAME}:not([data-sidebar-collapsed]) [data-remote-control-scrim]{opacity:1;pointer-events:auto}`
+  + '@media (prefers-reduced-motion: reduce){'
+  + `${FRAME} [class*="_sidebarCol"],${FRAME} [class*="_sidebarCol"] > *,[data-remote-control-scrim]{transition:none !important}`
+  + '}'
   + '}'
   // A phone has no room to keep beside the drawer: there the open sidebar takes the whole screen,
   // and the collapse control in the sidebar's own logo row is the way back. The shell sizes the
   // sidebar content inline at the column's track width, which the full column overrides.
   + '@media (max-width: 720px){'
-  + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]{width:100vw;box-shadow:none}`
+  + `${DRAWER}{width:100vw}`
   // Its 6px foot would park Settings on the screen's bottom edge: take the chat's bottom clearance.
   + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"] [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important;`
   + 'padding-bottom:max(32px,env(safe-area-inset-bottom)) !important}'

@@ -3,6 +3,7 @@ import type { UserConfig } from 'tsdown'
 const clientExternals = [
   'react',
   'react/jsx-runtime',
+  'react-dom',
   '@deepseek-ai/cordis',
   '@deepseek-ai/dsh-client-ui-primitives',
   '@deepseek-ai/dsh-client-ui-slots',
@@ -35,12 +36,13 @@ export default [
       'client/index': 'src/client/index.ts',
       'client/keyboard': 'src/client/keyboard.ts',
       'client/drawer-style': 'src/client/drawer-style.ts',
-      'client/account': 'src/client/account.tsx',
       'client/SidebarDismiss': 'src/client/SidebarDismiss.tsx',
+      'client/agent-board': 'src/client/agent-board.ts',
+      'client/AgentBoard': 'src/client/AgentBoard.tsx',
       'phone-document': 'src/phone-document.ts',
     },
     outDir: 'dist', format: 'esm', platform: 'node', clean: false,
     fixedExtension: false, dts: true,
-    external: [/^@deepseek-ai\//, /^react(?:\/|$)/, /^qrcode(?:\/|$)/],
+    external: [/^@deepseek-ai\//, /^react(?:-dom)?(?:\/|$)/, /^qrcode(?:\/|$)/],
   },
 ] satisfies UserConfig[]

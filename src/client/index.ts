@@ -4,18 +4,18 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { RemoteControlAction, type RemoteControlInjected } from './RemoteControlAction.tsx'
 import { NARROW, SidebarToggle, proxiedFrame, type SidebarToggleInjected } from './SidebarToggle.tsx'
 import { SidebarDismiss } from './SidebarDismiss.tsx'
+import { AgentBoard, type AgentBoardInjected, type HarnessRemote } from './AgentBoard.tsx'
 import { followKeyboard } from './keyboard.ts'
 import { applyDrawerSelection } from './drawer-style.ts'
 import { compactChatDefaults } from './chat-defaults.ts'
 import { hideModelsSettings } from './settings-models.ts'
-import { phoneAccount, type AccountRemote } from './account.tsx'
-import { followChatPulls, followSidebarSwipes } from './sidebar-swipe.ts'
+import { followChatPulls, followSidebarSwipes, followStripPulls, landOnDrawer } from './sidebar-swipe.ts'
 import { en, NS, zh, type RemoteControlKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -24,7 +24,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
-export const inject = ['slots', 'locale', 'layout', 'remote']
+export const inject = ['slots', 'locale', 'layout']
 
 async function command(action: 'start' | 'stop', workspaceId?: string): Promise<object> {
   const response = await fetch('/api/remote-control', {
@@ -68,7 +68,9 @@ export function apply(ctx: Context): void {
     let selection: (() => void) | undefined
     let swipes: (() => void) | undefined
     let pulls: (() => void) | undefined
+    let strips: (() => void) | undefined
     let models: (() => void) | undefined
+    let landing: (() => void) | undefined
     const sync = (): void => {
       const phone = query.matches && proxiedFrame()
       follow?.()
@@ -79,8 +81,12 @@ export function apply(ctx: Context): void {
       swipes = phone ? followSidebarSwipes(() => { ctx.layout.toggleSidebar() }) : undefined
       pulls?.()
       pulls = phone ? followChatPulls() : undefined
+      strips?.()
+      strips = phone ? followStripPulls() : undefined
       models?.()
       models = phone ? hideModelsSettings(ctx.slots) : undefined
+      landing?.()
+      landing = phone ? landOnDrawer(() => { ctx.layout.toggleSidebar() }) : undefined
     }
     sync()
     query.addEventListener('change', sync)
@@ -90,27 +96,14 @@ export function apply(ctx: Context): void {
       selection?.()
       swipes?.()
       pulls?.()
+      strips?.()
       models?.()
+      landing?.()
     }
   }, 'remote-control: phone patches')
   // Any page that came through the proxy keeps Chat preferences in memory only (see chat-defaults),
   // whatever its width: it opens at Compact work steps and performance usage.
   ctx.effect(() => proxiedFrame() ? compactChatDefaults(ctx.slots) : () => {}, 'remote-control: compact chat')
-  // The Host shows Account & balance only in the Desktop renderer; a proxied page reads the same
-  // account calls into its own section (see account.tsx).
-  ctx.effect(() => proxiedFrame() ? phoneAccount({
-    slots: ctx.slots,
-    // This plugin carries no Host account types; the calls it makes are declared in account.tsx.
-    remote: (ctx as unknown as { remote: AccountRemote }).remote,
-    locale: () => ctx.locale.getSnapshot().active,
-    version: async () => {
-      const response = await fetch('/api/remote-control')
-      const state: unknown = response.ok ? await response.json() : undefined
-      const version = typeof state === 'object' && state !== null && 'clientVersion' in state ? state.clientVersion : undefined
-      return typeof version === 'string' && version !== '' ? version : undefined
-    },
-    label: () => ctx.locale.bind(NS)('account'),
-  }) : () => {}, 'remote-control: phone account')
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
     name: 'conversation.session.header.utilities',
     id: 'remote-control',
@@ -143,6 +136,27 @@ export function apply(ctx: Context): void {
       toggleSidebar: () => { ctx.layout.toggleSidebar() },
     }),
   }, SidebarToggle))
+  // The drawer's Agent card and board, in New Session's seat (proxy narrow frames only).
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'remote-control.agents',
+    locale: NS,
+    inject: (): AgentBoardInjected => ({
+      openSession: (sessionId) => {
+        (ctx.get('uiWorkspace') as UiWorkspace | undefined)?.openSession(sessionId)
+      },
+      harnesses: async (sessionIds) => {
+        // harness-provider's Remote namespace. Declaring it in `inject` would hold this whole plugin
+        // back without that plugin, and cordis refuses `ctx.remote.harness` undeclared, so read it
+        // through `ctx.get`. Until it answers the board keeps its status dots and asks again later.
+        const remote = ctx.get('remote.harness') as HarnessRemote | undefined
+        if (remote === undefined) throw new Error('harness-provider is not mounted')
+        const result = await remote.harnesses({ sessionIds })
+        if (!result.ok) throw new Error(result.error.message)
+        return result.value
+      },
+    }),
+  }, AgentBoard))
   // The drawer's dismissal layer: session picks and the blank scrim beside the
   // drawer both fold it back onto the Conversation (proxy narrow frames only).
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({

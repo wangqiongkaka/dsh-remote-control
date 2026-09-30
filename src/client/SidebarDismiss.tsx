@@ -2,19 +2,30 @@
  * Click-away dismissal for the proxy's narrow drawer sidebar. A tap on a
  * navigation pick inside the drawer (session row, search result, New Session, panel page)
  * and a tap on the blank scrim beside it fold the drawer to reveal the selected
- * page. The proxy's patch layer owns the scrim's
- * visibility (`data-remote-control-scrim` is display-blocked only while the
- * drawer column is expanded) and keeps that column above the scrim, so the
- * column keeps its own taps.
+ * page. The proxy's patch layer owns the scrim's look (it dims the page and
+ * fades with the drawer's slide, taking taps only while the drawer column is
+ * expanded) and keeps that column above the scrim, so the column keeps its
+ * own taps.
  */
 
 import { useEffect, useRef } from 'react'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { proxiedFrame, useNarrow, type SidebarToggleInjected } from './SidebarToggle.tsx'
 
+/** Marks this plugin's own drawer rows that open a Session (the Agent board's). */
+export const DRAWER_PICK_ATTRIBUTE = 'data-remote-control-pick'
+
 /** Drawer picks that navigate away from the current page. */
 const NAVIGATION_PICK = '[data-row-key^="session:"], [class*="_searchResultRow"], [class*="_newSession"], '
-  + '[class*="_panelList"] button[class*="_panelRow"]'
+  + `[class*="_panelList"] button[class*="_panelRow"], [${DRAWER_PICK_ATTRIBUTE}]`
+
+/**
+ * A Workspace row's New Session button. It sits in the row's action strip beside the Workspace
+ * menu and carries no mark of its own, so it is known by its label in the host's two dictionaries
+ * (ui-workspace `actions.newSession.aria`).
+ */
+const WORKSPACE_NEW_SESSION = '[class*="_projectRow"] [class*="_rowActions"] '
+  + 'button:is([aria-label^="在“"][aria-label$="”中新建会话"], [aria-label^="New session in "])'
 
 /** Whether the drawer sidebar is expanded at the frame containing the element. */
 export function drawerOpen(from: Element): boolean {
@@ -25,13 +36,14 @@ export function drawerOpen(from: Element): boolean {
 /**
  * Whether a document click landed on a navigation pick inside the expanded
  * drawer: the pick must sit in the sidebar column, outside the trailing
- * action strip (menus, pin, fork keep their taps to themselves), and the
- * drawer must still be open at its frame.
+ * action strip (menus, pin, fork keep their taps to themselves) except for a
+ * Workspace row's New Session, and the drawer must still be open at its frame.
  */
 export function drawerNavigationPick(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false
-  if (target.closest('[class*="_rowActions"]') !== null) return false
-  const pick = target.closest(NAVIGATION_PICK)
+  const create = target.closest(WORKSPACE_NEW_SESSION)
+  if (create === null && target.closest('[class*="_rowActions"]') !== null) return false
+  const pick = create ?? target.closest(NAVIGATION_PICK)
   return pick !== null && pick.closest('[class*="_sidebarCol"]') !== null && drawerOpen(pick)
 }
 

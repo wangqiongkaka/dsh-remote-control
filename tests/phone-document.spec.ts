@@ -11,17 +11,45 @@ it('adds the keyboard-aware viewport meta to a document that ships none', () => 
 it('opens the drawer full screen at phone width and keeps the tablet drawer', () => {
   const out = phoneDocument('<html><head></head><body></body></html>')
   const drawer = out.slice(out.indexOf('<style data-dsh-remote-control-drawer>'))
-  const open = '[class*="_frame"]:has([class*="_sidebarCol"]):not([data-sidebar-collapsed]) [class*="_sidebarCol"]'
+  const frame = '[class*="_frame"]:has([class*="_sidebarCol"])'
+  const open = `${frame}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]`
+  const column = `${frame}[data-rightbar-collapsed] [class*="_sidebarCol"],${open}`
   // Tablets keep the 320px drawer beside the dimmed page.
-  expect(drawer).toContain(`${open}{position:fixed;top:0;bottom:0;left:0;width:min(84vw,320px)`)
-  // A phone gets the whole screen, with nothing left for the scrim's shadow to dim.
+  expect(drawer).toContain(`${column}{position:fixed;top:0;bottom:0;left:0;width:min(84vw,320px);z-index:30}`)
+  // A phone gets the whole screen.
   const phone = drawer.slice(drawer.indexOf('@media (max-width: 720px){'))
   expect(phone).not.toBe(drawer)
-  expect(phone).toContain(`${open}{width:100vw;box-shadow:none}`)
+  expect(phone).toContain(`${column}{width:100vw}`)
   // The shell sizes the sidebar content inline at its track width; the full column overrides it,
   // and lifts Settings off the screen's bottom edge by the chat's own bottom clearance.
   expect(phone).toContain(`${open} [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important;`
     + 'padding-bottom:max(32px,env(safe-area-inset-bottom)) !important}')
+})
+
+// The shell auto-places its sidebar, conversation and right columns in order. The fixed drawer
+// leaves that flow, which put the conversation into the zero-width first track: a black phone page.
+it('keeps the phone conversation in its own grid track while the drawer is fixed', () => {
+  const out = phoneDocument('<html><head></head><body></body></html>')
+  const drawer = out.slice(out.indexOf('<style data-dsh-remote-control-drawer>'))
+  const frame = '[class*="_frame"]:has([class*="_sidebarCol"])'
+  expect(drawer).toContain(`${frame} > [class*="_centerCol"]{grid-column:2;grid-row:1}`)
+  expect(drawer).toContain(`${frame} > [data-rightbar-col]{grid-column:3;grid-row:1}`)
+})
+
+// The left drawer popped in and out while the right panel slid: it now slides on the right panel's
+// own duration and curve, parks hidden off-screen once closed, and the scrim fades with it.
+it('slides the phone drawer in and out like the right panel', () => {
+  const out = phoneDocument('<html><head></head><body></body></html>')
+  const drawer = out.slice(out.indexOf('<style data-dsh-remote-control-drawer>'))
+  const frame = '[class*="_frame"]:has([class*="_sidebarCol"])'
+  const slide = 'transform var(--ds-transition-duration-slow,.3s) var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1))'
+  expect(drawer).toContain(`${frame}[data-rightbar-collapsed][data-sidebar-collapsed] [class*="_sidebarCol"]{transform:translateX(-100%);`
+    + `visibility:hidden;transition:${slide},visibility 0s linear var(--ds-transition-duration-slow,.3s)}`)
+  expect(drawer).toContain(`${frame}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]{transform:none;visibility:visible;transition:${slide}}`)
+  expect(drawer).toContain('[data-remote-control-scrim]{position:fixed;inset:0;z-index:25;background:rgb(0 0 0/.4);opacity:0;pointer-events:none;')
+  expect(drawer).toContain(`${frame}:not([data-sidebar-collapsed]) [data-remote-control-scrim]{opacity:1;pointer-events:auto}`)
+  expect(drawer).toContain('@media (prefers-reduced-motion: reduce){')
+  expect(drawer).not.toContain('box-shadow:0 0 0 100vmax')
 })
 
 it('keeps the active phone composer at the bottom while the chat scrolls without a keyboard', () => {
@@ -35,6 +63,16 @@ it('keeps the active phone composer at the bottom while the chat scrolls without
   // taller than the room above the composer could not scroll its last lines out from under it.
   expect(out).toContain(`}${chat}::after{content:"";flex:none;height:var(--dsh-composer-height,0px)}`)
   expect(out).not.toContain('padding-bottom:var(--dsh-composer-height')
+})
+
+// The host's transcript sits 16px inside the composer's clearance: a phone's text lines up with the
+// input card instead, and the turn rail that lived in that inset stays off the text's line ends.
+it('widens the phone transcript to the input card and drops the turn rail', () => {
+  const out = phoneDocument('<head></head>')
+  const phone = out.slice(out.indexOf('@media (max-width: 720px){'))
+  const frame = '[class*="_frame"]:has([class*="_sidebarCol"])'
+  expect(phone).toContain(`${frame} [class*="_scroll"]:has(> [class*="_column"][data-chat-flow]){padding-left:16px !important;padding-right:16px !important}`)
+  expect(phone).toContain(`${frame} [class*="_slot"]:has(+ [class*="_root"] > [class*="_scroll"] > [data-chat-flow]){display:none !important}`)
 })
 
 // The shell's sticky jump-to-latest control rides the scroller's bottom edge, under the pinned
@@ -58,6 +96,30 @@ it('spaces phone composer controls evenly across the host tool groups', () => {
   expect(out).toContain(`${row} > [class*="_tools"] > [class*="_modes"],`
     + `${row} > [class*="_trailing"] > [class*="_standardControls"]{display:contents}`)
   expect(out).not.toContain(`${row} > [class*="_trailing"] > [class*="_standardControls"]{margin-left:auto}`)
+})
+
+// The pinned attach button draws its circle from 8px in; the UA's right padding left behind would
+// centre the + glyph 3px left of that circle.
+it('centres the attach + glyph in its redrawn circle', () => {
+  const out = phoneDocument('<head></head>')
+  expect(out).toContain('[class*="_add"]{position:sticky;left:0;z-index:2;width:36px;padding:0 0 0 8px;')
+  expect(out).toContain('inset:0 0 0 8px;border-radius:999px')
+})
+
+// The harness selector groups its chip with the quota chip 12px apart. The strip scrolls, so no
+// chip is capped: a capped quota chip painted its ring over the model chip, and labels ellipsized.
+it('keeps plugin chips on the row spacing and shows every label in full', () => {
+  const out = phoneDocument('<head></head>')
+  const row = '[data-composer-card] > [class*="_row"]'
+  expect(out).toContain(`${row} [class*="hp-root"]{gap:4px !important}`)
+  expect(out).toContain(`${row}:has(> [class*="_tools"]:not([hidden])) [class*="hp-chip"]{max-width:none}`)
+  expect(out).not.toContain('max-width:104px')
+})
+
+// WebKit's rubber-band at the strip's edges would carry the sticky end buttons along with it.
+it('keeps the pinned composer ends still at the strip edges', () => {
+  const out = phoneDocument('<head></head>')
+  expect(out).toContain('overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:none;')
 })
 
 it('keeps a boundary swipe in the chat instead of moving the whole phone page', () => {

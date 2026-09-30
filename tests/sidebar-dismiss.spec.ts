@@ -53,6 +53,31 @@ it('folds the drawer after choosing Plugins or Automations', () => {
   expect(drawerNavigationPick(pick('[class*="_panelRow"] span'))).toBe(false)
 })
 
+it('folds the drawer after opening a Session from the Agent board', () => {
+  const card = document.createElement('div')
+  card.innerHTML = '<button type="button">查看全部</button>'
+    + '<button type="button" data-remote-control-pick><span class="title">会话</span></button>'
+  pick('.ui_layout__sidebarCol__h1').append(card)
+  expect(drawerNavigationPick(pick('[data-remote-control-pick] .title'))).toBe(true)
+  // The card's own controls only switch the board view.
+  expect(drawerNavigationPick(card.firstElementChild)).toBe(false)
+})
+
+// A Workspace row's New Session button sits in the row's action strip, which otherwise keeps its taps
+// (menus, pins): it opens a Session, so the drawer folds onto it instead of staying over it.
+it('folds the drawer after New Session on a workspace row, in either UI language', () => {
+  const row = document.createElement('div')
+  row.className = 'ui_workspace__projectRow__h1'
+  row.innerHTML = '<span class="ui_workspace__rowActions__h1">'
+    + '<button aria-label="工作区“dsh”的操作">…</button>'
+    + '<button aria-label="在“dsh”中新建会话"><svg class="glyph"></svg></button>'
+    + '<button aria-label="New session in dsh">+</button></span>'
+  pick('.ui_layout__sidebarCol__h1').append(row)
+  expect(drawerNavigationPick(pick('[aria-label="在“dsh”中新建会话"] .glyph'))).toBe(true)
+  expect(drawerNavigationPick(pick('[aria-label="New session in dsh"]'))).toBe(true)
+  expect(drawerNavigationPick(pick('[aria-label="工作区“dsh”的操作"]'))).toBe(false)
+})
+
 it('keeps the trailing action strip and off-drawer rows to themselves', () => {
   expect(drawerNavigationPick(pick('.ui_workspace__iconButton__h1'))).toBe(false)
   expect(drawerNavigationPick(pick('[data-row-key="session:z"]'))).toBe(false)

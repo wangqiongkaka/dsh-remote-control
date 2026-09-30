@@ -4,7 +4,6 @@ import { SlotCore } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { expect, it } from 'vitest'
 import { apply } from '../dist/client/index.js'
-import { formatBalance } from '../dist/client/account.js'
 
 // jsdom ships neither of these; the apply-time phone effect and the slot entries ask for both.
 Object.defineProperty(window, 'matchMedia', {
@@ -28,11 +27,10 @@ function slots(): SlotCore {
   return core
 }
 
-function context(core: SlotCore, disposers: (() => void)[] = [], remote: object = {}): Context {
+function context(core: SlotCore, disposers: (() => void)[] = []): Context {
   return {
-    remote,
     effect: (register: () => () => void) => { disposers.push(register()) },
-    locale: { register: () => () => {}, bind: () => (key: string) => key, getSnapshot: () => ({ active: 'zh-CN' }) },
+    locale: { register: () => () => {} },
     slots: {
       register: core.register.bind(core),
       inject: (_name: string, register: () => () => void) => register(),
@@ -59,8 +57,57 @@ it('adds the drawer dismissal layer to the frame-wide overlay list', () => {
   const disposers: (() => void)[] = []
   try {
     apply(context(core, disposers))
-    expect(core.entries('shell.overlay')).toHaveLength(1)
-    expect(core.entries('shell.overlay')[0]?.options.id).toBe('remote-control.dismiss')
+    expect(core.entries('shell.overlay').map(entry => entry.options.id))
+      .toEqual(expect.arrayContaining(['remote-control.dismiss', 'remote-control.agents']))
+  } finally {
+    for (const dispose of disposers) dispose()
+  }
+})
+
+it('opens an Agent board Session through the Workspace UI navigation', () => {
+  const core = slots()
+  const disposers: (() => void)[] = []
+  const opened: string[] = []
+  const ctx = context(core, disposers)
+  Object.assign(ctx, {
+    get: (name: string) => name === 'uiWorkspace' ? { openSession: (id: string) => { opened.push(id) } } : undefined,
+  })
+  try {
+    apply(ctx)
+    const entry = core.entries('shell.overlay').find(item => item.options.id === 'remote-control.agents')
+    const inject = entry?.inject as (() => { openSession: (id: string) => void }) | undefined
+    inject?.().openSession('session-1')
+    expect(opened).toEqual(['session-1'])
+  } finally {
+    for (const dispose of disposers) dispose()
+  }
+})
+
+// This plugin injects `remote` only, and cordis refuses `ctx.remote.harness` without its own inject
+// ("cannot get property ... without inject"): the namespace is read through `ctx.get`, and a lookup
+// that cannot answer yet rejects so the board asks again instead of settling on no logo.
+it('reads Agent board harnesses from harness-provider without injecting it', async () => {
+  const core = slots()
+  const disposers: (() => void)[] = []
+  const ctx = context(core, disposers)
+  const asked: string[][] = []
+  let reply: unknown = { ok: true, value: { s1: { harness: 'codex', delegated: false, running: true } } }
+  let service: unknown
+  Object.assign(ctx, {
+    remote: { get harness(): never { throw new Error('cannot get property "remote.harness" without inject') } },
+    get: (name: string) => name === 'remote.harness' ? service : undefined,
+  })
+  try {
+    apply(ctx)
+    const entry = core.entries('shell.overlay').find(item => item.options.id === 'remote-control.agents')
+    const harnesses = () => (entry?.inject as () => { harnesses: (ids: string[]) => Promise<unknown> })().harnesses
+    // harness-provider not mounted yet.
+    await expect(harnesses()(['s1'])).rejects.toThrow()
+    service = { harnesses: async ({ sessionIds }: { sessionIds: string[] }) => { asked.push(sessionIds); return reply } }
+    expect(await harnesses()(['s1'])).toEqual({ s1: { harness: 'codex', delegated: false, running: true } })
+    expect(asked).toEqual([['s1']])
+    reply = { ok: false, error: { message: 'offline' } }
+    await expect(harnesses()(['s1'])).rejects.toThrow('offline')
   } finally {
     for (const dispose of disposers) dispose()
   }
@@ -254,6 +301,210 @@ it('closes an open phone sidebar with a reverse swipe inside that sidebar', () =
     expect(frame.hasAttribute('data-rightbar-collapsed')).toBe(false)
     swipe(frame.querySelector('[data-right-content]')!, 180, 235)
     expect(frame.hasAttribute('data-rightbar-collapsed')).toBe(true)
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})
+
+// The right panel's expanded state persists per Session, so a phone page reloaded from the
+// background reopens on it: coming back lands on the left drawer instead, until the first touch.
+it('lands the phone on the left drawer on load and on every return to the foreground', async () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.setAttribute('data-sidebar-collapsed', '')
+  frame.setAttribute('data-rightbar-collapsed', '')
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"></div><main class="ui_layout__centerCol__h1"></main>'
+    + '<div data-rightbar-col><div data-sidebar-right-panel="fullscreen" data-sidebar-right-open>'
+    + '<button data-sidebar-right-toggle>收起</button></div></div>'
+  document.body.append(frame)
+  const panel = frame.querySelector('[data-sidebar-right-panel]')!
+  panel.querySelector('button')!.addEventListener('click', () => { panel.removeAttribute('data-sidebar-right-open') })
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  let visibility = 'visible'
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility })
+  const tick = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0) })
+  const disposers: (() => void)[] = []
+  const ctx = context(slots(), disposers)
+  let toggles = 0
+  // The shell renders a toggle later, as React does.
+  ctx.layout.toggleSidebar = () => {
+    toggles++
+    setTimeout(() => { frame.toggleAttribute('data-sidebar-collapsed') }, 0)
+  }
+  const drawerOpen = (): boolean => !frame.hasAttribute('data-sidebar-collapsed')
+  const rightOpen = (): boolean => panel.hasAttribute('data-sidebar-right-open')
+  try {
+    apply(ctx)
+    await tick()
+    await tick()
+    expect(rightOpen()).toBe(false)
+    expect(drawerOpen()).toBe(true)
+    expect(toggles).toBe(1)
+
+    // The Session's saved right panel shows up late and its opening folds the drawer.
+    panel.setAttribute('data-sidebar-right-open', '')
+    frame.setAttribute('data-sidebar-collapsed', '')
+    await tick()
+    await tick()
+    expect(rightOpen()).toBe(false)
+    expect(drawerOpen()).toBe(true)
+    expect(toggles).toBe(2)
+
+    // After the first touch the page is the user's.
+    const touch = new Event('touchstart', { bubbles: true })
+    const point = { identifier: 0, clientX: 100, clientY: 100 }
+    Object.defineProperties(touch, { touches: { value: [point] }, changedTouches: { value: [point] } })
+    document.body.dispatchEvent(touch)
+    frame.setAttribute('data-sidebar-collapsed', '')
+    panel.setAttribute('data-sidebar-right-open', '')
+    await tick()
+    expect(drawerOpen()).toBe(false)
+    expect(rightOpen()).toBe(true)
+
+    visibility = 'hidden'
+    document.dispatchEvent(new Event('visibilitychange'))
+    await tick()
+    expect(toggles).toBe(2)
+    visibility = 'visible'
+    document.dispatchEvent(new Event('visibilitychange'))
+    await tick()
+    await tick()
+    expect(rightOpen()).toBe(false)
+    expect(drawerOpen()).toBe(true)
+    expect(toggles).toBe(3)
+
+    for (const dispose of disposers.splice(0)) dispose()
+    frame.setAttribute('data-sidebar-collapsed', '')
+    document.dispatchEvent(new Event('visibilitychange'))
+    await tick()
+    await tick()
+    expect(drawerOpen()).toBe(false)
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+    Reflect.deleteProperty(document, 'visibilityState')
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})
+
+// A phone frame has no room for a right track (the shell's computeColumns gives it 0), so the right
+// panel opens fullscreen over a frame that keeps `data-rightbar-collapsed`: open is the panel's own
+// `data-sidebar-right-open`, and a reverse swipe must close it all the same.
+it('closes the fullscreen phone right panel over a frame that keeps no right track', () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.setAttribute('data-sidebar-collapsed', '')
+  frame.setAttribute('data-rightbar-collapsed', '')
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"></div><main class="ui_layout__centerCol__h1"></main>'
+    + '<div data-rightbar-col><div data-sidebar-right-panel="fullscreen" data-sidebar-right-open>'
+    + '<div data-guide>指南</div><button data-sidebar-right-toggle>收起</button></div></div>'
+  document.body.append(frame)
+  const panel = frame.querySelector('[data-sidebar-right-panel]')!
+  frame.querySelector('[data-sidebar-right-toggle]')!.addEventListener('click', () => {
+    panel.removeAttribute('data-sidebar-right-open')
+  })
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const disposers: (() => void)[] = []
+  const swipe = (target: Element, x1: number, x2: number): void => {
+    for (const [type, x] of [['touchstart', x1], ['touchend', x2]] as const) {
+      const event = new Event(type, { bubbles: true })
+      const point = { identifier: 0, clientX: x, clientY: 100 }
+      Object.defineProperties(event, {
+        touches: { value: type === 'touchend' ? [] : [point] },
+        changedTouches: { value: [point] },
+      })
+      target.dispatchEvent(event)
+    }
+  }
+  try {
+    apply(context(slots(), disposers))
+    swipe(frame.querySelector('[data-guide]')!, 100, 220)
+    expect(panel.hasAttribute('data-sidebar-right-open')).toBe(false)
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})
+
+// An open sidebar is mostly controls (file rows, tabs, session actions) inside scrollers that also
+// scroll sideways: a closing swipe that starts on them still closes, unless a text field has it or
+// the scroller underneath can still scroll that way.
+it('closes an open phone sidebar from a swipe that starts on its controls', () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><button data-left-row>会话</button></div>'
+    + '<main class="ui_layout__centerCol__h1"></main>'
+    + '<div data-rightbar-col><div data-sidebar-right-panel="fullscreen" data-sidebar-right-open>'
+    + '<div data-files style="overflow-x:auto"><button data-file>src/client/AgentBoard.tsx</button></div>'
+    + '<input data-filter><button data-sidebar-right-toggle>收起</button></div></div>'
+  document.body.append(frame)
+  const files = frame.querySelector<HTMLElement>('[data-files]')!
+  Object.defineProperties(files, { scrollWidth: { value: 500 }, clientWidth: { value: 300 } })
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const disposers: (() => void)[] = []
+  const ctx = context(slots(), disposers)
+  ctx.layout.toggleSidebar = () => { frame.toggleAttribute('data-sidebar-collapsed') }
+  frame.querySelector('[data-sidebar-right-toggle]')!.addEventListener('click', () => {
+    frame.setAttribute('data-rightbar-collapsed', '')
+  })
+  const swipe = (target: Element, x1: number, x2: number): void => {
+    for (const [type, x] of [['touchstart', x1], ['touchend', x2]] as const) {
+      const event = new Event(type, { bubbles: true })
+      const point = { identifier: 0, clientX: x, clientY: 100 }
+      Object.defineProperties(event, {
+        touches: { value: type === 'touchend' ? [] : [point] },
+        changedTouches: { value: [point] },
+      })
+      target.dispatchEvent(event)
+    }
+  }
+  try {
+    apply(ctx)
+    // A text field keeps its own drag, and a list scrolled right takes the swipe back to its start.
+    swipe(frame.querySelector('[data-filter]')!, 100, 220)
+    files.scrollLeft = 60
+    swipe(frame.querySelector('[data-file]')!, 100, 220)
+    expect(frame.hasAttribute('data-rightbar-collapsed')).toBe(false)
+    // At the list's start there is nothing left to scroll: the swipe over a file row closes the panel.
+    files.scrollLeft = 0
+    swipe(frame.querySelector('[data-file]')!, 100, 220)
+    expect(frame.hasAttribute('data-rightbar-collapsed')).toBe(true)
+
+    swipe(frame.querySelector('[data-left-row]')!, 220, 100)
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
   } finally {
     for (const dispose of disposers) dispose()
     proxy.remove()
@@ -509,91 +760,6 @@ it('hides the Models section from phone Settings and leaves it when selected', a
   }
 })
 
-// The Host registers Account & balance only in the Desktop renderer; a proxied page gets its own
-// read-only section over the same account calls, reported under the Host's client version.
-it('shows the signed-in account and balance on a proxied page', async () => {
-  const proxied = document.createElement('style')
-  proxied.setAttribute('data-dsh-remote-control', '')
-  const fetchBefore = globalThis.fetch
-  const settle = () => new Promise(resolve => setTimeout(resolve, 0))
-  const signedIn = { status: 'credential-stored', links: { usageUrl: 'https://platform.example/usage', topUpUrl: '' }, attempt: null }
-  /** Account calls as the Host serves them, recording the client identity each read carried. */
-  const remote = (view: object, calls: string[]) => ({
-    account: {
-      watch: async function* () { yield view },
-      getProfile: async (client: { version: string }) => {
-        calls.push(`profile:${client.version}`)
-        return { ok: true, value: { status: 'ready', value: { id: null, name: '王琼', contact: 'w***@gmail.com', avatarUrl: null } } }
-      },
-      getBalance: async (client: { version: string }) => {
-        calls.push(`balance:${client.version}`)
-        return { ok: true, value: { status: 'ready', value: [{ currency: 'CNY', balance: '1234.567' }], bonusWallets: [{ currency: 'CNY', balance: '0' }] } }
-      },
-    },
-    $stream: (options: { open: (signal: AbortSignal) => AsyncIterable<unknown> }) => {
-      const lifetime = new AbortController()
-      return {
-        async* [Symbol.asyncIterator]() {
-          for await (const value of options.open(lifetime.signal)) yield { value, accept: () => {} }
-        },
-        dispose: async () => { lifetime.abort() },
-      }
-    },
-  })
-  const activate = async (options: { proxy: boolean; view: object; version?: string }) => {
-    if (options.proxy) document.head.append(proxied)
-    else proxied.remove()
-    globalThis.fetch = (async () => Response.json(
-      options.version === undefined ? { active: true } : { active: true, clientVersion: options.version })) as typeof fetch
-    const calls: string[] = []
-    const core = slots()
-    const disposers: (() => void)[] = []
-    apply(context(core, disposers, remote(options.view, calls)))
-    await settle()
-    await settle()
-    const section = core.entries('settings.section').find(entry => entry.options.id === 'account')
-    return { calls, section, dispose: () => { for (const dispose of disposers) dispose() } }
-  }
-  try {
-    const phone = await activate({ proxy: true, view: signedIn, version: '0.2.0-rc.2' })
-    expect(phone.section?.options.order).toBe(-10)
-    expect(phone.calls.sort()).toEqual(['balance:0.2.0-rc.2', 'profile:0.2.0-rc.2'])
-    const store = (phone.section?.inject?.() as { store: { getSnapshot: () => unknown } }).store
-    expect(store.getSnapshot()).toMatchObject({
-      usageUrl: 'https://platform.example/usage',
-      profile: { status: 'ready', value: { name: '王琼' } },
-      balance: { status: 'ready', value: [{ currency: 'CNY', balance: '1234.567' }] },
-    })
-    phone.dispose()
-
-    // Signed out, the section stays away, as it does on Desktop.
-    const signedOut = await activate({ proxy: true, view: { ...signedIn, status: 'signed-out' }, version: '0.2.0-rc.2' })
-    expect(signedOut.section).toBeUndefined()
-    signedOut.dispose()
-
-    // Without the Host's version there is nothing honest to report: no section, no account call.
-    const unknown = await activate({ proxy: true, view: signedIn })
-    expect(unknown.section).toBeUndefined()
-    expect(unknown.calls).toEqual([])
-    unknown.dispose()
-
-    // A local page leaves account UI to the Host.
-    const local = await activate({ proxy: false, view: signedIn, version: '0.2.0-rc.2' })
-    expect(local.section).toBeUndefined()
-    local.dispose()
-  } finally {
-    proxied.remove()
-    globalThis.fetch = fetchBefore
-  }
-})
-
-it('formats balances the way the Desktop account section does', () => {
-  expect(formatBalance('1234.567', '¥')).toBe('¥1,234.56')
-  expect(formatBalance('0', '¥')).toBe('¥0.00')
-  expect(formatBalance('0.004', '$')).toBe('<$0.01')
-  expect(formatBalance('1000000', '$')).toBe('$1,000,000.00')
-  expect(formatBalance('-12.5', '¥')).toBe('-¥12.50')
-})
 
 it('closes the command launcher on a second click after its source is cleared', () => {
   const card = document.createElement('div')
@@ -629,6 +795,86 @@ it('closes the command launcher on a second click after its source is cleared', 
     expect(menu.isConnected).toBe(true)
   } finally {
     for (const dispose of disposers) dispose()
+    card.remove()
+  }
+})
+
+it('springs the phone composer chips past either strip end while its pinned ends stay put', () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const card = document.createElement('div')
+  card.setAttribute('data-composer-card', '')
+  card.innerHTML = '<div class="ui_conversation__row__h1">'
+    + '<div class="ui_conversation__tools__h1"><button class="ui_conversation__add__h1">+</button>'
+    + '<div class="ui_conversation__modes__h1"><div data-slot="p"><div id="mode">自动</div></div></div>'
+    + '<div data-slot="l"><div id="harness">Claude Code</div></div></div>'
+    + '<div class="ui_conversation__trailing__h1"><div class="ui_conversation__standardControls__h1">'
+    + '<div data-slot="m"><div id="model">Opus</div></div></div>'
+    + '<div class="ui_conversation__activity__h1"><div data-slot="a"><button id="mic">mic</button></div></div>'
+    + '<button class="ui_conversation__primary__h1">发送</button></div></div>'
+  document.body.append(card)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (query: string) => ({ matches: !query.includes('prefers-reduced-motion'), addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const strip = card.firstElementChild as HTMLElement
+  Object.defineProperties(strip, { scrollWidth: { value: 600 }, clientWidth: { value: 300 } })
+  const chips = ['mode', 'harness', 'model'].map(id => document.getElementById(id)!)
+  const pinned = [card.querySelector<HTMLElement>('[class*="_add"]')!, document.getElementById('mic')!,
+    card.querySelector<HTMLElement>('[class*="_primary"]')!]
+  const touch = (type: string, x: number, y = 20): Event => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    const points = [{ identifier: 1, clientX: x, clientY: y }]
+    Object.defineProperties(event, {
+      touches: { value: type === 'touchend' ? [] : points },
+      changedTouches: { value: points },
+    })
+    chips[1]!.dispatchEvent(event)
+    return event
+  }
+  const disposers: (() => void)[] = []
+  try {
+    apply(context(slots(), disposers))
+    // At the start, a further rightward drag stretches the chips, capped, and springs back on release.
+    strip.scrollLeft = 0
+    touch('touchstart', 100)
+    touch('touchmove', 110)
+    const pull = touch('touchmove', 250)
+    expect(pull.defaultPrevented).toBe(true)
+    for (const chip of chips) expect(chip.style.transform).toBe('translateX(40px)')
+    for (const end of pinned) expect(end.style.transform).toBe('')
+    touch('touchend', 250)
+    for (const chip of chips) {
+      expect(chip.style.transform).toBe('translateX(0px)')
+      expect(chip.style.transition).toContain('transform')
+    }
+
+    // Mid-strip the drag is the strip's own scroll.
+    strip.scrollLeft = 100
+    touch('touchstart', 100)
+    touch('touchmove', 110)
+    expect(touch('touchmove', 190).defaultPrevented).toBe(false)
+    expect(chips[0]!.style.transform).toBe('')
+    touch('touchend', 190)
+
+    // At the end the pull runs the other way.
+    strip.scrollLeft = 300
+    touch('touchstart', 200)
+    touch('touchmove', 190)
+    touch('touchmove', 150)
+    expect(chips[0]!.style.transform).toBe('translateX(-23px)')
+    touch('touchend', 150)
+
+    // A vertical gesture is never a strip pull.
+    strip.scrollLeft = 0
+    touch('touchstart', 100, 20)
+    touch('touchmove', 104, 60)
+    expect(touch('touchmove', 150, 90).defaultPrevented).toBe(false)
+    expect(chips[0]!.style.transform).toBe('')
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
     card.remove()
   }
 })
