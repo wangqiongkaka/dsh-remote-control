@@ -26,6 +26,16 @@ it('opens the drawer full screen at phone width and keeps the tablet drawer', ()
     + 'padding-bottom:max(32px,env(safe-area-inset-bottom)) !important}')
 })
 
+// The shell auto-places its sidebar, conversation and right columns in order. The fixed drawer
+// leaves that flow, which put the conversation into the zero-width first track: a black phone page.
+it('keeps the phone conversation in its own grid track while the drawer is fixed', () => {
+  const out = phoneDocument('<html><head></head><body></body></html>')
+  const drawer = out.slice(out.indexOf('<style data-dsh-remote-control-drawer>'))
+  const frame = '[class*="_frame"]:has([class*="_sidebarCol"])'
+  expect(drawer).toContain(`${frame} > [class*="_centerCol"]{grid-column:2;grid-row:1}`)
+  expect(drawer).toContain(`${frame} > [data-rightbar-col]{grid-column:3;grid-row:1}`)
+})
+
 // The left drawer popped in and out while the right panel slid: it now slides on the right panel's
 // own duration and curve, parks hidden off-screen once closed, and the scrim fades with it.
 it('slides the phone drawer in and out like the right panel', () => {

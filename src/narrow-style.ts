@@ -167,6 +167,10 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '<style data-dsh-remote-control-drawer>'
   + '@media (max-width: 1023px){'
   + `${FRAME}[data-rightbar-collapsed]{grid-template-columns:0 minmax(0,1fr) 0 !important}`
+  // The shell auto-places its three columns in order. A fixed drawer leaves that flow, and the
+  // conversation would then take the zero-width first track and vanish: pin both to their own.
+  + `${FRAME} > [class*="_centerCol"]{grid-column:2;grid-row:1}`
+  + `${FRAME} > [data-rightbar-col]{grid-column:3;grid-row:1}`
   // The drawer slides in from the left edge and back out on the right panel's own slide (the shell's
   // slow duration and in-out curve); closed, it parks off-screen and goes hidden once the slide ends,
   // so it takes no taps or tab stops. A frame whose right panel holds a track keeps the shell's own

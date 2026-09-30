@@ -68,7 +68,10 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     if (from.area === 'left') {
       if (dx < 0 && !from.room.forward && !from.frame.hasAttribute('data-sidebar-collapsed')) openLeft()
     } else if (from.area === 'right') {
-      if (dx > 0 && !from.room.back && !from.frame.hasAttribute('data-rightbar-collapsed')) {
+      // A phone frame leaves the right panel no track (the shell's computeColumns yields 0), so the
+      // panel opens fullscreen over a frame still marked `data-rightbar-collapsed`: whether it is
+      // open is the panel's own mark, which the collapse control's selector already requires.
+      if (dx > 0 && !from.room.back) {
         from.frame.querySelector<HTMLButtonElement>('[data-sidebar-right-panel][data-sidebar-right-open] [data-sidebar-right-toggle]')?.click()
       }
     } else if (dx > 0 && from.frame.hasAttribute('data-sidebar-collapsed')) openLeft()

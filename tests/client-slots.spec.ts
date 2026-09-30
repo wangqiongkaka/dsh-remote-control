@@ -314,6 +314,56 @@ it('closes an open phone sidebar with a reverse swipe inside that sidebar', () =
   }
 })
 
+// A phone frame has no room for a right track (the shell's computeColumns gives it 0), so the right
+// panel opens fullscreen over a frame that keeps `data-rightbar-collapsed`: open is the panel's own
+// `data-sidebar-right-open`, and a reverse swipe must close it all the same.
+it('closes the fullscreen phone right panel over a frame that keeps no right track', () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.setAttribute('data-sidebar-collapsed', '')
+  frame.setAttribute('data-rightbar-collapsed', '')
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"></div><main class="ui_layout__centerCol__h1"></main>'
+    + '<div data-rightbar-col><div data-sidebar-right-panel="fullscreen" data-sidebar-right-open>'
+    + '<div data-guide>指南</div><button data-sidebar-right-toggle>收起</button></div></div>'
+  document.body.append(frame)
+  const panel = frame.querySelector('[data-sidebar-right-panel]')!
+  frame.querySelector('[data-sidebar-right-toggle]')!.addEventListener('click', () => {
+    panel.removeAttribute('data-sidebar-right-open')
+  })
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const disposers: (() => void)[] = []
+  const swipe = (target: Element, x1: number, x2: number): void => {
+    for (const [type, x] of [['touchstart', x1], ['touchend', x2]] as const) {
+      const event = new Event(type, { bubbles: true })
+      const point = { identifier: 0, clientX: x, clientY: 100 }
+      Object.defineProperties(event, {
+        touches: { value: type === 'touchend' ? [] : [point] },
+        changedTouches: { value: [point] },
+      })
+      target.dispatchEvent(event)
+    }
+  }
+  try {
+    apply(context(slots(), disposers))
+    swipe(frame.querySelector('[data-guide]')!, 100, 220)
+    expect(panel.hasAttribute('data-sidebar-right-open')).toBe(false)
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})
+
 // An open sidebar is mostly controls (file rows, tabs, session actions) inside scrollers that also
 // scroll sideways: a closing swipe that starts on them still closes, unless a text field has it or
 // the scroller underneath can still scroll that way.
