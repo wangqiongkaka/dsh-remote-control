@@ -27,6 +27,8 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + 'input,textarea,select,[contenteditable="true"]{font-size:16px !important}'
   // The session utilities are desktop actions; keep the separate sidebar corner control.
   + `${FRAME} header[data-window-drag] [class*="_headerUtilities"]{display:none !important}`
+  // Keep session actions beside the sidebar corner control instead of leaving a wide empty gap.
+  + `${FRAME} header[data-window-drag] [class*="_headerActions"]{margin-left:auto}`
   // The placeholder is not an editable element, so it keeps the 15px chat size beside a 16px
   // draft; match them so the hint reads at the size of the text that replaces it.
   + '[data-composer-card] [class*="_placeholder"]{font-size:16px !important}'

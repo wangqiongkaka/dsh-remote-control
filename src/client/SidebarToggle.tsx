@@ -1,7 +1,7 @@
 /** Header-leading control that opens the sidebar where the shell keeps no rail to click. */
 
 import { useEffect, useState } from 'react'
-import { IconPanelLeftOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPanelLeftOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { NS } from './locales.ts'
@@ -44,11 +44,9 @@ export function SidebarToggle(props: SidebarToggleProps): React.JSX.Element | nu
   const narrow = useNarrow()
   if (!narrow || !proxiedFrame()) return null
   const { t } = props
-  return <button type="button" aria-label={t('sidebar')} title={t('sidebar')}
-    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28,
-      height: 28, border: 0, borderRadius: 28, background: 'transparent',
-      color: 'var(--dsw-alias-label-secondary)', cursor: 'pointer' }}
+  return <Button size="sm" type="button" aria-label={t('sidebar')} title={t('sidebar')}
+    style={{ flex: 'none', width: 28, padding: 0, color: 'var(--dsw-alias-label-secondary)' }}
     onClick={() => { props.toggleSidebar() }}>
-    <IconPanelLeftOutlineRegular size={16} />
-  </button>
+    <IconPanelLeftOutlineRegular size={15} />
+  </Button>
 }
