@@ -23,11 +23,12 @@ type Outcome<T> = { ok: true; value: T | null } | { ok: false }
 
 /** The Host's account Remote and stream supervisor, as far as this section reads them. */
 export interface AccountRemote {
+  /** The Host's `remote.account` namespace; absent where the Host serves none. */
   account: {
     watch(signal: AbortSignal): AsyncIterable<AccountView>
     getProfile(client: ClientMetadata): Promise<Outcome<ProfileRead>>
     getBalance(client: ClientMetadata): Promise<Outcome<BalanceRead>>
-  }
+  } | undefined
   $stream<T>(options: { name: string; open: (signal: AbortSignal) => AsyncIterable<T>; ended: (accepted: boolean) => Error }):
     AsyncIterable<{ value: T; accept(): void }> & { dispose(): Promise<void> }
 }
@@ -124,6 +125,7 @@ export function phoneAccount(deps: {
       timezoneOffsetSeconds: -new Date().getTimezoneOffset() * 60,
     })
     const { account } = deps.remote
+    if (account === undefined) return
     const frames = deps.remote.$stream<AccountView>({
       name: 'remote-control account', open: signal => account.watch(signal),
       ended: () => new Error('account stream ended'),

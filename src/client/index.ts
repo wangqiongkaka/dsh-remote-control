@@ -106,7 +106,12 @@ export function apply(ctx: Context): void {
   ctx.effect(() => proxiedFrame() ? phoneAccount({
     slots: ctx.slots,
     // This plugin carries no Host account types; the calls it makes are declared in account.tsx.
-    remote: (ctx as unknown as { remote: AccountRemote }).remote,
+    // It injects `remote` only, and cordis refuses `ctx.remote.account` undeclared (the Host's own
+    // account plugin injects `remote.account`), so the namespace is read through `ctx.get`.
+    remote: {
+      get account() { return ctx.get('remote.account') as AccountRemote['account'] },
+      $stream: options => (ctx as unknown as { remote: AccountRemote }).remote.$stream(options),
+    },
     locale: () => ctx.locale.getSnapshot().active,
     version: async () => {
       const response = await fetch('/api/remote-control')
@@ -158,10 +163,14 @@ export function apply(ctx: Context): void {
         (ctx.get('uiWorkspace') as UiWorkspace | undefined)?.openSession(sessionId)
       },
       harnesses: async (sessionIds) => {
-        // harness-provider's Remote namespace; absent without that plugin, when the board keeps its status dots.
-        const remote = (ctx as unknown as { remote?: { harness?: HarnessRemote } }).remote?.harness
-        const result = await remote?.harnesses({ sessionIds })
-        return result?.ok === true ? result.value : {}
+        // harness-provider's Remote namespace. Declaring it in `inject` would hold this whole plugin
+        // back without that plugin, and cordis refuses `ctx.remote.harness` undeclared, so read it
+        // through `ctx.get`. Until it answers the board keeps its status dots and asks again later.
+        const remote = ctx.get('remote.harness') as HarnessRemote | undefined
+        if (remote === undefined) throw new Error('harness-provider is not mounted')
+        const result = await remote.harnesses({ sessionIds })
+        if (!result.ok) throw new Error(result.error.message)
+        return result.value
       },
     }),
   }, AgentBoard))

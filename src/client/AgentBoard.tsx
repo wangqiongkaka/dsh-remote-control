@@ -41,7 +41,7 @@ export interface AgentBoardInjected {
 /** The harness-provider Remote call the board reads harnesses from. */
 export interface HarnessRemote {
   harnesses: (request: { sessionIds: string[] }) => Promise<
-    { ok: true; value: Record<string, { harness: string }> } | { ok: false }>
+    { ok: true; value: Record<string, { harness: string }> } | { ok: false; error: { message: string } }>
 }
 
 /** Overlay props supplied by the slot renderer. */

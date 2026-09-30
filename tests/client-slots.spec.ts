@@ -85,22 +85,31 @@ it('opens an Agent board Session through the Workspace UI navigation', () => {
   }
 })
 
-it('reads Agent board harnesses from harness-provider, and none without it', async () => {
+// This plugin injects `remote` only, and cordis refuses `ctx.remote.harness` without its own inject
+// ("cannot get property ... without inject"): the namespace is read through `ctx.get`, and a lookup
+// that cannot answer yet rejects so the board asks again instead of settling on no logo.
+it('reads Agent board harnesses from harness-provider without injecting it', async () => {
   const core = slots()
   const disposers: (() => void)[] = []
   const ctx = context(core, disposers)
   const asked: string[][] = []
   let reply: unknown = { ok: true, value: { s1: { harness: 'codex', delegated: false, running: true } } }
+  let service: unknown
+  Object.assign(ctx, {
+    remote: { get harness(): never { throw new Error('cannot get property "remote.harness" without inject') } },
+    get: (name: string) => name === 'remote.harness' ? service : undefined,
+  })
   try {
     apply(ctx)
     const entry = core.entries('shell.overlay').find(item => item.options.id === 'remote-control.agents')
     const harnesses = () => (entry?.inject as () => { harnesses: (ids: string[]) => Promise<unknown> })().harnesses
-    expect(await harnesses()(['s1'])).toEqual({})
-    Object.assign(ctx, { remote: { harness: { harnesses: async ({ sessionIds }: { sessionIds: string[] }) => { asked.push(sessionIds); return reply } } } })
+    // harness-provider not mounted yet.
+    await expect(harnesses()(['s1'])).rejects.toThrow()
+    service = { harnesses: async ({ sessionIds }: { sessionIds: string[] }) => { asked.push(sessionIds); return reply } }
     expect(await harnesses()(['s1'])).toEqual({ s1: { harness: 'codex', delegated: false, running: true } })
     expect(asked).toEqual([['s1']])
     reply = { ok: false, error: { message: 'offline' } }
-    expect(await harnesses()(['s1'])).toEqual({})
+    await expect(harnesses()(['s1'])).rejects.toThrow('offline')
   } finally {
     for (const dispose of disposers) dispose()
   }
@@ -557,9 +566,14 @@ it('shows the signed-in account and balance on a proxied page', async () => {
   const fetchBefore = globalThis.fetch
   const settle = () => new Promise(resolve => setTimeout(resolve, 0))
   const signedIn = { status: 'credential-stored', links: { usageUrl: 'https://platform.example/usage', topUpUrl: '' }, attempt: null }
-  /** Account calls as the Host serves them, recording the client identity each read carried. */
+  /**
+   * Account calls as the Host serves them, recording the client identity each read carried. This
+   * plugin injects `remote` only, and cordis refuses `ctx.remote.account` without its own inject:
+   * the namespace is reachable through `ctx.get('remote.account')` alone.
+   */
   const remote = (view: object, calls: string[]) => ({
-    account: {
+    get account(): never { throw new Error('cannot get property "remote.account" without inject') },
+    namespace: {
       watch: async function* () { yield view },
       getProfile: async (client: { version: string }) => {
         calls.push(`profile:${client.version}`)
@@ -588,7 +602,10 @@ it('shows the signed-in account and balance on a proxied page', async () => {
     const calls: string[] = []
     const core = slots()
     const disposers: (() => void)[] = []
-    apply(context(core, disposers, remote(options.view, calls)))
+    const host = remote(options.view, calls)
+    const ctx = context(core, disposers, host)
+    Object.assign(ctx, { get: (name: string) => name === 'remote.account' ? host.namespace : undefined })
+    apply(ctx)
     await settle()
     await settle()
     const section = core.entries('settings.section').find(entry => entry.options.id === 'account')

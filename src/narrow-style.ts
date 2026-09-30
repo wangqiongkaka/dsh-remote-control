@@ -117,6 +117,11 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // the transcript, so scrolling messages never moves the input card or hides the last message.
   + `${CHAT_SCROLL}{padding-bottom:var(--dsh-composer-height,0px);overscroll-behavior-y:none;scrollbar-width:none;scrollbar-gutter:auto}`
   + `${CHAT_SCROLL}::-webkit-scrollbar{display:none}`
+  // The host insets the transcript 16px inside the composer's own 16px clearance, which leaves a
+  // phone's text barely 84% of the screen: line it up with the input card instead. The turn rail
+  // lives in that inset and would sit over the text's line ends, so a phone goes without it.
+  + `${FRAME} [class*="_scroll"]:has(> [class*="_column"][data-chat-flow]){padding-left:16px !important;padding-right:16px !important}`
+  + `${FRAME} [class*="_slot"]:has(+ [class*="_root"] > [class*="_scroll"] > [data-chat-flow]){display:none !important}`
   + `${CHAT_SCROLL} > [data-composer-seat]{position:absolute !important;inset:auto 0 0}`
   // The shell lifts its sticky jump-to-latest control by the composer height, but a sticky inset
   // counts from inside the scroller's padding, which already reserves that height: keep only an

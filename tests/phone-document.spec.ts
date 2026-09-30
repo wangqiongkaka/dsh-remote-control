@@ -34,6 +34,16 @@ it('keeps the active phone composer at the bottom while the chat scrolls without
 
 // The shell lifts its sticky jump-to-latest control by the composer height; the chat's own bottom
 // padding already reserves that height, so counting it again parked the control far above the input.
+// The host's transcript sits 16px inside the composer's clearance: a phone's text lines up with the
+// input card instead, and the turn rail that lived in that inset stays off the text's line ends.
+it('widens the phone transcript to the input card and drops the turn rail', () => {
+  const out = phoneDocument('<head></head>')
+  const phone = out.slice(out.indexOf('@media (max-width: 720px){'))
+  const frame = '[class*="_frame"]:has([class*="_sidebarCol"])'
+  expect(phone).toContain(`${frame} [class*="_scroll"]:has(> [class*="_column"][data-chat-flow]){padding-left:16px !important;padding-right:16px !important}`)
+  expect(phone).toContain(`${frame} [class*="_slot"]:has(+ [class*="_root"] > [class*="_scroll"] > [data-chat-flow]){display:none !important}`)
+})
+
 it('keeps the jump-to-latest control just above the pinned composer', () => {
   const out = phoneDocument('<head></head>')
   const chat = '[class*="_frame"]:has([class*="_sidebarCol"]) [data-phase="active"] > '
