@@ -21,6 +21,7 @@ const statuses = new Map([
   ['ask', { running: undefined, pendingInteraction: { kind: 'approval' }, completionUnread: false }],
   ['done', { running: false, pendingInteraction: undefined, completionUnread: true }],
 ])
+const workspaces = { phase: 'ready' as 'pending' | 'ready', archivedSessionIds: [] as string[] }
 
 let root: Root
 let mount: HTMLElement
@@ -37,10 +38,11 @@ function column(): HTMLElement {
   return col
 }
 
-function setNarrow(matches: boolean): void {
+function setNarrow(matches: boolean, reducedMotion = false): void {
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
-    value: () => ({ matches, addEventListener: () => {}, removeEventListener: () => {} }),
+    value: (query: string) => ({ matches: query.includes('prefers-reduced-motion') ? reducedMotion : matches,
+      addEventListener: () => {}, removeEventListener: () => {} }),
   })
 }
 
@@ -48,12 +50,14 @@ function render(
   sessions: typeof list = list,
   marks: Record<string, { harness: string }> = {},
   snapshot: typeof statuses = statuses,
+  workspaceSnapshot: typeof workspaces = workspaces,
 ): void {
   act(() => {
     root.render(createElement(AgentBoard as never, {
       t: (key: string, params?: { n?: number }) => params?.n === undefined ? key : `${key}:${params.n}`,
       useSessions: (select: (value: typeof list) => unknown) => select(sessions),
       useSessionStatus: (select: (value: typeof statuses) => unknown) => select(snapshot),
+      useWorkspaces: (select: (value: typeof workspaces) => unknown) => select(workspaceSnapshot),
       openSession: (id: string) => { opened.push(id) },
       harnesses: async (ids: string[]) => Object.fromEntries(ids.flatMap(id => marks[id] ? [[id, marks[id]]] : [])),
     }))
@@ -115,6 +119,50 @@ it('restores the Harness icon for a completed history row', async () => {
   expect((host()?.querySelector('.rc-agents-history [data-remote-control-pick]') as HTMLElement).dataset.hpHarness).toBe('codex')
 })
 
+it('removes archived Sessions from board counts, rows and saved history', () => {
+  column()
+  render()
+  click(host()?.querySelector('.rc-agents-head'))
+  const archived = { ...workspaces, archivedSessionIds: ['ask', 'run', 'done'] }
+  render(list, {}, statuses, archived)
+  expect([...host()!.querySelectorAll('.rc-agents-card .rc-agents-tile')].map(tile => tile.textContent))
+    .toEqual(['agents.pending0', 'agents.running0', 'agents.done0'])
+  expect(host()?.querySelectorAll('[data-remote-control-pick]')).toHaveLength(0)
+  expect(JSON.parse(localStorage.getItem('dsh-remote-control.agent-history.v1') ?? '[]')).toEqual([])
+})
+
+it('clears archived read history and keeps other completions after remounting', () => {
+  const kept = { id: 'idle', completedAt: 9 }
+  localStorage.setItem('dsh-remote-control.agent-history.v1', JSON.stringify([{ id: 'done', completedAt: 1 }, kept]))
+  column()
+  const read = new Map(statuses)
+  read.set('done', { running: false, pendingInteraction: undefined, completionUnread: false })
+  render(list, {}, read)
+  click(host()?.querySelector('.rc-agents-head'))
+  expect(host()?.querySelectorAll('.rc-agents-history .rc-agents-title')).toHaveLength(2)
+  const archived = { ...workspaces, archivedSessionIds: ['done'] }
+  render(list, {}, read, archived)
+  expect([...host()!.querySelectorAll('.rc-agents-history .rc-agents-title')].map(row => row.textContent)).toEqual(['空闲'])
+  expect(JSON.parse(localStorage.getItem('dsh-remote-control.agent-history.v1') ?? '[]')).toEqual([kept])
+  act(() => { root.unmount() })
+  root = createRoot(mount)
+  render(list, {}, read, archived)
+  click(host()?.querySelector('.rc-agents-head'))
+  expect([...host()!.querySelectorAll('.rc-agents-history .rc-agents-title')].map(row => row.textContent)).toEqual(['空闲'])
+})
+
+it('preserves saved history until the Workspace archive list is ready', () => {
+  const entry = { id: 'done', completedAt: 1 }
+  localStorage.setItem('dsh-remote-control.agent-history.v1', JSON.stringify([entry]))
+  column()
+  const read = new Map(statuses)
+  read.set('done', { running: false, pendingInteraction: undefined, completionUnread: false })
+  render({ ...list, ids: [] }, {}, read, { ...workspaces, phase: 'pending' })
+  expect(JSON.parse(localStorage.getItem('dsh-remote-control.agent-history.v1') ?? '[]')).toEqual([entry])
+  render(list, {}, read, { ...workspaces, archivedSessionIds: ['done'] })
+  expect(JSON.parse(localStorage.getItem('dsh-remote-control.agent-history.v1') ?? '[]')).toEqual([])
+})
+
 it('does not erase saved history while the Session list is loading', () => {
   const entry = { id: 'done', completedAt: 1 }
   localStorage.setItem('dsh-remote-control.agent-history.v1', JSON.stringify([entry]))
@@ -166,13 +214,36 @@ it('opens the board on one group and opens a Session from it', () => {
   expect(host()?.querySelector('[role="dialog"]')).toBeNull()
 })
 
-it('goes back from the board to the card', () => {
+it('slides back from the board before removing it, using the other panels\' timing', () => {
+  column()
+  render()
+  click(host()?.querySelector('.rc-agents-head'))
+  const board = host()?.querySelector<HTMLElement>('.rc-agents-board')!
+  const style = host()?.querySelector('style')?.textContent
+  expect(style).toContain('var(--ds-transition-duration-slow,.3s) var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1))')
+  click(host()?.querySelector('.rc-agents-back'))
+  expect(board.isConnected).toBe(true)
+  expect(board.getAttribute('data-closing')).toBe('')
+  expect(board.hasAttribute('inert')).toBe(true)
+  // React uses the prefixed event in jsdom, which has no AnimationEvent constructor.
+  const animationEnd = 'AnimationEvent' in window ? 'animationend' : 'webkitAnimationEnd'
+  // A child animation must not end the board's exit.
+  act(() => { board.querySelector('button')!.dispatchEvent(new Event(animationEnd, { bubbles: true })) })
+  expect(board.isConnected).toBe(true)
+  act(() => { board.dispatchEvent(new Event(animationEnd, { bubbles: true })) })
+  expect(host()?.querySelector('[role="dialog"]')).toBeNull()
+  expect(opened).toEqual([])
+  click(host()?.querySelector('.rc-agents-head'))
+  expect(host()?.querySelector('.rc-agents-board')?.hasAttribute('data-closing')).toBe(false)
+})
+
+it('returns immediately when reduced motion is requested', () => {
+  setNarrow(true, true)
   column()
   render()
   click(host()?.querySelector('.rc-agents-head'))
   click(host()?.querySelector('.rc-agents-back'))
-  expect(host()?.querySelector('[role="dialog"]')).toBeNull()
-  expect(opened).toEqual([])
+  expect(host()?.querySelector('.rc-agents-board')).toBeNull()
 })
 
 it('follows the column when the shell rebuilds it, and leaves with the component', async () => {

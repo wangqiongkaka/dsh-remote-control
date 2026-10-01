@@ -589,6 +589,83 @@ it('closes an open phone sidebar from a swipe that starts on its controls', () =
   }
 })
 
+it('returns from the Agent board with a right swipe without closing the drawer or tapping a row', () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="rc-agents-board" role="dialog">'
+    + '<button class="rc-agents-back">返回</button><button data-row>会话</button>'
+    + '<div data-scroll style="overflow-x:auto"><button data-chip>标签</button></div>'
+    + '<input><div role="dialog" data-menu>菜单</div></div></div>'
+  document.body.append(frame)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const disposers: (() => void)[] = []
+  const ctx = context(slots(), disposers)
+  const closeDrawer = vi.fn()
+  const back = vi.fn()
+  const openRow = vi.fn()
+  ctx.layout.toggleSidebar = closeDrawer
+  frame.querySelector('.rc-agents-back')!.addEventListener('click', back)
+  const row = frame.querySelector('[data-row]')!
+  row.addEventListener('click', openRow)
+  const scroll = frame.querySelector<HTMLElement>('[data-scroll]')!
+  Object.defineProperties(scroll, { scrollWidth: { value: 500 }, clientWidth: { value: 300 } })
+  const touch = (target: Element, type: string, x: number, y = 100, count = 1): Event => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    const points = Array.from({ length: count }, (_, identifier) => ({ identifier, clientX: x, clientY: y }))
+    Object.defineProperties(event, {
+      touches: { value: type === 'touchend' ? [] : points },
+      changedTouches: { value: points },
+    })
+    target.dispatchEvent(event)
+    return event
+  }
+  const swipe = (target: Element, x: number, y = 100, count = 1): Event => {
+    touch(target, 'touchstart', 100, 100, count)
+    return touch(target, 'touchend', x, y, count)
+  }
+  try {
+    apply(ctx)
+    swipe(row, 140) // Too short.
+    swipe(row, 220, 200) // Mostly vertical.
+    swipe(row, 220, 100, 2)
+    swipe(row, 20) // The board owns left swipes too; do not close the drawer.
+    swipe(frame.querySelector('input')!, 220)
+    swipe(frame.querySelector('[data-menu]')!, 220)
+    scroll.scrollLeft = 60
+    swipe(frame.querySelector('[data-chip]')!, 220)
+    touch(row, 'touchstart', 100)
+    touch(row, 'touchcancel', 220)
+    touch(row, 'touchend', 220)
+    expect(back).not.toHaveBeenCalled()
+    expect(closeDrawer).not.toHaveBeenCalled()
+    expect(swipe(row, 220).defaultPrevented).toBe(true)
+    expect(back).toHaveBeenCalledTimes(1)
+    expect(closeDrawer).not.toHaveBeenCalled()
+    expect(openRow).not.toHaveBeenCalled()
+    scroll.scrollLeft = 0
+    swipe(frame.querySelector('[data-chip]')!, 220)
+    expect(back).toHaveBeenCalledTimes(2)
+    for (const dispose of disposers) dispose()
+    disposers.length = 0
+    swipe(row, 220)
+    expect(back).toHaveBeenCalledTimes(2)
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})
+
 // Chat preferences are page-local on a proxied page (the Host persists them for loopback pages
 // only), so every phone load would open at Detailed; the remote page starts both at Compact.
 it('starts remote chat work steps and performance usage at compact, once per registration', async () => {

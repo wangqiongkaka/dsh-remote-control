@@ -151,6 +151,7 @@ export function followRowHolds(): () => void {
 export function followSidebarSwipes(openLeft: () => void): () => void {
   let start: {
     id: number; x: number; y: number; frame: Element; area: 'center' | 'left' | 'right'
+    board: Element | null
     room: { back: boolean; forward: boolean }
   } | undefined
   const onStart = (event: TouchEvent): void => {
@@ -160,16 +161,18 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     const center = target.closest('[class*="_centerCol"]')
     const left = target.closest('[class*="_sidebarCol"]')
     const right = target.closest('[data-sidebar-right-panel][data-sidebar-right-open]')
-    const area = center ?? left ?? right
+    const board = target.closest('.rc-agents-board')
+    const area = board ?? center ?? left ?? right
     const frame = area?.closest('[class*="_frame"]:has([class*="_sidebarCol"])')
     if (!area || !frame) return
     // The conversation keeps every control and sideways scroller to itself; an open drawer lets a
     // closing swipe start on its rows and tabs (see DRAWER_OWN_DRAG and the direction check below).
-    if (center ? target.closest(INTERACTIVE) || scrollsHorizontally(target, area) : target.closest(DRAWER_OWN_DRAG)) return
+    const ownDrag = target.closest(DRAWER_OWN_DRAG)
+    if (center ? target.closest(INTERACTIVE) || scrollsHorizontally(target, area) : ownDrag && ownDrag !== board) return
     const touch = event.touches[0]
     if (touch === undefined) return
     start = { id: touch.identifier, x: touch.clientX, y: touch.clientY, frame,
-      area: center ? 'center' : left ? 'left' : 'right', room: scrollRoom(target, area) }
+      area: center ? 'center' : left ? 'left' : 'right', board, room: scrollRoom(target, area) }
   }
   const onEnd = (event: TouchEvent): void => {
     const from = start
@@ -181,7 +184,14 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     const dx = touch.clientX - from.x
     const dy = touch.clientY - from.y
     if (Math.abs(dx) < MIN_SWIPE || Math.abs(dx) < Math.abs(dy) * 1.5) return
-    if (from.area === 'left') {
+    if (from.board !== null) {
+      const back = from.board.querySelector<HTMLButtonElement>('.rc-agents-back')
+      if (dx > 0 && !from.room.back && from.board.isConnected && back) {
+        // Cancel the synthesized click so a swipe over a Session row only goes back.
+        event.preventDefault()
+        back.click()
+      }
+    } else if (from.area === 'left') {
       if (dx < 0 && !from.room.forward && !from.frame.hasAttribute('data-sidebar-collapsed')) openLeft()
     } else if (from.area === 'right') {
       // A phone frame leaves the right panel no track (the shell's computeColumns yields 0), so the
@@ -197,7 +207,7 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
   }
   const cancel = (): void => { start = undefined }
   document.addEventListener('touchstart', onStart, { passive: true })
-  document.addEventListener('touchend', onEnd, { passive: true })
+  document.addEventListener('touchend', onEnd, { passive: false })
   document.addEventListener('touchcancel', cancel, { passive: true })
   return () => {
     document.removeEventListener('touchstart', onStart)

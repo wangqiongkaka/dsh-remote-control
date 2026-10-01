@@ -16,6 +16,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { AGENT_STATES, agentRows, completionHistory, historyRows, type AgentRow, type AgentState, type CompletionRecord } from './agent-board.ts'
 import { proxiedFrame, useNarrow } from './SidebarToggle.tsx'
@@ -94,7 +95,12 @@ const STYLE = ''
   + '.rc-agents-time{flex:none;font-size:12px;color:var(--dsw-alias-label-tertiary)}'
   + '.rc-agents-empty{margin:0;padding:10px 6px;font-size:13px;color:var(--dsw-alias-label-secondary)}'
   + '.rc-agents-board{position:absolute;inset:0;z-index:5;background:var(--dsw-specific-sidebar-fill);'
-  + 'display:flex;flex-direction:column;padding:6px 12px 0;box-sizing:border-box}'
+  + 'display:flex;flex-direction:column;padding:6px 12px 0;box-sizing:border-box;'
+  + 'animation:rc-agents-in var(--ds-transition-duration-slow,.3s) var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)) both}'
+  + '.rc-agents-board[data-closing]{animation-name:rc-agents-out;pointer-events:none}'
+  + '@keyframes rc-agents-in{from{transform:translateX(100%)}to{transform:translateX(0)}}'
+  + '@keyframes rc-agents-out{from{transform:translateX(0)}to{transform:translateX(100%)}}'
+  + '@media(prefers-reduced-motion:reduce){.rc-agents-board{animation:none}}'
   + '.rc-agents-bar{height:48px;display:flex;align-items:center;gap:4px;font-size:17px;font-weight:600}'
   + '.rc-agents-back{width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:10px}'
   + '.rc-agents-list{flex:1;overflow:auto;display:flex;flex-direction:column;gap:14px;padding-bottom:24px}'
@@ -226,17 +232,22 @@ function Tile({ state, count, selected, role, t, pick }: {
  * @returns the portal, or null off a proxied narrow frame and before the column exists.
  */
 export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
-  const { t, useSessions, useSessionStatus, openSession } = props
+  const { t, useSessions, useSessionStatus, useWorkspaces, openSession } = props
   const active = useNarrow() && proxiedFrame()
   const host = useCardHost(active)
   const now = useNow(host !== null)
-  const list = useSessions(value => value)
+  const sessions = useSessions(value => value)
+  const workspaces = useWorkspaces(value => value)
+  const list = useMemo(() => ({
+    ...sessions,
+    ids: sessions.ids.filter(id => !workspaces.archivedSessionIds.includes(id)),
+  }), [sessions, workspaces.archivedSessionIds])
   const statuses = useSessionStatus(value => value)
   const rows = useMemo(() => agentRows(list, statuses), [list, statuses])
   const [history, setHistory] = useState(savedHistory)
   const previous = useRef<typeof statuses>()
   useEffect(() => {
-    if (!active || list.phase !== 'ready') { previous.current = undefined; return }
+    if (!active || list.phase !== 'ready' || workspaces.phase !== 'ready') { previous.current = undefined; return }
     const before = previous.current
     previous.current = statuses
     setHistory(current => {
@@ -244,7 +255,7 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
       return next.length === current.length && next.every((entry, index) =>
         entry.id === current[index]?.id && entry.completedAt === current[index]?.completedAt) ? current : next
     })
-  }, [active, list, statuses])
+  }, [active, list, statuses, workspaces.phase])
   useEffect(() => {
     try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)) } catch { /* Storage may be disabled. */ }
   }, [history])
@@ -252,13 +263,19 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
   const markedRows = useMemo(() => [...rows, ...completed], [rows, completed])
   const harnessOf = useHarnesses(host === null ? [] : markedRows, props.harnesses)
   const [filter, setFilter] = useState<Filter>(null)
+  const [closing, setClosing] = useState(false)
   if (host === null) return null
 
   const counts = { all: rows.length, pending: 0, running: 0, done: 0 }
   for (const row of rows) counts[row.state] += 1
   const open = (id: SessionId): void => {
+    setClosing(false)
     setFilter(null)
     openSession(id)
+  }
+  const back = (): void => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) setFilter(null)
+    else setClosing(true)
   }
   const shown = AGENT_STATES.filter(state => (filter === 'all' || filter === state) && counts[state] > 0)
   const showHistory = (filter === 'all' || filter === 'done') && completed.length > 0
@@ -282,9 +299,14 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
           : rows.slice(0, PREVIEW).map(row => <Row key={row.id} row={row} harness={harnessOf.get(row.id)} now={now} t={t} open={open} />)}
       </section>
       {filter !== null && (
-        <div className="rc-agents-board" role="dialog" aria-label={t('agents.board')}>
+        <div className="rc-agents-board" role="dialog" aria-label={t('agents.board')}
+          data-closing={closing ? '' : undefined} aria-hidden={closing || undefined}
+          {...(closing ? { inert: '' } : {})}
+          onAnimationEnd={(event) => {
+            if (closing && event.target === event.currentTarget) { setFilter(null); setClosing(false) }
+          }}>
           <div className="rc-agents-bar">
-            <button type="button" className="rc-agents-back" aria-label={t('agents.back')} onClick={() => { setFilter(null) }}>
+            <button type="button" className="rc-agents-back" aria-label={t('agents.back')} onClick={back}>
               <IconChevronLeftOutlineRegular size={20} />
             </button>
             {t('agents.board')}
