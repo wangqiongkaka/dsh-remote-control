@@ -197,19 +197,26 @@ export function followKeyboard(): () => void {
       ? launcher.closest('[data-composer-card]')?.querySelector<HTMLElement>('[data-composer-input]')
       : null
     if (editor !== undefined && editor !== null) {
-      if (commandEditor !== editor) {
-        restoreInputMode()
-        commandEditor = editor
-        commandInputMode = editor.getAttribute('inputmode')
-        editor.setAttribute('inputmode', 'none')
+      if (shrunk) {
+        // An already-open keyboard stays open; do not move focus onto the launcher either.
+        event.preventDefault()
+      } else {
+        if (commandEditor !== editor) {
+          restoreInputMode()
+          commandEditor = editor
+          commandInputMode = editor.getAttribute('inputmode')
+          editor.setAttribute('inputmode', 'none')
+        }
+        editor.blur()
       }
-      editor.blur()
-    } else {
+    } else if (event.target.closest('[data-trigger-menu]') === null) {
       const previous = commandEditor
       // A focused editor needs a new focus transition for a direct tap to reopen the keyboard.
       if (event.target.closest('[data-composer-input]') === previous) previous?.blur()
       restoreInputMode()
     }
+    // A menu pick keeps the launcher's inputmode until the editor is tapped: restoring it here
+    // opens the keyboard and moves the tapped row before its mousedown handler can pick the file.
     if (sessionBody?.contains(event.target) && event.target.closest('[data-composer-card]') !== null) {
       blockEntryFocus = false
     }

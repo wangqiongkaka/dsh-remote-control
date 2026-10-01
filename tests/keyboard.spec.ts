@@ -130,6 +130,73 @@ it('opens the command launcher without raising the keyboard and restores typing 
   }
 })
 
+it('keeps an already-open keyboard and editor focus when the command launcher is tapped', () => {
+  const viewport = visualViewport({ layout: 800, height: 800 })
+  const dispose = followKeyboard()
+  const { card, editor, tool } = composer()
+  tool.setAttribute('aria-haspopup', 'listbox')
+  tool.addEventListener('click', () => { editor.focus() })
+  const blur = vi.fn()
+  editor.addEventListener('blur', blur)
+  try {
+    editor.focus()
+    viewport.resize({ height: 480 })
+    expect(document.documentElement.hasAttribute(KEYBOARD_ATTRIBUTE)).toBe(true)
+    const press = new Event('pointerdown', { bubbles: true, cancelable: true })
+    tool.dispatchEvent(press)
+    tool.click()
+    expect(blur).not.toHaveBeenCalled()
+    expect(press.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(editor)
+    expect(editor.hasAttribute('inputmode')).toBe(false)
+    expect(document.documentElement.hasAttribute(KEYBOARD_ATTRIBUTE)).toBe(true)
+  } finally {
+    dispose()
+    card.remove()
+  }
+})
+
+it('picks a file in one menu press without reopening the suppressed keyboard', () => {
+  visualViewport({ layout: 800, height: 800 })
+  const dispose = followKeyboard()
+  const { card, editor, tool } = composer()
+  tool.setAttribute('aria-haspopup', 'listbox')
+  tool.addEventListener('click', () => { editor.focus() })
+  const menu = document.createElement('div')
+  menu.setAttribute('data-trigger-menu', '')
+  const item = document.createElement('button')
+  item.setAttribute('role', 'option')
+  const file = document.createElement('input')
+  file.type = 'file'
+  file.hidden = true
+  const openPicker = vi.spyOn(file, 'click')
+  // MenuView picks on mousedown; the File action synchronously clicks the resident native input.
+  item.addEventListener('mousedown', event => {
+    event.preventDefault()
+    file.click()
+    menu.remove()
+  })
+  menu.append(item)
+  card.append(menu, file)
+  try {
+    tool.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    tool.click()
+    expect(editor.getAttribute('inputmode')).toBe('none')
+    item.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true }))
+    expect(editor.getAttribute('inputmode')).toBe('none')
+    expect(document.activeElement).toBe(editor)
+    item.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
+    expect(openPicker).toHaveBeenCalledTimes(1)
+    expect(menu.isConnected).toBe(false)
+    // Typing resumes normally after the picker: the direct editor tap releases suppression.
+    editor.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    expect(editor.hasAttribute('inputmode')).toBe(false)
+  } finally {
+    dispose()
+    card.remove()
+  }
+})
+
 it('dismisses the keyboard only after a sent draft clears', () => {
   vi.useFakeTimers()
   visualViewport({ layout: 800, height: 800 })
