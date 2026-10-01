@@ -2,7 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { SlotCore } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { apply } from '../dist/client/index.js'
 
 // jsdom ships neither of these; the apply-time phone effect and the slot entries ask for both.
@@ -314,7 +314,8 @@ it('closes an open phone sidebar with a reverse swipe inside that sidebar', () =
 
 // The right panel's expanded state persists per Session, so a phone page reloaded from the
 // background reopens on it: coming back lands on the left drawer instead, until the first touch.
-it('lands the phone on the left drawer on load and on every return to the foreground', async () => {
+// A return within a minute (a lock, the notification shade) keeps the page as it was left.
+it('lands the phone on the left drawer on load and on a return from a minute or more away', async () => {
   const proxy = document.createElement('style')
   proxy.setAttribute('data-dsh-remote-control', '')
   document.head.append(proxy)
@@ -334,6 +335,10 @@ it('lands the phone on the left drawer on load and on every return to the foregr
   })
   let visibility = 'visible'
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility })
+  // The earlier phone tests share this document: start from a page that has not landed yet.
+  document.documentElement.removeAttribute('data-remote-control-landed')
+  let now = 1_000_000
+  const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
   const tick = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0) })
   const disposers: (() => void)[] = []
   const ctx = context(slots(), disposers)
@@ -373,29 +378,48 @@ it('lands the phone on the left drawer on load and on every return to the foregr
     expect(drawerOpen()).toBe(false)
     expect(rightOpen()).toBe(true)
 
-    visibility = 'hidden'
-    document.dispatchEvent(new Event('visibilitychange'))
-    await tick()
+    const away = async (ms: number, leaving?: () => void): Promise<void> => {
+      visibility = 'hidden'
+      document.dispatchEvent(new Event('visibilitychange'))
+      await tick()
+      leaving?.()
+      now += ms
+      visibility = 'visible'
+      document.dispatchEvent(new Event('visibilitychange'))
+      await tick()
+      await tick()
+    }
+    await away(59_999)
+    expect(drawerOpen()).toBe(false)
+    expect(rightOpen()).toBe(true)
     expect(toggles).toBe(2)
-    visibility = 'visible'
-    document.dispatchEvent(new Event('visibilitychange'))
-    await tick()
-    await tick()
+    await away(60_000)
     expect(rightOpen()).toBe(false)
     expect(drawerOpen()).toBe(true)
     expect(toggles).toBe(3)
 
-    for (const dispose of disposers.splice(0)) dispose()
-    frame.setAttribute('data-sidebar-collapsed', '')
-    document.dispatchEvent(new Event('visibilitychange'))
+    await away(60_000, () => {
+      for (const dispose of disposers.splice(0)) dispose()
+      frame.setAttribute('data-sidebar-collapsed', '')
+    })
+    expect(drawerOpen()).toBe(false)
+
+    // A rebuilt bundle makes the shell apply the plugin again on a page that stays open: that is
+    // no page load, so the Session on screen keeps its place.
+    const again = context(slots(), disposers)
+    again.layout.toggleSidebar = ctx.layout.toggleSidebar
+    apply(again)
     await tick()
     await tick()
     expect(drawerOpen()).toBe(false)
+    expect(toggles).toBe(3)
   } finally {
     for (const dispose of disposers) dispose()
     proxy.remove()
     frame.remove()
     Reflect.deleteProperty(document, 'visibilityState')
+    document.documentElement.removeAttribute('data-remote-control-landed')
+    clock.mockRestore()
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),

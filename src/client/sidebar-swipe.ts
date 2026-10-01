@@ -35,12 +35,18 @@ const FRAME = '[class*="_frame"]:has([class*="_sidebarCol"])'
 const RIGHT_TOGGLE = '[data-sidebar-right-panel][data-sidebar-right-open] [data-sidebar-right-toggle]'
 /** How long a landing keeps up with the shell restoring its panels, unless a touch ends it first. */
 const LANDING = 10_000
+/** A return sooner than this (a lock, the notification shade) keeps the page as it was left. */
+const AWAY = 60_000
+/** Marks a document that has had its load's landing; it outlives the plugin's own module. */
+const LANDED = 'data-remote-control-landed'
 
 /**
- * Land on the left drawer whenever the phone page loads or comes back to the foreground. The right
+ * Land on the left drawer whenever the phone page loads or comes back from a while away. The right
  * panel's expanded state persists per Session, so a page the phone reloaded from the background
  * would otherwise reopen on it, and its opening folds the drawer: until the user's first touch,
  * every render that shows the right panel is answered by closing it and reopening the drawer.
+ * The shell applies this plugin again on a page that stays open (a rebuilt bundle is swapped in
+ * with a fresh module), which is no page load: only a document's first call lands on its own.
  */
 export function landOnDrawer(openLeft: () => void): () => void {
   let observer: MutationObserver | undefined
@@ -78,9 +84,17 @@ export function landOnDrawer(openLeft: () => void): () => void {
     // The shell may not have rendered yet, or be mid-render: look once it has had its turn.
     first = setTimeout(settle, 0)
   }
-  const onVisible = (): void => { if (document.visibilityState === 'visible') land() }
+  // Wall-clock time: timers and performance.now() may stand still while the page is in the background.
+  let left: number | undefined
+  const onVisible = (): void => {
+    if (document.visibilityState !== 'visible') left = Date.now()
+    else if (left !== undefined && Date.now() - left >= AWAY) land()
+  }
   document.addEventListener('visibilitychange', onVisible)
-  land()
+  if (!document.documentElement.hasAttribute(LANDED)) {
+    document.documentElement.setAttribute(LANDED, '')
+    land()
+  }
   return () => {
     stop()
     document.removeEventListener('visibilitychange', onVisible)
