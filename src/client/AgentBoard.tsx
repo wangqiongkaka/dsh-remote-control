@@ -1,6 +1,6 @@
 /**
- * The phone drawer's Agent board: a summary card in New Session's seat and a board over the whole
- * drawer, listing Sessions that wait for the user, run, or finished unseen. A row opens its Session.
+ * The phone drawer's Agent card in New Session's seat, with selectable status tiles and inline
+ * Session details, including recent completion history. A row opens its Session.
  *
  * The sidebar shell declares no seat between New Session and its panel rows, so the card renders
  * through a portal into a host element placed right after that (phone-hidden, see drawer-style)
@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  IconChevronLeftOutlineRegular, IconChevronRightOutlineRegular, relativeTime, StateDot, type StateDotState,
+  relativeTime, StateDot, type StateDotState,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
@@ -29,8 +29,6 @@ export const AGENTS_ATTRIBUTE = 'data-remote-control-agents'
 /** New Session in the sidebar column: the card takes the seat right after it. */
 const ANCHOR = '[class*="_sidebarCol"] button[class*="_newSession"]'
 
-/** How many Sessions the card previews. */
-const PREVIEW = 3
 const HISTORY_KEY = 'dsh-remote-control.agent-history.v1'
 
 function savedHistory(): CompletionRecord<SessionId>[] {
@@ -45,6 +43,8 @@ function savedHistory(): CompletionRecord<SessionId>[] {
 /** Host commands passed through the slot injection face. */
 export interface AgentBoardInjected {
   openSession: (sessionId: SessionId) => void
+  /** Observe explicit opens, including reopening the current Session. */
+  onSessionOpened: (listener: (sessionId: SessionId) => void) => () => void
   /** Each Session's harness (dsh, codex, claude-code…); empty where harness-provider is absent. */
   harnesses: (sessionIds: SessionId[]) => Promise<Readonly<Record<string, { harness: string }>>>
 }
@@ -60,26 +60,19 @@ export type AgentBoardProps = PropsRuntime<'shell.overlay'> & PropsLocale<typeof
 
 type Translate = AgentBoardProps['t']
 
-/** Which board view is open: every group, one group, or none (the card alone). */
-type Filter = 'all' | AgentState | null
-
 const DOT: Record<AgentState, StateDotState> = { pending: 'warning', running: 'ongoing', done: 'done' }
 
 const STYLE = ''
-  // The board covers the whole column, so the column is its containing block.
-  + `div:has(> [${AGENTS_ATTRIBUTE}]){position:relative}`
   + `[${AGENTS_ATTRIBUTE}] button{font:inherit;color:inherit;background:none;border:0;padding:0;text-align:left;`
   + 'cursor:pointer;-webkit-tap-highlight-color:transparent}'
   + '.rc-agents-card{margin:4px 0 8px;padding:8px;border-radius:16px;'
   + 'box-shadow:inset 0 0 0 0.5px var(--dsw-alias-border-l3);display:flex;flex-direction:column;gap:6px}'
-  + '.rc-agents-head{height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 6px}'
+  + '.rc-agents-head{height:32px;display:flex;align-items:center;padding:0 6px}'
   + '.rc-agents-head b{font-size:15px;font-weight:600}'
-  + '.rc-agents-more{display:flex;align-items:center;gap:2px;font-size:13px;color:var(--dsw-alias-label-secondary)}'
   + '.rc-agents-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}'
-  + '.rc-agents-board .rc-agents-tiles{grid-template-columns:repeat(4,minmax(0,1fr));padding:4px 0 12px}'
   + '.rc-agents-tile{height:60px;border-radius:12px;padding:8px 10px !important;box-sizing:border-box;display:flex;'
   + 'flex-direction:column;justify-content:space-between;background:var(--dsw-alias-interactive-bg-hover) !important}'
-  + '.rc-agents-tile[aria-pressed="true"],.rc-agents-tile[aria-selected="true"]{box-shadow:inset 0 0 0 1.5px var(--dsw-alias-label-tertiary)}'
+  + '.rc-agents-tile[aria-pressed="true"]{box-shadow:inset 0 0 0 1.5px var(--dsw-alias-label-tertiary)}'
   + '.rc-agents-tile[data-state="pending"]{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 16%,transparent) !important}'
   + '.rc-agents-tile[data-state="done"]{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 14%,transparent) !important}'
   + '.rc-agents-tile span{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary)}'
@@ -94,16 +87,7 @@ const STYLE = ''
   + '.rc-agents-meta[data-state="pending"]{color:var(--dsw-alias-state-warn-primary)}'
   + '.rc-agents-time{flex:none;font-size:12px;color:var(--dsw-alias-label-tertiary)}'
   + '.rc-agents-empty{margin:0;padding:10px 6px;font-size:13px;color:var(--dsw-alias-label-secondary)}'
-  + '.rc-agents-board{position:absolute;inset:0;z-index:5;background:var(--dsw-specific-sidebar-fill);'
-  + 'display:flex;flex-direction:column;padding:6px 12px 0;box-sizing:border-box;'
-  + 'animation:rc-agents-in var(--ds-transition-duration-slow,.3s) var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1)) both}'
-  + '.rc-agents-board[data-closing]{animation-name:rc-agents-out;pointer-events:none}'
-  + '@keyframes rc-agents-in{from{transform:translateX(100%)}to{transform:translateX(0)}}'
-  + '@keyframes rc-agents-out{from{transform:translateX(0)}to{transform:translateX(100%)}}'
-  + '@media(prefers-reduced-motion:reduce){.rc-agents-board{animation:none}}'
-  + '.rc-agents-bar{height:48px;display:flex;align-items:center;gap:4px;font-size:17px;font-weight:600}'
-  + '.rc-agents-back{width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:10px}'
-  + '.rc-agents-list{flex:1;overflow:auto;display:flex;flex-direction:column;gap:14px;padding-bottom:24px}'
+  + '.rc-agents-list{max-height:40dvh;overflow:auto;display:flex;flex-direction:column;gap:12px}'
   + '.rc-agents-group h3{margin:0 0 6px;padding:0 6px;font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;'
   + 'color:var(--dsw-alias-label-secondary)}'
   + '.rc-agents-group > div{padding:4px;border-radius:16px;box-shadow:inset 0 0 0 0.5px var(--dsw-alias-border-l3)}'
@@ -207,32 +191,31 @@ function Row({ row, harness, now, t, open }: {
   )
 }
 
-function Tile({ state, count, selected, role, t, pick }: {
-  state: 'all' | AgentState; count: number; selected: boolean; role?: 'tab'; t: Translate; pick: () => void
+function Tile({ state, count, selected, t, pick }: {
+  state: AgentState; count: number; selected: boolean; t: Translate; pick: () => void
 }) {
   // The running spinner only turns while something runs; an empty tile rests on the idle dot.
-  const dot = state === 'all' ? undefined : state === 'running' && count === 0 ? 'idle' : DOT[state]
+  const dot = state === 'running' && count === 0 ? 'idle' : DOT[state]
   return (
     <button
       type="button"
       className="rc-agents-tile"
       data-state={state}
-      role={role}
-      {...(role === 'tab' ? { 'aria-selected': selected } : {})}
+      aria-pressed={selected}
       onClick={pick}
     >
-      <span>{dot !== undefined && <StateDot state={dot} size={dot === 'ongoing' ? 12 : 10} />}{t(`agents.${state}`)}</span>
+      <span><StateDot state={dot} size={dot === 'ongoing' ? 12 : 10} />{t(`agents.${state}`)}</span>
       <b>{count}</b>
     </button>
   )
 }
 
 /**
- * Render the drawer's Agent card and board into the sidebar column.
+ * Render the drawer's Agent card and inline details into the sidebar column.
  * @returns the portal, or null off a proxied narrow frame and before the column exists.
  */
 export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
-  const { t, useSessions, useSessionStatus, useWorkspaces, openSession } = props
+  const { t, useSessions, useSessionStatus, useWorkspaces, openSession, onSessionOpened } = props
   const active = useNarrow() && proxiedFrame()
   const host = useCardHost(active)
   const now = useNow(host !== null)
@@ -243,13 +226,46 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
     ids: sessions.ids.filter(id => !workspaces.archivedSessionIds.includes(id)),
   }), [sessions, workspaces.archivedSessionIds])
   const statuses = useSessionStatus(value => value)
-  const rows = useMemo(() => agentRows(list, statuses), [list, statuses])
+  const [reminders, setReminders] = useState<ReadonlySet<SessionId>>(() => new Set())
+  useEffect(() => {
+    if (!active) return
+    return onSessionOpened(id => {
+      setReminders(current => {
+        if (!current.has(id)) return current
+        const next = new Set(current)
+        next.delete(id)
+        return next
+      })
+    })
+  }, [active, onSessionOpened])
+  const boardStatuses = useMemo(() => {
+    if (reminders.size === 0) return statuses
+    const next = new Map(statuses)
+    for (const id of reminders) {
+      const status = next.get(id)
+      if (status !== undefined) next.set(id, { ...status, completionUnread: true })
+    }
+    return next
+  }, [statuses, reminders])
+  const rows = useMemo(() => agentRows(list, boardStatuses), [list, boardStatuses])
   const [history, setHistory] = useState(savedHistory)
   const previous = useRef<typeof statuses>()
   useEffect(() => {
     if (!active || list.phase !== 'ready' || workspaces.phase !== 'ready') { previous.current = undefined; return }
     const before = previous.current
     previous.current = statuses
+    setReminders(current => {
+      const next = new Set<SessionId>()
+      for (const id of list.ids) {
+        const summary = list.byId[id]
+        const status = statuses.get(id)
+        if (summary === undefined || summary.blank || summary.origin === 'subagent' || status?.running !== false
+          || status.pendingInteraction !== undefined) continue
+        // The host acknowledges the main Session immediately; keep its stop until an explicit open.
+        if (current.has(id) || (before?.get(id)?.running === true && !status.completionUnread)) next.add(id)
+      }
+      return next.size === current.size && [...next].every(id => current.has(id)) ? current : next
+    })
     setHistory(current => {
       const next = completionHistory(list, statuses, before, current)
       return next.length === current.length && next.every((entry, index) =>
@@ -259,84 +275,44 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
   useEffect(() => {
     try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)) } catch { /* Storage may be disabled. */ }
   }, [history])
-  const completed = useMemo(() => historyRows(list, statuses, history), [list, statuses, history])
+  const completed = useMemo(() => historyRows(list, boardStatuses, history), [list, boardStatuses, history])
   const markedRows = useMemo(() => [...rows, ...completed], [rows, completed])
   const harnessOf = useHarnesses(host === null ? [] : markedRows, props.harnesses)
-  const [filter, setFilter] = useState<Filter>(null)
-  const [closing, setClosing] = useState(false)
+  const [filter, setFilter] = useState<AgentState>('running')
   if (host === null) return null
 
-  const counts = { all: rows.length, pending: 0, running: 0, done: 0 }
+  const counts = { pending: 0, running: 0, done: 0 }
   for (const row of rows) counts[row.state] += 1
-  const open = (id: SessionId): void => {
-    setClosing(false)
-    setFilter(null)
-    openSession(id)
-  }
-  const back = (): void => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) setFilter(null)
-    else setClosing(true)
-  }
-  const shown = AGENT_STATES.filter(state => (filter === 'all' || filter === state) && counts[state] > 0)
-  const showHistory = (filter === 'all' || filter === 'done') && completed.length > 0
+  const shown = rows.filter(row => row.state === filter)
+  const showHistory = filter === 'done' && completed.length > 0
 
   return createPortal(
     <>
       <style>{STYLE}</style>
       <section className="rc-agents-card" aria-label={t('agents.title')}>
-        <button type="button" className="rc-agents-head" onClick={() => { setFilter('all') }}>
-          <b>{t('agents.title')}</b>
-          <span className="rc-agents-more">{t('agents.viewAll')}<IconChevronRightOutlineRegular size={14} /></span>
-        </button>
+        <div className="rc-agents-head"><b>{t('agents.title')}</b></div>
         <div className="rc-agents-tiles">
           {AGENT_STATES.map(state => (
-            <Tile key={state} state={state} count={counts[state]} selected={false} t={t}
+            <Tile key={state} state={state} count={counts[state]} selected={filter === state} t={t}
               pick={() => { setFilter(state) }} />
           ))}
         </div>
-        {rows.length === 0
-          ? <p className="rc-agents-empty">{t('agents.empty')}</p>
-          : rows.slice(0, PREVIEW).map(row => <Row key={row.id} row={row} harness={harnessOf.get(row.id)} now={now} t={t} open={open} />)}
-      </section>
-      {filter !== null && (
-        <div className="rc-agents-board" role="dialog" aria-label={t('agents.board')}
-          data-closing={closing ? '' : undefined} aria-hidden={closing || undefined}
-          {...(closing ? { inert: '' } : {})}
-          onAnimationEnd={(event) => {
-            if (closing && event.target === event.currentTarget) { setFilter(null); setClosing(false) }
-          }}>
-          <div className="rc-agents-bar">
-            <button type="button" className="rc-agents-back" aria-label={t('agents.back')} onClick={back}>
-              <IconChevronLeftOutlineRegular size={20} />
-            </button>
-            {t('agents.board')}
-          </div>
-          <div className="rc-agents-tiles" role="tablist">
-            {(['all', ...AGENT_STATES] as const).map(state => (
-              <Tile key={state} state={state} count={counts[state]} selected={filter === state} role="tab" t={t}
-                pick={() => { setFilter(state) }} />
-            ))}
-          </div>
-          <div className="rc-agents-list">
-            {shown.length === 0 && !showHistory && <p className="rc-agents-empty">{t('agents.empty')}</p>}
-            {shown.map(state => (
-              <section key={state} className="rc-agents-group">
-                <h3><StateDot state={DOT[state]} size={state === 'running' ? 12 : 10} />{t(`agents.${state}`)}</h3>
-                <div>
-                  {rows.filter(row => row.state === state)
-                    .map(row => <Row key={row.id} row={row} harness={harnessOf.get(row.id)} now={now} t={t} open={open} />)}
-                </div>
-              </section>
-            ))}
-            {showHistory && (
-              <section className="rc-agents-group rc-agents-history">
-                <h3><StateDot state="done" size={10} />{t('agents.history')}</h3>
-                <div>{completed.map(row => <Row key={row.id} row={row} harness={harnessOf.get(row.id)} now={now} t={t} open={open} />)}</div>
-              </section>
-            )}
-          </div>
+        <div className="rc-agents-list" role="region" aria-label={t(`agents.${filter}`)}>
+          {shown.length === 0 && !showHistory && <p className="rc-agents-empty">{t(`agents.empty.${filter}`)}</p>}
+          {shown.length > 0 && (
+            <section className="rc-agents-group">
+              <h3><StateDot state={DOT[filter]} size={filter === 'running' ? 12 : 10} />{t(`agents.${filter}`)}</h3>
+              <div>{shown.map(row => <Row key={row.id} row={row} harness={harnessOf.get(row.id)} now={now} t={t} open={openSession} />)}</div>
+            </section>
+          )}
+          {showHistory && (
+            <section className="rc-agents-group rc-agents-history">
+              <h3><StateDot state="done" size={10} />{t('agents.history')}</h3>
+              <div>{completed.map(row => <Row key={row.id} row={row} harness={harnessOf.get(row.id)} now={now} t={t} open={openSession} />)}</div>
+            </section>
+          )}
         </div>
-      )}
+      </section>
     </>,
     host,
   )
