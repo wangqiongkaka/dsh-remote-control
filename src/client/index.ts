@@ -16,7 +16,7 @@ import { followKeyboard } from './keyboard.ts'
 import { applyDrawerSelection } from './drawer-style.ts'
 import { compactChatDefaults } from './chat-defaults.ts'
 import { hideModelsSettings } from './settings-models.ts'
-import { followChatPulls, followSidebarSwipes, followRowHolds, followStripPulls, landOnDrawer } from './sidebar-swipe.ts'
+import { followVerticalPulls, followSidebarSwipes, followRowHolds, followStripPulls, landOnDrawer } from './sidebar-swipe.ts'
 import { en, NS, zh, type RemoteControlKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -82,7 +82,7 @@ export function apply(ctx: Context): void {
       swipes?.()
       swipes = phone ? followSidebarSwipes(() => { ctx.layout.toggleSidebar() }) : undefined
       pulls?.()
-      pulls = phone ? followChatPulls() : undefined
+      pulls = phone ? followVerticalPulls() : undefined
       strips?.()
       strips = phone ? followStripPulls() : undefined
       models?.()

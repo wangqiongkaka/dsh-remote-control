@@ -88,3 +88,30 @@ it('removes the sheet it injected', () => {
   dispose()
   expect(sheet()).toBeNull()
 })
+
+it('scrolls the whole drawer while the brand and settings stay pinned', () => {
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
+    + '<div class="ui_sidebar__logoRow__h1">品牌</div>'
+    + '<div data-remote-control-agents><div class="rc-agents-list">Agent</div></div>'
+    + '<div class="ui_sidebar__regionArea__h1"><div class="ui_workspace__root__h1">'
+    + '<div class="ui_workspace__listArea__h1"><div class="ui_workspace__treeBody__h1">'
+    + '<div class="ui_workspace__list__h1" role="tree">项目</div></div></div></div></div>'
+    + '<div class="ui_sidebar__footArea__h1">设置</div></div></div>'
+  document.body.append(frame)
+  const dispose = applyDrawerSelection()
+  const style = (selector: string): CSSStyleDeclaration => getComputedStyle(frame.querySelector(selector)!)
+  try {
+    expect(style('.ui_sidebar__root__h1').overflowY).toBe('auto')
+    expect(style('.ui_sidebar__root__h1').overscrollBehaviorY).toBe('none')
+    expect(style('.ui_sidebar__logoRow__h1').position).toBe('sticky')
+    expect(style('.ui_sidebar__logoRow__h1').top).toBe('0px')
+    expect(style('.ui_sidebar__footArea__h1').position).toBe('sticky')
+    expect(style('.ui_sidebar__footArea__h1').bottom).toBe('0px')
+    expect(style('.ui_sidebar__regionArea__h1').overflow).toBe('visible')
+    expect(style('.ui_workspace__list__h1').overflowY).toBe('visible')
+    expect(style('.rc-agents-list').overflow).toBe('visible')
+    expect(style('.rc-agents-list').maxHeight).toBe('none')
+  } finally { dispose(); frame.remove() }
+})

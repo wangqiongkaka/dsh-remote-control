@@ -28,6 +28,10 @@ export const DRAWER_STYLE_ATTRIBUTE = 'data-dsh-remote-control-drawer-selection'
 /** A top-level Workspace section of the sidebar tree; search results and the flat list have none. */
 const CARD = '[class*="_sidebarCol"] [role="tree"] > [class*="_groupSection"]'
 
+/** The expanded drawer's single scrollport; its header and footer stay sticky. */
+export const DRAWER_SCROLL_ROOT = '[class*="_frame"]:has([class*="_sidebarCol"]):not([data-sidebar-collapsed]) '
+  + '[class*="_sidebarCol"] [class*="_root"]:has(> [class*="_logoRow"])'
+
 /**
  * The current session's fill, the resting row shape that keeps a tap a tap on a touch device,
  * the Workspace cards, and touch-sized rows at phone width.
@@ -36,6 +40,20 @@ const DRAWER_SELECTION_STYLE = '[class*="_sessionRow"][aria-selected="true"]'
   + '{background:var(--dsw-specific-sidebar-nav-item-active) !important}'
   // The Agent card takes New Session's seat; a Workspace row's own New Session button stays.
   + '[class*="_sidebarCol"] button[class*="_newSession"]{display:none !important}'
+  // One scrollport lets the Agent card leave room for projects instead of squeezing their list.
+  + `${DRAWER_SCROLL_ROOT}{overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:none;scrollbar-width:thin;`
+  + 'scrollbar-gutter:stable;padding-top:0 !important;padding-bottom:0 !important;'
+  + '--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2)}'
+  + `${DRAWER_SCROLL_ROOT} > *{flex-shrink:0}`
+  + `${DRAWER_SCROLL_ROOT} > [class*="_logoRow"]{position:sticky;top:0;z-index:3;`
+  + 'height:66px;padding-top:14px;background:var(--dsw-specific-sidebar-fill)}'
+  + `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]{position:sticky;bottom:0;z-index:3;margin-top:auto;`
+  + 'padding:6px 0 max(32px,env(safe-area-inset-bottom));background:var(--dsw-specific-sidebar-fill)}'
+  + `${DRAWER_SCROLL_ROOT} > [class*="_regionArea"]{flex:none;overflow:visible}`
+  + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] :is([class*="_root"],[class*="_list"],[class*="_treeBody"])`
+  + '{flex:none;overflow:visible;overflow-y:visible;scrollbar-gutter:auto}'
+  + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] [class*="_fade"]{display:none}`
+  + `${DRAWER_SCROLL_ROOT} .rc-agents-list{max-height:none;overflow:visible}`
   + '@media (hover: none){'
   // No latched fill behind the finger, on any row of the list.
   + '[class*="_sessionRow"]:hover:not([aria-selected="true"]),'

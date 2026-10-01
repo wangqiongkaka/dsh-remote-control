@@ -815,6 +815,93 @@ it('rebounds an upward pull at the bottom without moving the composer', () => {
   }
 })
 
+it('rebounds the whole drawer at either edge without moving its pinned brand or settings', () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
+    + '<div class="ui_sidebar__logoRow__h1"><button>收起</button></div>'
+    + '<div data-remote-control-agents><button>Agent</button></div>'
+    + '<nav class="ui_sidebar__panelList__h1">插件</nav>'
+    + '<div class="ui_sidebar__regionArea__h1"><div class="ui_workspace__list__h1">'
+    + '<button data-project>项目</button><input><div role="dialog">菜单</div></div></div>'
+    + '<div class="ui_sidebar__footArea__h1"><button>设置</button></div></div></div>'
+  document.body.append(frame)
+  let reducedMotion = false
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (query: string) => ({ matches: query.includes('prefers-reduced-motion') ? reducedMotion : true,
+      addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const scroller = frame.querySelector<HTMLElement>('.ui_sidebar__root__h1')!
+  const agents = frame.querySelector<HTMLElement>('[data-remote-control-agents]')!
+  const projects = frame.querySelector<HTMLElement>('.ui_sidebar__regionArea__h1')!
+  const target = frame.querySelector('[data-project]')!
+  Object.defineProperties(scroller, { scrollHeight: { value: 900 }, clientHeight: { value: 400 } })
+  const touch = (element: Element, type: string, y: number, x = 160, count = 1): Event => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    const points = Array.from({ length: count }, (_, identifier) => ({ identifier, clientX: x, clientY: y }))
+    Object.defineProperties(event, {
+      touches: { value: type === 'touchend' || type === 'touchcancel' ? [] : points },
+      changedTouches: { value: points },
+    })
+    element.dispatchEvent(event)
+    return event
+  }
+  const disposers: (() => void)[] = []
+  try {
+    apply(context(slots(), disposers))
+    scroller.scrollTop = 100
+    touch(target, 'touchstart', 100)
+    expect(touch(target, 'touchmove', 200).defaultPrevented).toBe(false)
+    touch(target, 'touchend', 200)
+    scroller.scrollTop = 0
+    touch(target, 'touchstart', 100)
+    expect(touch(target, 'touchmove', 200).defaultPrevented).toBe(true)
+    expect(agents.style.transform).toMatch(/translateY\([1-9]/u)
+    expect(projects.style.transform).toBe(agents.style.transform)
+    expect(frame.querySelector('.ui_sidebar__logoRow__h1')?.getAttribute('style')).toBeNull()
+    expect(frame.querySelector('.ui_sidebar__footArea__h1')?.getAttribute('style')).toBeNull()
+    touch(target, 'touchend', 200)
+    expect(agents.style.transform).toBe('translateY(0px)')
+    expect(projects.style.transition).toContain('transform')
+    scroller.scrollTop = 500
+    touch(target, 'touchstart', 200)
+    expect(touch(target, 'touchmove', 100).defaultPrevented).toBe(true)
+    expect(projects.style.transform).toMatch(/translateY\(-/u)
+    touch(target, 'touchcancel', 100)
+    expect(projects.style.transform).toBe('translateY(0px)')
+    reducedMotion = true
+    touch(target, 'touchstart', 200)
+    touch(target, 'touchmove', 100)
+    touch(target, 'touchend', 100)
+    expect(projects.style.transform).toBe('')
+    expect(projects.style.transition).toBe('')
+    for (const selector of ['input', '[role="dialog"]', '.ui_sidebar__logoRow__h1 button', '.ui_sidebar__footArea__h1 button']) {
+      const element = frame.querySelector(selector)!
+      touch(element, 'touchstart', 200)
+      expect(touch(element, 'touchmove', 100).defaultPrevented).toBe(false)
+      touch(element, 'touchend', 100)
+    }
+    touch(target, 'touchstart', 200)
+    expect(touch(target, 'touchmove', 200, 80).defaultPrevented).toBe(false)
+    touch(target, 'touchcancel', 200)
+    touch(target, 'touchstart', 200, 160, 2)
+    expect(touch(target, 'touchmove', 100, 160, 2).defaultPrevented).toBe(false)
+    touch(target, 'touchcancel', 100)
+    touch(target, 'touchstart', 200)
+    touch(target, 'touchmove', 100)
+    for (const dispose of disposers.splice(0)) dispose()
+    expect(projects.style.transform).toBe('')
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+  }
+})
+
 // Models configuration is a desktop task; the phone's Settings keep every other section.
 it('hides the Models section from phone Settings and leaves it when selected', async () => {
   const proxied = document.createElement('style')
