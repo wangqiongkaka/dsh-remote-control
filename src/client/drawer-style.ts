@@ -69,7 +69,8 @@ const DRAWER_SELECTION_STYLE = '[class*="_sessionRow"][aria-selected="true"]'
   + '[class*="_sessionRow"]:hover:not([class*="_menuOpen"]) [class*="_time"]{display:revert !important}'
   + '[class*="_sessionRow"]:hover:not([class*="_menuOpen"]) [class*="_pinIndicator"]{display:inline-flex !important}'
   + '[class*="_projectRow"]:hover [class*="_chevron"]{display:none !important}'
-  + '[class*="_projectRow"]:hover [class*="_folder"]{display:revert !important}'
+  // Preserve the host's flex slot: worktree decorations paint a sized ::before inside it.
+  + '[class*="_projectRow"]:hover [class*="_folder"]{display:inline-flex !important}'
   // A long press opens a Session row's menu (see followRowHolds): no text selection or callout on it.
   + '[class*="_sessionRow"]{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}'
   // With the hover fill gone, the finger needs the answer while it is still down: the pressed fill
