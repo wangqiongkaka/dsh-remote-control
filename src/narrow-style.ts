@@ -158,6 +158,20 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '[data-shortcut-modal="settings"] [class*="_options"]{padding:0 16px 20px !important}'
   + '[data-shortcut-modal="settings"] [class*="_themeCube"]{flex:1 1 0;min-width:0;padding:12px 4px}'
   + '[data-shortcut-modal="settings"] [class*="_rowText"]{padding-right:0 !important}'
+  // Harness settings keep the shell's type scale on phones; toggles belong beside their copy,
+  // while the multi-Harness selector can scroll rather than forcing the whole sheet wider.
+  + '[data-shortcut-modal="settings"] .hp-set{gap:10px}'
+  + '[data-shortcut-modal="settings"] .hp-set-page{font-size:20px;line-height:28px}'
+  + '[data-shortcut-modal="settings"] .hp-set-intro{font-size:14px;line-height:21px}'
+  + '[data-shortcut-modal="settings"] .hp-set-group{margin-top:12px}'
+  + '[data-shortcut-modal="settings"] .hp-set-head{margin-bottom:4px;font-size:14px;line-height:20px;letter-spacing:0;color:var(--dsw-alias-label-secondary)}'
+  + '[data-shortcut-modal="settings"] .hp-set-row{gap:12px;padding:16px 0}'
+  + '[data-shortcut-modal="settings"] .hp-set-title{font-size:16px;line-height:24px;font-weight:500;flex-wrap:wrap}'
+  + '[data-shortcut-modal="settings"] .hp-set-hint{font-size:14px;line-height:21px}'
+  + '[data-shortcut-modal="settings"] .hp-set-row:has(.hp-switch){flex-direction:row;align-items:center;gap:16px}'
+  + '[data-shortcut-modal="settings"] .hp-set-control input.hp-set-number{width:88px !important;text-align:center !important}'
+  + '[data-shortcut-modal="settings"] .hp-set-control .hp-delegate-harness{max-width:100%;overflow-x:auto;scrollbar-width:none}'
+  + '[data-shortcut-modal="settings"] .hp-set-control .hp-delegate-harness button{flex:none}'
   // The sheet's own scroll region keeps its content reachable under the phone's home indicator,
   // and the keyboard (visual-viewport height) bounds it the same way it bounds the shell.
   + '[data-shortcut-modal="settings"]{padding-bottom:env(safe-area-inset-bottom)}'

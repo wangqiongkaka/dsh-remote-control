@@ -1,5 +1,5 @@
 /**
- * Phone-only drawer styling, injected by the client rather than the proxy.
+ * Phone-only drawer and task-mode styling, injected by the client rather than the proxy.
  *
  * The shell paints the current session and the row under the pointer with one generic hover fill
  * (`--dsw-alias-interactive-bg-hover`), and a touch tap latches that hover — so in the drawer the
@@ -28,6 +28,13 @@ export const DRAWER_STYLE_ATTRIBUTE = 'data-dsh-remote-control-drawer-selection'
 /** A top-level Workspace section of the sidebar tree; search results and the flat list have none. */
 const CARD = '[class*="_sidebarCol"] [role="tree"] > [class*="_groupSection"]'
 
+/** The expanded drawer's single scrollport; its header and footer stay sticky. */
+export const DRAWER_SCROLL_ROOT = '[class*="_frame"]:has([class*="_sidebarCol"]):not([data-sidebar-collapsed]) '
+  + '[class*="_sidebarCol"] [class*="_root"]:has(> [class*="_logoRow"])'
+
+/** Harness-provider's two task modes share the proxied phone's client stylesheet. */
+const TASK_MODE = '.hp-delegate[data-hp-mode]'
+
 /**
  * The current session's fill, the resting row shape that keeps a tap a tap on a touch device,
  * the Workspace cards, and touch-sized rows at phone width.
@@ -36,6 +43,20 @@ const DRAWER_SELECTION_STYLE = '[class*="_sessionRow"][aria-selected="true"]'
   + '{background:var(--dsw-specific-sidebar-nav-item-active) !important}'
   // The Agent card takes New Session's seat; a Workspace row's own New Session button stays.
   + '[class*="_sidebarCol"] button[class*="_newSession"]{display:none !important}'
+  // One scrollport lets the Agent card leave room for projects instead of squeezing their list.
+  + `${DRAWER_SCROLL_ROOT}{overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:none;scrollbar-width:thin;`
+  + 'scrollbar-gutter:stable;padding-top:0 !important;padding-bottom:0 !important;'
+  + '--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2)}'
+  + `${DRAWER_SCROLL_ROOT} > *{flex-shrink:0}`
+  + `${DRAWER_SCROLL_ROOT} > [class*="_logoRow"]{position:sticky;top:0;z-index:3;`
+  + 'height:66px;padding-top:14px;background:var(--dsw-specific-sidebar-fill)}'
+  + `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]{position:sticky;bottom:0;z-index:3;margin-top:auto;`
+  + 'padding:6px 0 max(32px,env(safe-area-inset-bottom));background:var(--dsw-specific-sidebar-fill)}'
+  + `${DRAWER_SCROLL_ROOT} > [class*="_regionArea"]{flex:none;overflow:visible}`
+  + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] :is([class*="_root"],[class*="_list"],[class*="_treeBody"])`
+  + '{flex:none;overflow:visible;overflow-y:visible;scrollbar-gutter:auto}'
+  + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] [class*="_fade"]{display:none}`
+  + `${DRAWER_SCROLL_ROOT} .rc-agents-list{max-height:none;overflow:visible}`
   + '@media (hover: none){'
   // No latched fill behind the finger, on any row of the list.
   + '[class*="_sessionRow"]:hover:not([aria-selected="true"]),'
@@ -49,6 +70,8 @@ const DRAWER_SELECTION_STYLE = '[class*="_sessionRow"][aria-selected="true"]'
   + '[class*="_sessionRow"]:hover:not([class*="_menuOpen"]) [class*="_pinIndicator"]{display:inline-flex !important}'
   + '[class*="_projectRow"]:hover [class*="_chevron"]{display:none !important}'
   + '[class*="_projectRow"]:hover [class*="_folder"]{display:revert !important}'
+  // A long press opens a Session row's menu (see followRowHolds): no text selection or callout on it.
+  + '[class*="_sessionRow"]{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}'
   // With the hover fill gone, the finger needs the answer while it is still down: the pressed fill
   // is what tells a thumb the tap landed, and it is the only feedback a phone row has left.
   + '[class*="_sessionRow"]:active,'
@@ -64,6 +87,28 @@ const DRAWER_SELECTION_STYLE = '[class*="_sessionRow"][aria-selected="true"]'
   // At phone width the drawer is the whole screen: rows grow to thumb size, and so does the logo
   // row's collapse control, which is the drawer's only way back there.
   + '@media (max-width: 720px){'
+  // Task modes share one phone layout. A bounded dock leaves room for the draft and transcript
+  // when the keyboard opens; full-width model picks cannot push their neighbours off-screen.
+  + `${TASK_MODE}{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 8px;align-content:start;`
+  + 'padding:8px;font-size:13px;border:.5px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-specific-input-major);max-height:min(280px,calc(var(--dsh-remote-keyboard-height,100dvh) * .45));overflow-y:auto;overscroll-behavior-y:contain}'
+  + `${TASK_MODE} > strong{grid-column:1 / -1;grid-row:1;display:flex;align-items:center;min-height:36px;padding-right:44px;position:sticky;top:-8px;z-index:1;background:var(--dsw-specific-input-major)}`
+  + `${TASK_MODE} > .hp-delegate-exit{grid-column:2;grid-row:1;justify-self:end;margin:0;width:36px;height:36px;position:sticky;top:-8px;z-index:1;background:var(--dsw-specific-input-major)}`
+  + `${TASK_MODE} > .hp-delegate-harness,${TASK_MODE} > .hp-anchor{grid-column:1 / -1;min-width:0}`
+  + `${TASK_MODE} .hp-delegate-harness button{flex:1;justify-content:center;height:36px;padding:0 6px;white-space:nowrap}`
+  + `${TASK_MODE} .hp-chip{width:100%;max-width:100%;height:36px;text-align:left}`
+  + `${TASK_MODE} .hp-chip-label{flex:1}`
+  + `${TASK_MODE} .hp-chip-effort{flex-shrink:0;max-width:35%}`
+  + `${TASK_MODE} .hp-delegate-report{min-width:0;margin-left:0;min-height:44px;padding:0 8px;gap:8px;line-height:18px;font-size:12px;white-space:normal;overflow-wrap:anywhere}`
+  + `${TASK_MODE} .hp-delegate-report input{flex:none;width:18px;height:18px}`
+  // Fixed menus escape the dock's scroll clip; the client positions them above their own button.
+  + `${TASK_MODE} .hp-menu{position:fixed;left:16px;right:16px;`
+  + 'bottom:var(--dsh-remote-mode-menu-bottom,50px);'
+  + 'background:var(--dsw-alias-bg-layer-2);opacity:1;backdrop-filter:none;-webkit-backdrop-filter:none;'
+  + 'border:.5px solid var(--dsw-alias-border-l2);'
+  + 'width:auto;min-width:0;max-width:none;max-height:var(--dsh-remote-mode-menu-height,360px) !important}'
+  + `${TASK_MODE} .hp-menu > *{flex-shrink:0}`
+  + `${TASK_MODE} .hp-menu :is(.hp-option,.hp-cell){min-height:44px}`
+  + `${TASK_MODE} .hp-option-hint,${TASK_MODE} .hp-error{overflow-wrap:anywhere}`
   + '[class*="_projectRow"]{height:44px !important}'
   + '[class*="_sessionRow"]{height:40px !important}'
   + '[class*="_sessionOverflowButton"]{height:36px !important}'
@@ -79,5 +124,42 @@ export function applyDrawerSelection(): () => void {
   style.setAttribute(DRAWER_STYLE_ATTRIBUTE, '')
   style.textContent = DRAWER_SELECTION_STYLE
   document.head.append(style)
-  return () => { style.remove() }
+  const selector = `${TASK_MODE} .hp-menu`
+  const viewport = window.visualViewport
+  let frame = 0
+  const position = (): void => {
+    frame = 0
+    const viewportTop = viewport?.offsetTop ?? 0
+    for (const menu of document.querySelectorAll<HTMLElement>(selector)) {
+      const button = menu.closest('.hp-anchor')?.querySelector('.hp-chip')
+      if (!button) continue
+      // Keep an off-screen anchor from carrying the popup out of the visible band during a scroll.
+      const top = Math.max(button.getBoundingClientRect().top, viewportTop + 60)
+      const height = document.documentElement.clientHeight || window.innerHeight
+      menu.style.setProperty('--dsh-remote-mode-menu-bottom', `${height - top + 8}px`)
+      menu.style.setProperty('--dsh-remote-mode-menu-height', `${Math.min(360, top - viewportTop - 16)}px`)
+    }
+  }
+  const schedule = (): void => { if (!frame) frame = requestAnimationFrame(position) }
+  const observer = new MutationObserver(schedule)
+  observer.observe(document.body, { childList: true, subtree: true })
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
+  document.addEventListener('scroll', schedule, true)
+  window.addEventListener('resize', schedule)
+  viewport?.addEventListener('resize', schedule)
+  viewport?.addEventListener('scroll', schedule)
+  position()
+  return () => {
+    observer.disconnect()
+    cancelAnimationFrame(frame)
+    document.removeEventListener('scroll', schedule, true)
+    window.removeEventListener('resize', schedule)
+    viewport?.removeEventListener('resize', schedule)
+    viewport?.removeEventListener('scroll', schedule)
+    for (const menu of document.querySelectorAll<HTMLElement>(selector)) {
+      menu.style.removeProperty('--dsh-remote-mode-menu-bottom')
+      menu.style.removeProperty('--dsh-remote-mode-menu-height')
+    }
+    style.remove()
+  }
 }

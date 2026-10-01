@@ -83,6 +83,47 @@ it('opens an Agent board Session through the Workspace UI navigation', () => {
   }
 })
 
+it('observes all main-view opens including a same-Session reopen and disposes the subscription', () => {
+  const core = slots()
+  const disposers: (() => void)[] = []
+  const listeners = new Set<() => void>()
+  let snapshot = { ids: ['s1', 's2'], byId: {
+    s1: { retainedBy: { mainView: 1, workspaceOperation: 0 } },
+    s2: { retainedBy: { mainView: 0, workspaceOperation: 0 } },
+  } }
+  const ctx = context(core, disposers)
+  Object.assign(ctx, { get: (name: string) => name === 'sessions' ? { list: {
+    getSnapshot: () => snapshot,
+    subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+  } } : undefined })
+  const change = (id: 's1' | 's2', mainView: number, workspaceOperation = 0): void => {
+    snapshot = { ...snapshot, byId: { ...snapshot.byId, [id]: { retainedBy: { mainView, workspaceOperation } } } }
+    for (const listener of listeners) listener()
+  }
+  try {
+    apply(ctx)
+    const entry = core.entries('shell.overlay').find(item => item.options.id === 'remote-control.agents')!
+    const injected = (entry.inject as () => {
+      onSessionOpened: (listener: (id: string) => void) => () => void
+    })()
+    const opened: string[] = []
+    disposers.push(injected.onSessionOpened(id => { opened.push(id) }))
+    expect(opened).toEqual([])
+    change('s1', 2)
+    change('s1', 1)
+    change('s1', 1, 1)
+    change('s2', 1)
+    change('s1', 0)
+    expect(opened).toEqual(['s1', 's2'])
+    for (const dispose of disposers.splice(0)) dispose()
+    expect(listeners.size).toBe(0)
+    change('s1', 1)
+    expect(opened).toEqual(['s1', 's2'])
+  } finally {
+    for (const dispose of disposers) dispose()
+  }
+})
+
 // This plugin injects `remote` only, and cordis refuses `ctx.remote.harness` without its own inject
 // ("cannot get property ... without inject"): the namespace is read through `ctx.get`, and a lookup
 // that cannot answer yet rejects so the board asks again instead of settling on no logo.
@@ -132,8 +173,10 @@ it('patches the drawer only on a narrow frame that came through the proxy', () =
   try {
     // A proxied phone frames gets the drawer sheet, and disposing the activation takes it away.
     const phone = activate(true, true)
-    expect(sheet()).not.toBeNull()
-    phone()
+    try {
+      expect(sheet()).not.toBeNull()
+      expect(sheet()?.textContent).toContain('.hp-delegate[data-hp-mode]{display:grid;')
+    } finally { phone() }
     expect(sheet()).toBeNull()
 
     // A local narrow window never came through the proxy, so the shell keeps its own styling.
@@ -420,6 +463,79 @@ it('lands the phone on the left drawer on load and on a return from a minute or 
     Reflect.deleteProperty(document, 'visibilityState')
     document.documentElement.removeAttribute('data-remote-control-landed')
     clock.mockRestore()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})
+
+// A touch screen never shows a Session row's hover strip, so a long press is the phone's way to its
+// "…" menu (pin, rename, fork, archive), and the lift that ends it must not also open the row.
+it('opens a drawer Session row menu with a long press on the phone', () => {
+  vi.useFakeTimers()
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ws__sessionRow__h1" data-row-key="session:s1">'
+    + '<span data-title>会话</span><span class="ws__rowActions__h1"><span class="ui__root__h1">'
+    + '<button data-trigger>…</button></span><button data-archive>归档</button></span></div></div>'
+  document.body.append(frame)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  let menus = 0
+  frame.querySelector('[data-trigger]')!.addEventListener('click', () => { menus++ })
+  const title = frame.querySelector('[data-title]')!
+  const touch = (target: Element, type: string, x = 100, y = 100): Event => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    const point = { identifier: 0, clientX: x, clientY: y }
+    Object.defineProperties(event, {
+      touches: { value: type === 'touchend' ? [] : [point] },
+      changedTouches: { value: [point] },
+    })
+    target.dispatchEvent(event)
+    return event
+  }
+  const disposers: (() => void)[] = []
+  try {
+    apply(context(slots(), disposers))
+    touch(title, 'touchstart')
+    vi.advanceTimersByTime(500)
+    expect(menus).toBe(1)
+    expect(touch(title, 'touchend').defaultPrevented).toBe(true)
+
+    // A tap stays a tap.
+    touch(title, 'touchstart')
+    vi.advanceTimersByTime(200)
+    expect(touch(title, 'touchend').defaultPrevented).toBe(false)
+    vi.advanceTimersByTime(1000)
+    expect(menus).toBe(1)
+
+    // A scroll or swipe is not a press, and the strip's own buttons keep their taps.
+    touch(title, 'touchstart')
+    touch(title, 'touchmove', 100, 130)
+    vi.advanceTimersByTime(1000)
+    touch(frame.querySelector('[data-archive]')!, 'touchstart')
+    vi.advanceTimersByTime(1000)
+    expect(menus).toBe(1)
+
+    const menu = new Event('contextmenu', { bubbles: true, cancelable: true })
+    title.dispatchEvent(menu)
+    expect(menu.defaultPrevented).toBe(true)
+
+    for (const dispose of disposers.splice(0)) dispose()
+    touch(title, 'touchstart')
+    vi.advanceTimersByTime(1000)
+    expect(menus).toBe(1)
+  } finally {
+    for (const dispose of disposers) dispose()
+    vi.useRealTimers()
+    proxy.remove()
+    frame.remove()
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
@@ -718,6 +834,93 @@ it('rebounds an upward pull at the bottom without moving the composer', () => {
     touch('touchend', 90)
     expect(column.style.transform).toBe('')
     expect(column.style.transition).toBe('')
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+  }
+})
+
+it('rebounds the whole drawer at either edge without moving its pinned brand or settings', () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
+    + '<div class="ui_sidebar__logoRow__h1"><button>收起</button></div>'
+    + '<div data-remote-control-agents><button>Agent</button></div>'
+    + '<nav class="ui_sidebar__panelList__h1">插件</nav>'
+    + '<div class="ui_sidebar__regionArea__h1"><div class="ui_workspace__list__h1">'
+    + '<button data-project>项目</button><input><div role="dialog">菜单</div></div></div>'
+    + '<div class="ui_sidebar__footArea__h1"><button>设置</button></div></div></div>'
+  document.body.append(frame)
+  let reducedMotion = false
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (query: string) => ({ matches: query.includes('prefers-reduced-motion') ? reducedMotion : true,
+      addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const scroller = frame.querySelector<HTMLElement>('.ui_sidebar__root__h1')!
+  const agents = frame.querySelector<HTMLElement>('[data-remote-control-agents]')!
+  const projects = frame.querySelector<HTMLElement>('.ui_sidebar__regionArea__h1')!
+  const target = frame.querySelector('[data-project]')!
+  Object.defineProperties(scroller, { scrollHeight: { value: 900 }, clientHeight: { value: 400 } })
+  const touch = (element: Element, type: string, y: number, x = 160, count = 1): Event => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    const points = Array.from({ length: count }, (_, identifier) => ({ identifier, clientX: x, clientY: y }))
+    Object.defineProperties(event, {
+      touches: { value: type === 'touchend' || type === 'touchcancel' ? [] : points },
+      changedTouches: { value: points },
+    })
+    element.dispatchEvent(event)
+    return event
+  }
+  const disposers: (() => void)[] = []
+  try {
+    apply(context(slots(), disposers))
+    scroller.scrollTop = 100
+    touch(target, 'touchstart', 100)
+    expect(touch(target, 'touchmove', 200).defaultPrevented).toBe(false)
+    touch(target, 'touchend', 200)
+    scroller.scrollTop = 0
+    touch(target, 'touchstart', 100)
+    expect(touch(target, 'touchmove', 200).defaultPrevented).toBe(true)
+    expect(agents.style.transform).toMatch(/translateY\([1-9]/u)
+    expect(projects.style.transform).toBe(agents.style.transform)
+    expect(frame.querySelector('.ui_sidebar__logoRow__h1')?.getAttribute('style')).toBeNull()
+    expect(frame.querySelector('.ui_sidebar__footArea__h1')?.getAttribute('style')).toBeNull()
+    touch(target, 'touchend', 200)
+    expect(agents.style.transform).toBe('translateY(0px)')
+    expect(projects.style.transition).toContain('transform')
+    scroller.scrollTop = 500
+    touch(target, 'touchstart', 200)
+    expect(touch(target, 'touchmove', 100).defaultPrevented).toBe(true)
+    expect(projects.style.transform).toMatch(/translateY\(-/u)
+    touch(target, 'touchcancel', 100)
+    expect(projects.style.transform).toBe('translateY(0px)')
+    reducedMotion = true
+    touch(target, 'touchstart', 200)
+    touch(target, 'touchmove', 100)
+    touch(target, 'touchend', 100)
+    expect(projects.style.transform).toBe('')
+    expect(projects.style.transition).toBe('')
+    for (const selector of ['input', '[role="dialog"]', '.ui_sidebar__logoRow__h1 button', '.ui_sidebar__footArea__h1 button']) {
+      const element = frame.querySelector(selector)!
+      touch(element, 'touchstart', 200)
+      expect(touch(element, 'touchmove', 100).defaultPrevented).toBe(false)
+      touch(element, 'touchend', 100)
+    }
+    touch(target, 'touchstart', 200)
+    expect(touch(target, 'touchmove', 200, 80).defaultPrevented).toBe(false)
+    touch(target, 'touchcancel', 200)
+    touch(target, 'touchstart', 200, 160, 2)
+    expect(touch(target, 'touchmove', 100, 160, 2).defaultPrevented).toBe(false)
+    touch(target, 'touchcancel', 100)
+    touch(target, 'touchstart', 200)
+    touch(target, 'touchmove', 100)
+    for (const dispose of disposers.splice(0)) dispose()
+    expect(projects.style.transform).toBe('')
   } finally {
     for (const dispose of disposers) dispose()
     proxy.remove()

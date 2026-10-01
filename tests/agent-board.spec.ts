@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { agentRows } from '../dist/client/agent-board.js'
+import { agentRows, completionHistory } from '../dist/client/agent-board.js'
 
 interface Summary {
   displayTitle: string
@@ -82,4 +82,28 @@ it('names the workspace by the last directory segment', () => {
   }
   expect(agentRows({ ids: ['posix', 'windows', 'none'], byId }, new Map()).map(row => row.workspace))
     .toEqual(['proj', 'win-proj', ''])
+})
+
+it('retains the five newest completions after their unread reminders clear', () => {
+  const byId = Object.fromEntries(Array.from({ length: 7 }, (_, index) => {
+    const id = `s${index + 1}`
+    return [id, summary(id, index + 1)]
+  }))
+  const list = { ids: Object.keys(byId), byId }
+  const unread = new Map(list.ids.map(id => [id, status({ running: false, completionUnread: id !== 's7' })]))
+  const history = completionHistory(list, unread, undefined, [])
+  expect(history.map(entry => entry.id)).toEqual(['s6', 's5', 's4', 's3', 's2'])
+  const read = new Map(list.ids.map(id => [id, status({ running: false })]))
+  expect(completionHistory(list, read, unread, history)).toEqual(history)
+
+  const running = new Map(read)
+  running.set('s7', status({ running: true }))
+  const finished = new Map(read)
+  expect(completionHistory(list, finished, running, history).map(entry => entry.id))
+    .toEqual(['s7', 's6', 's5', 's4', 's3'])
+  const awaiting = new Map(read)
+  awaiting.set('s7', status({ running: false, pendingInteraction: { kind: 'approval' } }))
+  expect(completionHistory(list, awaiting, running, history)).toEqual(history)
+  expect(completionHistory({ ...list, ids: list.ids.filter(id => id !== 's6') }, read, undefined, history)
+    .map(entry => entry.id)).not.toContain('s6')
 })

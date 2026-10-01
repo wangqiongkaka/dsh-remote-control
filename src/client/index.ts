@@ -7,6 +7,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { RemoteControlAction, type RemoteControlInjected } from './RemoteControlAction.tsx'
 import { NARROW, SidebarToggle, proxiedFrame, type SidebarToggleInjected } from './SidebarToggle.tsx'
 import { SidebarDismiss } from './SidebarDismiss.tsx'
@@ -15,7 +16,7 @@ import { followKeyboard } from './keyboard.ts'
 import { applyDrawerSelection } from './drawer-style.ts'
 import { compactChatDefaults } from './chat-defaults.ts'
 import { hideModelsSettings } from './settings-models.ts'
-import { followChatPulls, followSidebarSwipes, followStripPulls, landOnDrawer } from './sidebar-swipe.ts'
+import { followVerticalPulls, followSidebarSwipes, followRowHolds, followStripPulls, landOnDrawer } from './sidebar-swipe.ts'
 import { en, NS, zh, type RemoteControlKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -71,6 +72,7 @@ export function apply(ctx: Context): void {
     let strips: (() => void) | undefined
     let models: (() => void) | undefined
     let landing: (() => void) | undefined
+    let holds: (() => void) | undefined
     const sync = (): void => {
       const phone = query.matches && proxiedFrame()
       follow?.()
@@ -80,13 +82,15 @@ export function apply(ctx: Context): void {
       swipes?.()
       swipes = phone ? followSidebarSwipes(() => { ctx.layout.toggleSidebar() }) : undefined
       pulls?.()
-      pulls = phone ? followChatPulls() : undefined
+      pulls = phone ? followVerticalPulls() : undefined
       strips?.()
       strips = phone ? followStripPulls() : undefined
       models?.()
       models = phone ? hideModelsSettings(ctx.slots) : undefined
       landing?.()
       landing = phone ? landOnDrawer(() => { ctx.layout.toggleSidebar() }) : undefined
+      holds?.()
+      holds = phone ? followRowHolds() : undefined
     }
     sync()
     query.addEventListener('change', sync)
@@ -99,6 +103,7 @@ export function apply(ctx: Context): void {
       strips?.()
       models?.()
       landing?.()
+      holds?.()
     }
   }, 'remote-control: phone patches')
   // Any page that came through the proxy keeps Chat preferences in memory only (see chat-defaults),
@@ -136,7 +141,7 @@ export function apply(ctx: Context): void {
       toggleSidebar: () => { ctx.layout.toggleSidebar() },
     }),
   }, SidebarToggle))
-  // The drawer's Agent card and board, in New Session's seat (proxy narrow frames only).
+  // The drawer's Agent card and inline details, in New Session's seat (proxy narrow frames only).
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay',
     id: 'remote-control.agents',
@@ -144,6 +149,28 @@ export function apply(ctx: Context): void {
     inject: (): AgentBoardInjected => ({
       openSession: (sessionId) => {
         (ctx.get('uiWorkspace') as UiWorkspace | undefined)?.openSession(sessionId)
+      },
+      onSessionOpened: (listener) => {
+        const sessions = ctx.get('sessions') as {
+          list: {
+            getSnapshot: () => {
+              ids: readonly SessionId[]
+              byId: Readonly<Record<string, { retainedBy: { mainView?: number } }>>
+            }
+            subscribe: (listener: () => void) => () => void
+          }
+        } | undefined
+        if (sessions === undefined) return () => {}
+        let previous = sessions.list.getSnapshot()
+        return sessions.list.subscribe(() => {
+          const next = sessions.list.getSnapshot()
+          const before = previous
+          previous = next
+          // Navigation retains first, even for the same Session, then releases the old reference.
+          for (const id of next.ids) {
+            if ((next.byId[id]?.retainedBy.mainView ?? 0) > (before.byId[id]?.retainedBy.mainView ?? 0)) listener(id)
+          }
+        })
       },
       harnesses: async (sessionIds) => {
         // harness-provider's Remote namespace. Declaring it in `inject` would hold this whole plugin

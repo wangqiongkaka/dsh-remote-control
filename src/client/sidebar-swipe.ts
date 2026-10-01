@@ -1,5 +1,7 @@
 /** Open and close the phone drawers with horizontal swipes. */
 
+import { DRAWER_SCROLL_ROOT } from './drawer-style.ts'
+
 const MIN_SWIPE = 48
 const INTERACTIVE = 'button,a,input,textarea,select,[contenteditable], [role="dialog"], [data-composer-card]'
 
@@ -101,6 +103,66 @@ export function landOnDrawer(openLeft: () => void): () => void {
   }
 }
 
+const SESSION_ROW = '[class*="_sidebarCol"] [class*="_sessionRow"]'
+const HOLD = 500
+const HOLD_SLOP = 10
+
+/**
+ * Long-press a drawer Session row to open its "…" menu (pin, rename, fork, archive). A touch screen
+ * never shows the row's hover strip (see drawer-style), so this is the phone's way to those actions.
+ * The row's trigger is the strip's first button; the lift that ends the press is kept from also
+ * tapping the row open.
+ */
+export function followRowHolds(): () => void {
+  let hold: { x: number; y: number; timer: ReturnType<typeof setTimeout> } | undefined
+  let fired = false
+  const cancel = (): void => {
+    if (hold !== undefined) clearTimeout(hold.timer)
+    hold = undefined
+  }
+  const onStart = (event: TouchEvent): void => {
+    cancel()
+    fired = false
+    const touch = event.touches[0]
+    if (event.touches.length !== 1 || touch === undefined || !(event.target instanceof Element)
+      || event.target.closest('[class*="_rowActions"]')) return
+    const trigger = event.target.closest(SESSION_ROW)?.querySelector<HTMLButtonElement>('[class*="_rowActions"] button')
+    if (!trigger) return
+    hold = { x: touch.clientX, y: touch.clientY, timer: setTimeout(() => {
+      hold = undefined
+      fired = true
+      trigger.click()
+    }, HOLD) }
+  }
+  const onMove = (event: TouchEvent): void => {
+    const touch = event.touches[0]
+    if (hold === undefined || touch === undefined) return
+    if (Math.hypot(touch.clientX - hold.x, touch.clientY - hold.y) > HOLD_SLOP) cancel()
+  }
+  const onEnd = (event: TouchEvent): void => {
+    cancel()
+    if (fired) event.preventDefault()
+    fired = false
+  }
+  // Android answers a long press with the context menu as well.
+  const onContextMenu = (event: Event): void => {
+    if (event.target instanceof Element && event.target.closest(SESSION_ROW)) event.preventDefault()
+  }
+  document.addEventListener('touchstart', onStart, { passive: true })
+  document.addEventListener('touchmove', onMove, { passive: true })
+  document.addEventListener('touchend', onEnd, { passive: false })
+  document.addEventListener('touchcancel', cancel, { passive: true })
+  document.addEventListener('contextmenu', onContextMenu)
+  return () => {
+    cancel()
+    document.removeEventListener('touchstart', onStart)
+    document.removeEventListener('touchmove', onMove)
+    document.removeEventListener('touchend', onEnd)
+    document.removeEventListener('touchcancel', cancel)
+    document.removeEventListener('contextmenu', onContextMenu)
+  }
+}
+
 /** Observe single-finger swipes without blocking native scrolling or clicks. */
 export function followSidebarSwipes(openLeft: () => void): () => void {
   let start: {
@@ -119,7 +181,8 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     if (!area || !frame) return
     // The conversation keeps every control and sideways scroller to itself; an open drawer lets a
     // closing swipe start on its rows and tabs (see DRAWER_OWN_DRAG and the direction check below).
-    if (center ? target.closest(INTERACTIVE) || scrollsHorizontally(target, area) : target.closest(DRAWER_OWN_DRAG)) return
+    const ownDrag = target.closest(DRAWER_OWN_DRAG)
+    if (center ? target.closest(INTERACTIVE) || scrollsHorizontally(target, area) : ownDrag) return
     const touch = event.touches[0]
     if (touch === undefined) return
     start = { id: touch.identifier, x: touch.clientX, y: touch.clientY, frame,
@@ -151,7 +214,7 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
   }
   const cancel = (): void => { start = undefined }
   document.addEventListener('touchstart', onStart, { passive: true })
-  document.addEventListener('touchend', onEnd, { passive: true })
+  document.addEventListener('touchend', onEnd, { passive: false })
   document.addEventListener('touchcancel', cancel, { passive: true })
   return () => {
     document.removeEventListener('touchstart', onStart)
@@ -160,29 +223,36 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
   }
 }
 
-/** Pull past the chat's top to page history, or past its bottom to bounce the transcript. */
-export function followChatPulls(): () => void {
+/** Bounce the chat or drawer past its ends; only a chat's top pull loads earlier messages. */
+export function followVerticalPulls(): () => void {
   const THRESHOLD = 72
   const LIMIT = 56
   const DURATION = 220
-  let start: { id: number; x: number; y: number; scroller: HTMLElement; column: HTMLElement; distance: number } | undefined
-  let animated: HTMLElement | undefined
+  let start: { id: number; x: number; y: number; scroller: HTMLElement; columns: HTMLElement[]; distance: number } | undefined
+  let animated: HTMLElement[] = []
   let cleanupTimer: ReturnType<typeof setTimeout> | undefined
   const clearAnimation = (): void => {
     if (cleanupTimer !== undefined) clearTimeout(cleanupTimer)
     cleanupTimer = undefined
-    animated?.style.removeProperty('transform')
-    animated?.style.removeProperty('transition')
-    animated = undefined
+    for (const column of animated) {
+      column.style.removeProperty('transform')
+      column.style.removeProperty('transition')
+    }
+    animated = []
   }
   const onStart = (event: TouchEvent): void => {
     if (start?.distance) finish(false)
     else start = undefined
     if (event.touches.length !== 1 || !(event.target instanceof Element)
-      || event.target.closest('[data-composer-seat], [role="dialog"]')) return
-    const scroller = event.target.closest<HTMLElement>('[data-conversation-scroll]')
-    const column = scroller?.querySelector<HTMLElement>('[data-chat-flow]')
-    if (!scroller || !column || !column.contains(event.target)
+      || event.target.closest(`[data-composer-seat],${DRAWER_OWN_DRAG},[role="menu"]`)) return
+    const target = event.target
+    const scroller = event.target.closest<HTMLElement>(`[data-conversation-scroll],${DRAWER_SCROLL_ROOT}`)
+    if (!scroller) return
+    const chat = scroller.querySelector<HTMLElement>('[data-chat-flow]')
+    const columns = chat ? [chat] : [...scroller.querySelectorAll<HTMLElement>(
+      ':scope > :not([class*="_logoRow"]):not([class*="_footArea"]):not([class*="_topStrip"])',
+    )]
+    if (!columns.some(column => column.contains(target))
       || scrollsHorizontally(event.target, scroller)) return
     for (let element = event.target.parentElement; element !== null && element !== scroller; element = element.parentElement) {
       if (element.scrollHeight > element.clientHeight
@@ -191,7 +261,7 @@ export function followChatPulls(): () => void {
     const touch = event.touches[0]
     if (touch === undefined) return
     clearAnimation()
-    start = { id: touch.identifier, x: touch.clientX, y: touch.clientY, scroller, column, distance: 0 }
+    start = { id: touch.identifier, x: touch.clientX, y: touch.clientY, scroller, columns, distance: 0 }
   }
   const onMove = (event: TouchEvent): void => {
     const from = start
@@ -205,7 +275,7 @@ export function followChatPulls(): () => void {
       if (from.distance) finish(false)
       return
     }
-    const { scroller, column } = from
+    const { scroller, columns } = from
     if ((dy > 0 && scroller.scrollTop > 1)
       || (dy < 0 && scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 1)) {
       if (from.distance) finish(false)
@@ -213,21 +283,28 @@ export function followChatPulls(): () => void {
     }
     event.preventDefault()
     from.distance = dy
-    column.style.transition = 'none'
-    column.style.transform = `translateY(${Math.round(Math.sign(dy) * Math.min(LIMIT, Math.abs(dy) * 0.45))}px)`
+    for (const column of columns) {
+      column.style.transition = 'none'
+      column.style.transform = `translateY(${Math.round(Math.sign(dy) * Math.min(LIMIT, Math.abs(dy) * 0.45))}px)`
+    }
   }
   const finish = (load: boolean): void => {
     const from = start
     start = undefined
     if (!from || from.distance === 0) return
-    const { scroller, column } = from
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      column.style.removeProperty('transform')
-      column.style.removeProperty('transition')
-    } else {
-      column.style.transition = `transform ${DURATION}ms ease-out`
-      column.style.transform = 'translateY(0px)'
-      animated = column
+    const { scroller, columns } = from
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    for (const column of columns) {
+      if (reducedMotion) {
+        column.style.removeProperty('transform')
+        column.style.removeProperty('transition')
+      } else {
+        column.style.transition = `transform ${DURATION}ms ease-out`
+        column.style.transform = 'translateY(0px)'
+      }
+    }
+    if (!reducedMotion) {
+      animated = columns
       cleanupTimer = setTimeout(clearAnimation, DURATION)
     }
     if (load && from.distance >= THRESHOLD) {
@@ -248,6 +325,7 @@ export function followChatPulls(): () => void {
     document.removeEventListener('touchmove', onMove)
     document.removeEventListener('touchend', onEnd)
     document.removeEventListener('touchcancel', onCancel)
+    if (start?.distance) animated.push(...start.columns)
     start = undefined
     clearAnimation()
   }
