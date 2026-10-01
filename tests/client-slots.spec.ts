@@ -173,8 +173,10 @@ it('patches the drawer only on a narrow frame that came through the proxy', () =
   try {
     // A proxied phone frames gets the drawer sheet, and disposing the activation takes it away.
     const phone = activate(true, true)
-    expect(sheet()).not.toBeNull()
-    phone()
+    try {
+      expect(sheet()).not.toBeNull()
+      expect(sheet()?.textContent).toContain('.hp-delegate[data-hp-mode]{display:grid;')
+    } finally { phone() }
     expect(sheet()).toBeNull()
 
     // A local narrow window never came through the proxy, so the shell keeps its own styling.

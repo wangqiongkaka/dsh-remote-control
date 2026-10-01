@@ -115,3 +115,86 @@ it('scrolls the whole drawer while the brand and settings stay pinned', () => {
     expect(style('.rc-agents-list').maxHeight).toBe('none')
   } finally { dispose(); frame.remove() }
 })
+
+it('stacks delegation and discussion controls with phone-sized touch targets', () => {
+  const dispose = applyDrawerSelection()
+  const phone = sheet()?.textContent ?? ''
+  dispose()
+  const mode = '.hp-delegate[data-hp-mode]'
+  expect(phone).toContain(`${mode}{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));`)
+  expect(phone).toContain(`${mode} > .hp-delegate-exit{grid-column:2;grid-row:1;justify-self:end;margin:0;width:36px;height:36px;position:sticky;top:-8px;z-index:1;background:var(--dsw-specific-input-major)}`)
+  expect(phone).toContain(`${mode} > .hp-delegate-harness,${mode} > .hp-anchor{grid-column:1 / -1;min-width:0}`)
+  expect(phone).toContain(`${mode} .hp-delegate-harness button{flex:1;justify-content:center;height:36px;`)
+  expect(phone).toContain(`${mode} .hp-chip{width:100%;max-width:100%;height:36px;`)
+  expect(phone).toContain(`${mode} .hp-delegate-report{min-width:0;margin-left:0;min-height:44px;padding:0 8px;gap:8px;line-height:18px;font-size:12px;white-space:normal;overflow-wrap:anywhere}`)
+  expect(phone).toContain('border:.5px solid var(--dsw-alias-border-l2);border-radius:16px;background:var(--dsw-specific-input-major);')
+})
+
+it('keeps mode controls scrollable and model menus inside the visible keyboard viewport', () => {
+  const dispose = applyDrawerSelection()
+  const phone = sheet()?.textContent ?? ''
+  dispose()
+  const mode = '.hp-delegate[data-hp-mode]'
+  expect(phone).toContain('max-height:min(280px,calc(var(--dsh-remote-keyboard-height,100dvh) * .45));overflow-y:auto;overscroll-behavior-y:contain')
+  // A fixed menu escapes the mode bar's scroll clip, even after scrolling to the last option.
+  expect(phone).toContain(`${mode} .hp-menu{position:fixed;left:16px;right:16px;`)
+  expect(phone).toContain('bottom:var(--dsh-remote-mode-menu-bottom,50px);')
+  expect(phone).toContain('background:var(--dsw-alias-bg-layer-2);opacity:1;backdrop-filter:none;-webkit-backdrop-filter:none;')
+  expect(phone).toContain('width:auto;min-width:0;max-width:none;max-height:var(--dsh-remote-mode-menu-height,360px) !important}')
+  expect(phone).toContain(`${mode} .hp-menu > *{flex-shrink:0}`)
+  expect(phone).toContain(`${mode} .hp-menu :is(.hp-option,.hp-cell){min-height:44px}`)
+  expect(phone).toContain(`${mode} .hp-option-hint,${mode} .hp-error{overflow-wrap:anywhere}`)
+})
+
+it('positions a newly opened task menu above its button and cleans up tracking', async () => {
+  const viewport = Object.getOwnPropertyDescriptor(window, 'visualViewport')
+  Object.defineProperty(window, 'visualViewport', { configurable: true, value: {
+    offsetTop: 20, addEventListener() {}, removeEventListener() {},
+  } })
+  const root = document.createElement('div')
+  root.className = 'hp-delegate'
+  root.dataset.hpMode = 'delegate'
+  document.body.append(root)
+  const dispose = applyDrawerSelection()
+  const menu = document.createElement('div')
+  menu.className = 'hp-menu'
+  const button = document.createElement('button')
+  button.className = 'hp-chip'
+  let top = 420
+  Object.defineProperty(button, 'getBoundingClientRect', { value: () => ({ top }) })
+  const anchor = document.createElement('div')
+  anchor.className = 'hp-anchor'
+  anchor.append(button, menu)
+  const settle = () => new Promise(resolve => setTimeout(resolve, 40))
+  try {
+    root.append(anchor)
+    await settle()
+    expect(menu.style.getPropertyValue('--dsh-remote-mode-menu-bottom')).toBe(`${window.innerHeight - top + 8}px`)
+    expect(menu.style.getPropertyValue('--dsh-remote-mode-menu-height')).toBe('360px')
+    top = 300
+    root.dispatchEvent(new Event('scroll'))
+    await settle()
+    expect(menu.style.getPropertyValue('--dsh-remote-mode-menu-bottom')).toBe(`${window.innerHeight - top + 8}px`)
+    expect(menu.style.getPropertyValue('--dsh-remote-mode-menu-height')).toBe('264px')
+    top = 260
+    window.dispatchEvent(new Event('resize'))
+    await settle()
+    expect(menu.style.getPropertyValue('--dsh-remote-mode-menu-height')).toBe('224px')
+    top = 10
+    root.dispatchEvent(new Event('scroll'))
+    await settle()
+    expect(menu.style.getPropertyValue('--dsh-remote-mode-menu-bottom')).toBe(`${window.innerHeight - 80 + 8}px`)
+    expect(menu.style.getPropertyValue('--dsh-remote-mode-menu-height')).toBe('44px')
+    dispose()
+    expect(menu.style.getPropertyValue('--dsh-remote-mode-menu-bottom')).toBe('')
+    expect(menu.style.getPropertyValue('--dsh-remote-mode-menu-height')).toBe('')
+    root.dispatchEvent(new Event('scroll'))
+    await settle()
+    expect(menu.style.getPropertyValue('--dsh-remote-mode-menu-bottom')).toBe('')
+  } finally {
+    dispose()
+    root.remove()
+    if (viewport) Object.defineProperty(window, 'visualViewport', viewport)
+    else Reflect.deleteProperty(window, 'visualViewport')
+  }
+})
