@@ -250,7 +250,7 @@ export function followVerticalPulls(): () => void {
     if (!scroller) return
     const chat = scroller.querySelector<HTMLElement>('[data-chat-flow]')
     const columns = chat ? [chat] : [...scroller.querySelectorAll<HTMLElement>(
-      ':scope > :not([class*="_logoRow"]):not([class*="_footArea"]):not([class*="_topStrip"])',
+      ':scope > :not([class*="_logoRow"]):not([class*="_panelList"]):not([class*="_footArea"]):not([class*="_topStrip"])',
     )]
     if (!columns.some(column => column.contains(target))
       || scrollsHorizontally(event.target, scroller)) return

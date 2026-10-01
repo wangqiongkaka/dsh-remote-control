@@ -84,7 +84,7 @@ it('names the workspace by the last directory segment', () => {
     .toEqual(['proj', 'win-proj', ''])
 })
 
-it('retains the five newest completions after their unread reminders clear', () => {
+it('retains all completions newest first after their unread reminders clear', () => {
   const byId = Object.fromEntries(Array.from({ length: 7 }, (_, index) => {
     const id = `s${index + 1}`
     return [id, summary(id, index + 1)]
@@ -92,7 +92,7 @@ it('retains the five newest completions after their unread reminders clear', () 
   const list = { ids: Object.keys(byId), byId }
   const unread = new Map(list.ids.map(id => [id, status({ running: false, completionUnread: id !== 's7' })]))
   const history = completionHistory(list, unread, undefined, [])
-  expect(history.map(entry => entry.id)).toEqual(['s6', 's5', 's4', 's3', 's2'])
+  expect(history.map(entry => entry.id)).toEqual(['s6', 's5', 's4', 's3', 's2', 's1'])
   const read = new Map(list.ids.map(id => [id, status({ running: false })]))
   expect(completionHistory(list, read, unread, history)).toEqual(history)
 
@@ -100,7 +100,7 @@ it('retains the five newest completions after their unread reminders clear', () 
   running.set('s7', status({ running: true }))
   const finished = new Map(read)
   expect(completionHistory(list, finished, running, history).map(entry => entry.id))
-    .toEqual(['s7', 's6', 's5', 's4', 's3'])
+    .toEqual(['s7', 's6', 's5', 's4', 's3', 's2', 's1'])
   const awaiting = new Map(read)
   awaiting.set('s7', status({ running: false, pendingInteraction: { kind: 'approval' } }))
   expect(completionHistory(list, awaiting, running, history)).toEqual(history)

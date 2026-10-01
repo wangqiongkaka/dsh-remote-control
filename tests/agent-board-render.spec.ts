@@ -308,6 +308,45 @@ it('shows all selected rows rather than limiting details to three previews', () 
     .toEqual(['运行 4', '运行 3', '运行 2', '运行中'])
 })
 
+it.each(['pending', 'running', 'done'] as const)('keeps more than five %s rows in a five-row scrollport', async (state) => {
+  column()
+  const ids = Array.from({ length: 7 }, (_, index) => `session${index}`)
+  const sessions = { ...list, ids, byId: { ...list.byId, ...Object.fromEntries(ids.map((id, index) =>
+    [id, { ...list.byId.idle, displayTitle: id, updatedAt: index }])) } }
+  const snapshot = new Map(ids.map(id => [id, {
+    running: state === 'running',
+    pendingInteraction: state === 'pending' ? { kind: 'question' } : undefined,
+    completionUnread: state === 'done',
+  }]))
+  render(sessions, {}, snapshot)
+  await act(async () => { await Promise.resolve() })
+  click(host()?.querySelector(`.rc-agents-tile[data-state="${state}"]`))
+  const scroller = host()!.querySelector('.rc-agents-group > div')!
+  expect(scroller.querySelectorAll('.rc-agents-row')).toHaveLength(7)
+  expect(getComputedStyle(scroller).maxHeight).toBe('248px')
+  expect(getComputedStyle(scroller).overflowY).toBe('auto')
+  expect(getComputedStyle(scroller.firstElementChild!).height).toBe('48px')
+  click(scroller.lastElementChild)
+  expect(opened).toEqual(['session0'])
+})
+
+it('restores and opens saved history beyond the first five rows', async () => {
+  const ids = Array.from({ length: 7 }, (_, index) => `session${index}`)
+  const entries = ids.map((id, index) => ({ id, completedAt: 7 - index }))
+  localStorage.setItem('dsh-remote-control.agent-history.v1', JSON.stringify(entries))
+  column()
+  const sessions = { ...list, ids, byId: { ...list.byId, ...Object.fromEntries(ids.map(id =>
+    [id, { ...list.byId.idle, displayTitle: id }])) } }
+  render(sessions, {}, new Map())
+  await act(async () => { await Promise.resolve() })
+  click(host()?.querySelector('.rc-agents-tile[data-state="done"]'))
+  const scroller = host()!.querySelector('.rc-agents-history > div')!
+  expect(scroller.querySelectorAll('.rc-agents-row')).toHaveLength(7)
+  expect(JSON.parse(localStorage.getItem('dsh-remote-control.agent-history.v1') ?? '[]')).toEqual(entries)
+  click(scroller.lastElementChild)
+  expect(opened).toEqual(['session6'])
+})
+
 it('shows unread completions and read history only under the completed tile', () => {
   localStorage.setItem('dsh-remote-control.agent-history.v1', JSON.stringify([{ id: 'idle', completedAt: 9 }]))
   column()

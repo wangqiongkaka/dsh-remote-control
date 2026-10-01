@@ -36,7 +36,7 @@ function savedHistory(): CompletionRecord<SessionId>[] {
     const value: unknown = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
     if (!Array.isArray(value)) return []
     return value.filter((entry): entry is CompletionRecord<SessionId> =>
-      typeof entry?.id === 'string' && typeof entry.completedAt === 'number' && Number.isFinite(entry.completedAt)).slice(0, 5)
+      typeof entry?.id === 'string' && typeof entry.completedAt === 'number' && Number.isFinite(entry.completedAt))
   } catch { return [] }
 }
 
@@ -77,7 +77,7 @@ const STYLE = ''
   + '.rc-agents-tile[data-state="done"]{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 14%,transparent) !important}'
   + '.rc-agents-tile span{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary)}'
   + '.rc-agents-tile b{font-size:20px;font-weight:700;line-height:24px}'
-  + '.rc-agents-row{width:100%;min-height:48px;border-radius:10px;padding:6px 8px !important;box-sizing:border-box;'
+  + '.rc-agents-row{width:100%;height:48px;min-height:48px;border-radius:10px;padding:6px 8px !important;box-sizing:border-box;'
   + 'display:flex;align-items:center;gap:10px}'
   + '.rc-agents-row:active{background:var(--dsw-alias-interactive-bg-active) !important}'
   + '.rc-agents-lead{width:16px;flex:none;display:flex;justify-content:center}'
@@ -90,7 +90,9 @@ const STYLE = ''
   + '.rc-agents-list{max-height:40dvh;overflow:auto;display:flex;flex-direction:column;gap:12px}'
   + '.rc-agents-group h3{margin:0 0 6px;padding:0 6px;font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;'
   + 'color:var(--dsw-alias-label-secondary)}'
-  + '.rc-agents-group > div{padding:4px;border-radius:16px;box-shadow:inset 0 0 0 0.5px var(--dsw-alias-border-l3)}'
+  // Five 48px rows plus the card's padding; further rows stay reachable by native scrolling.
+  + '.rc-agents-group > div{padding:4px;max-height:248px;box-sizing:border-box;overflow-y:auto;'
+  + 'overscroll-behavior-y:contain;scrollbar-width:thin;border-radius:16px;box-shadow:inset 0 0 0 0.5px var(--dsw-alias-border-l3)}'
 
 /**
  * Keep a host element right after New Session in the sidebar column while `active`.

@@ -841,7 +841,7 @@ it('rebounds an upward pull at the bottom without moving the composer', () => {
   }
 })
 
-it('rebounds the whole drawer at either edge without moving its pinned brand or settings', () => {
+it('rebounds the whole drawer at either edge without moving its pinned header or settings', () => {
   const proxy = document.createElement('style')
   proxy.setAttribute('data-dsh-remote-control', '')
   document.head.append(proxy)
@@ -850,7 +850,7 @@ it('rebounds the whole drawer at either edge without moving its pinned brand or 
   frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
     + '<div class="ui_sidebar__logoRow__h1"><button>收起</button></div>'
     + '<div data-remote-control-agents><button>Agent</button></div>'
-    + '<nav class="ui_sidebar__panelList__h1">插件</nav>'
+    + '<nav class="ui_sidebar__panelList__h1"><button>插件</button><button>自动化任务</button></nav>'
     + '<div class="ui_sidebar__regionArea__h1"><div class="ui_workspace__list__h1">'
     + '<button data-project>项目</button><input><div role="dialog">菜单</div></div></div>'
     + '<div class="ui_sidebar__footArea__h1"><button>设置</button></div></div></div>'
@@ -889,6 +889,7 @@ it('rebounds the whole drawer at either edge without moving its pinned brand or 
     expect(agents.style.transform).toMatch(/translateY\([1-9]/u)
     expect(projects.style.transform).toBe(agents.style.transform)
     expect(frame.querySelector('.ui_sidebar__logoRow__h1')?.getAttribute('style')).toBeNull()
+    expect(frame.querySelector('.ui_sidebar__panelList__h1')?.getAttribute('style')).toBeNull()
     expect(frame.querySelector('.ui_sidebar__footArea__h1')?.getAttribute('style')).toBeNull()
     touch(target, 'touchend', 200)
     expect(agents.style.transform).toBe('translateY(0px)')
@@ -897,6 +898,7 @@ it('rebounds the whole drawer at either edge without moving its pinned brand or 
     touch(target, 'touchstart', 200)
     expect(touch(target, 'touchmove', 100).defaultPrevented).toBe(true)
     expect(projects.style.transform).toMatch(/translateY\(-/u)
+    expect(frame.querySelector('.ui_sidebar__panelList__h1')?.getAttribute('style')).toBeNull()
     touch(target, 'touchcancel', 100)
     expect(projects.style.transform).toBe('translateY(0px)')
     reducedMotion = true
@@ -905,7 +907,7 @@ it('rebounds the whole drawer at either edge without moving its pinned brand or 
     touch(target, 'touchend', 100)
     expect(projects.style.transform).toBe('')
     expect(projects.style.transition).toBe('')
-    for (const selector of ['input', '[role="dialog"]', '.ui_sidebar__logoRow__h1 button', '.ui_sidebar__footArea__h1 button']) {
+    for (const selector of ['input', '[role="dialog"]', '.ui_sidebar__logoRow__h1 button', '.ui_sidebar__panelList__h1 button', '.ui_sidebar__footArea__h1 button']) {
       const element = frame.querySelector(selector)!
       touch(element, 'touchstart', 200)
       expect(touch(element, 'touchmove', 100).defaultPrevented).toBe(false)

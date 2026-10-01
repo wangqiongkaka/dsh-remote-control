@@ -153,6 +153,77 @@ it('scrolls the whole drawer while the brand and settings stay pinned', () => {
   } finally { dispose(); frame.remove() }
 })
 
+it('places panel shortcuts beside the sidebar toggle with equal button sizes and spacing', () => {
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
+    + '<div class="ui_sidebar__logoRow__h1"><button class="ui_sidebar__brand__h1">品牌</button>'
+    + '<button class="ui_sidebar__iconButton__h1 ui_sidebar__toggle__h1" aria-label="收起侧边栏"><svg width="16" height="16"></svg></button></div>'
+    + '<button class="ui_sidebar__newSession__h1">新会话</button><div data-remote-control-agents>Agent</div>'
+    + '<nav class="ui_sidebar__panelList__h1" aria-label="导航">'
+    + '<button class="ui_sidebar__panelRow__h1" aria-label="插件"><span class="ui_sidebar__panelGlyph__h1"><svg width="16" height="16"></svg></span><span class="ui_sidebar__panelTitle__h1">插件</span></button>'
+    + '<button class="ui_sidebar__panelRow__h1" aria-label="自动化任务"><span class="ui_sidebar__panelGlyph__h1"><svg width="20" height="20"></svg></span><span class="ui_sidebar__panelTitle__h1">自动化任务</span></button></nav>'
+    + '<div class="ui_sidebar__regionArea__h1">项目</div><div class="ui_sidebar__footArea__h1">设置</div>'
+    + '</div></div>'
+  document.body.append(frame)
+  const dispose = applyDrawerSelection()
+  const style = (selector: string) => getComputedStyle(frame.querySelector(selector)!)
+  const picked: string[] = []
+  const buttons = frame.querySelectorAll<HTMLButtonElement>('button[aria-label]')
+  for (const button of buttons) button.onclick = () => { picked.push(button.getAttribute('aria-label')!) }
+  try {
+    expect(style('.ui_sidebar__root__h1').display).toBe('grid')
+    expect(style('.ui_sidebar__root__h1').columnGap).toBe('8px')
+    // One painted header spans every column, including the gaps between its controls.
+    expect(style('.ui_sidebar__logoRow__h1').gridColumn).toBe('1 / -1')
+    expect(style('.ui_sidebar__brand__h1').gridColumn).toBe('1')
+    expect(style('.ui_sidebar__toggle__h1').gridColumn).toBe('3')
+    expect(style('.ui_sidebar__panelList__h1').gridColumn).toBe('2')
+    // The project track must grow with its content so sticky Settings stays at the scrollport's foot.
+    expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('auto')
+    for (const selector of ['.ui_sidebar__logoRow__h1', '.ui_sidebar__panelList__h1']) {
+      expect(style(selector).gridRow).toBe('1')
+      expect(style(selector).position).toBe('sticky')
+      expect(style(selector).top).toBe('0px')
+      expect(style(selector).gap).toBe('8px')
+    }
+    expect(style('.ui_sidebar__panelList__h1').flexDirection).toBe('row')
+    expect(style('.ui_sidebar__panelTitle__h1').display).toBe('none')
+    for (const button of buttons) {
+      expect(getComputedStyle(button).width).toBe('40px')
+      expect(getComputedStyle(button).height).toBe('40px')
+      expect(getComputedStyle(button).boxSizing).toBe('border-box')
+      expect(getComputedStyle(button.querySelector('svg')!).width).toBe('18px')
+      expect(getComputedStyle(button.querySelector('svg')!).height).toBe('18px')
+      button.click()
+    }
+    expect(picked).toEqual(['收起侧边栏', '插件', '自动化任务'])
+    frame.setAttribute('data-sidebar-collapsed', '')
+    expect(style('.ui_sidebar__root__h1').display).not.toBe('grid')
+    expect(style('.ui_sidebar__panelTitle__h1').display).not.toBe('none')
+  } finally { dispose(); frame.remove() }
+})
+
+it('keeps automation headings, actions and summaries on one line with long text reachable', () => {
+  const page = document.createElement('section')
+  page.dataset.testid = 'task-manager-page'
+  page.innerHTML = '<div class="schedule_pageHeading"><h1>自动化任务</h1><button>新建任务</button></div>'
+    + '<div class="schedule_empty"><h2>还没有自动化任务，在会话中创建的任务会显示在这里</h2></div>'
+    + '<span class="schedule_rowSummary"><span class="schedule_metadata">每周一到周五，每天上午十点</span></span>'
+    + '<h2 class="schedule_readonlyName">每天汇总项目更新与待办事项</h2>'
+    + '<div class="schedule_nextRun"><p>下次运行：2026年10月3日 上午10点</p></div>'
+  document.body.append(page)
+  const dispose = applyDrawerSelection()
+  try {
+    for (const element of page.querySelectorAll('h1,h2,button,.schedule_rowSummary,.schedule_metadata,.schedule_nextRun p')) {
+      expect(getComputedStyle(element).whiteSpace).toBe('nowrap')
+    }
+    expect(getComputedStyle(page.querySelector('.schedule_pageHeading')!).overflowX).toBe('auto')
+    expect(getComputedStyle(page.querySelector('.schedule_rowSummary')!).overflowX).toBe('auto')
+    expect(getComputedStyle(page.querySelector('.schedule_empty')!).overflowX).toBe('auto')
+  } finally { dispose(); page.remove() }
+})
+
 it('stacks delegation and discussion controls with phone-sized touch targets', () => {
   const dispose = applyDrawerSelection()
   const phone = sheet()?.textContent ?? ''

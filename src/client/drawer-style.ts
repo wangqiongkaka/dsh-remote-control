@@ -32,6 +32,14 @@ const CARD = '[class*="_sidebarCol"] [role="tree"] > [class*="_groupSection"]'
 export const DRAWER_SCROLL_ROOT = '[class*="_frame"]:has([class*="_sidebarCol"]):not([data-sidebar-collapsed]) '
   + '[class*="_sidebarCol"] [class*="_root"]:has(> [class*="_logoRow"])'
 
+/** Share the sticky top row with the shell's existing panel navigation, without moving its DOM. */
+const DRAWER_HEADER = `${DRAWER_SCROLL_ROOT}:has(> [class*="_panelList"])`
+
+const HEADER_BUTTON = `${DRAWER_HEADER} :is(button[class*="_toggle"],button[class*="_panelRow"])`
+
+/** The task catalog's own root keeps these phone text rules out of other panels. */
+const TASKS = '[data-testid="task-manager-page"]'
+
 /** Harness-provider's two task modes share the proxied phone's client stylesheet. */
 const TASK_MODE = '.hp-delegate[data-hp-mode]'
 
@@ -50,6 +58,22 @@ const DRAWER_SELECTION_STYLE = '[class*="_sessionRow"][aria-selected="true"]'
   + `${DRAWER_SCROLL_ROOT} > *{flex-shrink:0}`
   + `${DRAWER_SCROLL_ROOT} > [class*="_logoRow"]{position:sticky;top:0;z-index:3;`
   + 'height:66px;padding-top:14px;background:var(--dsw-specific-sidebar-fill)}'
+  + `${DRAWER_HEADER}{display:grid;grid-template-columns:minmax(0,1fr) auto 40px;grid-template-rows:66px auto 1fr auto;column-gap:8px}`
+  // Paint one full-width sticky header; its subgrid leaves the middle track to panel shortcuts.
+  + `${DRAWER_HEADER} > [class*="_logoRow"]{grid-column:1 / -1;grid-row:1;display:grid;grid-template-columns:subgrid;`
+  + 'gap:8px;min-width:0;padding:14px 0 12px 4px;margin-bottom:0}'
+  + `${DRAWER_HEADER} > [class*="_logoRow"] [class*="_brand"]{grid-column:1}`
+  + `${DRAWER_HEADER} > [class*="_logoRow"] button[class*="_toggle"]{grid-column:3}`
+  + `${HEADER_BUTTON}{width:40px;height:40px;min-width:40px;min-height:40px;box-sizing:border-box;`
+  + 'flex:none;margin:0;padding:0;display:inline-flex;align-items:center;justify-content:center}'
+  + `${HEADER_BUTTON} svg{width:18px;height:18px;flex:none}`
+  + `${DRAWER_HEADER} > [class*="_panelList"]{grid-column:2;grid-row:1;position:sticky;top:0;z-index:4;`
+  + 'display:flex;flex-direction:row;align-items:center;align-self:start;gap:8px;height:66px;box-sizing:border-box;'
+  + 'padding:14px 0 12px;margin:0;background:var(--dsw-specific-sidebar-fill)}'
+  + `${DRAWER_HEADER} > [class*="_panelList"] [class*="_panelTitle"]{display:none}`
+  + `${DRAWER_HEADER} > [data-remote-control-agents]{grid-column:1 / -1;grid-row:2;min-width:0}`
+  + `${DRAWER_HEADER} > [class*="_regionArea"]{grid-column:1 / -1;grid-row:3;min-width:0;min-height:auto}`
+  + `${DRAWER_HEADER} > [class*="_footArea"]{grid-column:1 / -1;grid-row:4}`
   + `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]{position:sticky;bottom:0;z-index:3;margin-top:auto;`
   + 'padding:6px 0 max(32px,env(safe-area-inset-bottom));background:var(--dsw-specific-sidebar-fill)}'
   + `${DRAWER_SCROLL_ROOT} > [class*="_regionArea"]{flex:none;overflow:visible}`
@@ -57,6 +81,11 @@ const DRAWER_SELECTION_STYLE = '[class*="_sessionRow"][aria-selected="true"]'
   + '{flex:none;overflow:visible;overflow-y:visible;scrollbar-gutter:auto}'
   + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] [class*="_fade"]{display:none}`
   + `${DRAWER_SCROLL_ROOT} .rc-agents-list{max-height:none;overflow:visible}`
+  + `${TASKS}{white-space:nowrap}`
+  + `${TASKS} :is(h1,h2,h3,button,[class*="_rowSummary"],[class*="_metadata"],[class*="_nextRun"] p){white-space:nowrap}`
+  + `${TASKS} :is([class*="_pageHeading"],[class*="_rowSummary"],[class*="_readonlyName"],[class*="_nextRun"] p,[class*="_empty"]){overflow-x:auto}`
+  + `${TASKS} [class*="_pageHeading"] h1{flex:none}`
+  + `${TASKS} [class*="_empty"] :is(h2,h3,p){max-width:100%;overflow-x:auto;text-align:left}`
   + '@media (hover: none){'
   // No latched fill behind the finger, on any row of the list.
   + '[class*="_sessionRow"]:hover:not([aria-selected="true"]),'

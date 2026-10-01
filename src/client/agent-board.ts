@@ -89,7 +89,7 @@ export function agentRows<Id extends string>(
     || b.updatedAt - a.updatedAt)
 }
 
-/** Keep the five most recent actual completions, including those already being viewed. */
+/** Keep actual completions newest first, including those already being viewed. */
 export function completionHistory<Id extends string>(
   list: { readonly ids: readonly Id[]; readonly byId: Readonly<Record<Id, SummaryFacts>> },
   statuses: ReadonlyMap<Id, StatusFacts>,
@@ -108,7 +108,7 @@ export function completionHistory<Id extends string>(
       entries.set(id, { id, completedAt: summary.updatedAt })
     }
   }
-  return [...entries.values()].sort((a, b) => b.completedAt - a.completedAt).slice(0, 5)
+  return [...entries.values()].sort((a, b) => b.completedAt - a.completedAt)
 }
 
 /** Read completed rows stay separate from the live unread-completion group. */
