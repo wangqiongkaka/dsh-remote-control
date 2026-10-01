@@ -36,7 +36,8 @@ const DRAWER_SELECTION_STYLE = '[class*="_sessionRow"][aria-selected="true"]'
   + '[class*="_sessionRow"]:hover:not([class*="_menuOpen"]) [class*="_time"]{display:revert !important}'
   + '[class*="_sessionRow"]:hover:not([class*="_menuOpen"]) [class*="_pinIndicator"]{display:inline-flex !important}'
   + '[class*="_projectRow"]:hover [class*="_chevron"]{display:none !important}'
-  + '[class*="_projectRow"]:hover [class*="_folder"]{display:revert !important}'
+  // Preserve the host's flex slot: worktree decorations paint a sized ::before inside it.
+  + '[class*="_projectRow"]:hover [class*="_folder"]{display:inline-flex !important}'
   // With the hover fill gone, the finger needs the answer while it is still down: the pressed fill
   // is what tells a thumb the tap landed, and it is the only feedback a phone row has left.
   + '[class*="_sessionRow"]:active,'
