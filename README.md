@@ -38,6 +38,16 @@ pnpm dsh plugin --profile web add file:/Users/wangqiongkaka/AIProjetcs/dsh-plugi
 
 可通过 profile 的 `cordis.patch.yml` 覆盖 `remote-control` 行的 `tailscaleBinary`、`access`、`funnelPort`（443、8443 或 10000）、`invitationTtlMs`、`browserTtlMs`、`startupTimeoutMs` 和 `stopTimeoutMs`。`access` 默认 `public`，用 `tailscale funnel` 开公网入口；改为 `tailnet` 则用 `tailscale serve`，只有同一 tailnet 内的设备能打开链接，不再暴露公网入口（公网入口会把这些请求中继到本机，链路慢时首屏会很慢）。Funnel 的命令形式参见 [Tailscale CLI 文档](https://tailscale.com/docs/reference/tailscale-cli/funnel)。
 
+## 手机调试前端服务
+
+电脑先启动 HTTP 前端开发服务，例如监听 `127.0.0.1:5173` 的 Vite。手机安装并连接同一 Tailscale 网络，在已配对的 DSH 页面点击会话标题右侧的地球图标「前端预览」，输入开发端口，点击「生成预览链接」，再点击「打开前端预览」。链接在手机的独立浏览器标签页打开，页面使用手机自身的浏览器、触摸和软键盘环境。
+
+预览始终通过私有 `tailscale serve` 提供 HTTPS，不开启公网 Funnel；使用独立 HTTPS 端口 8443（DSH 已使用 8443 时改用 10000），保留开发服务的根路径、资源、请求正文和 WebSocket。开发服务可以继续监听回环地址，不需要对外绑定；如框架配置了固定 HMR 地址，应改为浏览器当前预览入口，反向代理需使用 `wss` 和预览 HTTPS 端口。页面硬编码的 `http://localhost` API 地址仍指向手机，应通过开发服务的同源代理访问后端。
+
+同时只预览一个端口，再次输入相同端口复用服务；切换端口会关闭旧预览及其 WebSocket，旧预览凭证失效。不存在的开发端口不会关闭现有预览。生成的链接默认五分钟内一次有效，且必须在持有 DSH 配对 Cookie 的同一手机浏览器中打开；其他 tailnet 设备只有链接仍不能访问。预览凭证有效期不超过 DSH 配对有效期；停止远程控制、DSH 退出或 DSH 隧道退出会一起关闭预览。
+
+插件不会把 DSH 或预览授权 Cookie 发送给开发服务，也不会允许开发服务覆盖这些 Cookie；应用自身的 Cookie 会正常转发，并去掉本地 Domain 属性。不同开发服务切换时复用同一个预览 origin，应用 Cookie 和浏览器存储可能保留，需要测试全新登录状态时由手机浏览器清除该站点数据。预览不会注入 DSH 的手机布局补丁，也不提供 Console、Network 或断点调试工具。若所需 HTTPS 端口已被其他 Tailscale 服务占用，插件报错并保留该服务配置。
+
 ## 验证
 
 `pnpm typecheck`、`pnpm test`、`pnpm build`。测试用假的 Tailscale 命令和本机 HTTP 服务验证一次性配对、完整 Web 路由代理、Host/Origin 拒绝及停止后的撤销。公网连通性需要在已启用 Funnel 的机器上实际验证。

@@ -48,6 +48,8 @@ interface Proxy {
 }
 
 interface Tunnel {
+  baseUrl: string
+  dshCookie: string
   child: ChildProcess
   exited: Promise<void>
   proxy: Proxy & {
@@ -55,7 +57,9 @@ interface Tunnel {
     paired: () => boolean
     /** When the paired phone's access ends, or 0 while nobody is paired. */
     pairedUntil: () => number
+    admits: (req: IncomingMessage) => boolean
   }
+  preview?: { child: ChildProcess; exited: Promise<void>; proxy: Proxy & { invite: () => string }; port: number }
 }
 
 /** A pairing link, or the expiry of the phone already paired through the tunnel. */
@@ -156,8 +160,8 @@ async function localCookie(ctx: Context): Promise<string> {
   return cookie
 }
 
-function cookieValue(raw: string | undefined): string | undefined {
-  return raw?.split(';').map(part => part.trim()).find(part => part.startsWith('dsh-remote-control='))?.slice('dsh-remote-control='.length)
+function cookieValue(raw: string | undefined, name = 'dsh-remote-control'): string | undefined {
+  return raw?.split(';').map(part => part.trim()).find(part => part.startsWith(name + '='))?.slice(name.length + 1)
 }
 
 function equalToken(actual: string | undefined, expected: string): boolean {
@@ -167,12 +171,26 @@ function equalToken(actual: string | undefined, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b)
 }
 
-/** Present an admitted request to DSH as its own loopback browser. */
-function loopbackHeaders(headers: IncomingHttpHeaders, port: number, dshCookie: string): IncomingHttpHeaders {
+/** Cookies owned by DSH must never reach, or be replaced by, a frontend service. */
+function privateCookie(cookie: string, dshCookie: string): boolean {
+  const name = cookie.split('=', 1)[0]?.trim()
+  return name === dshCookie.split('=', 1)[0] || name === 'dsh-remote-control' || name === 'dsh-frontend-preview'
+}
+
+/** Present an admitted request to its loopback backend. */
+function loopbackHeaders(headers: IncomingHttpHeaders, port: number, dshCookie: string, frontend = false): IncomingHttpHeaders {
   delete headers['x-forwarded-host']
   delete headers['x-forwarded-proto']
   headers.host = '127.0.0.1:' + String(port)
-  headers.cookie = dshCookie
+  if (frontend) {
+    const cookies = headers.cookie?.split(';').filter(cookie => !privateCookie(cookie, dshCookie)).join(';').trim()
+    if (cookies) headers.cookie = cookies
+    else delete headers.cookie
+    // Incoming forwarding headers belong to the public client; replace them with our own.
+    delete headers.forwarded
+    delete headers['x-forwarded-for']
+    headers['x-forwarded-proto'] = 'https'
+  } else headers.cookie = dshCookie
   if (headers.origin !== undefined) headers.origin = 'http://127.0.0.1:' + String(port)
   return headers
 }
@@ -218,7 +236,7 @@ function sendHtml(reply: IncomingMessage, res: ServerResponse, headers: Incoming
 }
 
 /** Forward an admitted browser request to the existing loopback Web server. */
-function forward(req: IncomingMessage, res: ServerResponse, port: number, dshCookie: string): void {
+function forward(req: IncomingMessage, res: ServerResponse, port: number, dshCookie: string, frontend = false): void {
   const headers = { ...req.headers }
   for (const field of req.headers.connection?.split(',') ?? []) delete headers[field.trim().toLowerCase()]
   delete headers.connection
@@ -227,18 +245,31 @@ function forward(req: IncomingMessage, res: ServerResponse, port: number, dshCoo
   delete headers.te
   delete headers.trailer
   delete headers.upgrade
-  if (String(req.headers.accept ?? '').includes('text/html')) {
+  if (!frontend && String(req.headers.accept ?? '').includes('text/html')) {
     // Documents are rewritten for narrow screens, so they have to arrive uncompressed.
     delete headers['accept-encoding']
   }
   const upstream = httpRequest({
     hostname: '127.0.0.1', port, method: req.method, path: req.url,
-    headers: loopbackHeaders(headers, port, dshCookie),
+    headers: loopbackHeaders(headers, port, dshCookie, frontend),
   }, (reply) => {
     const responseHeaders = { ...reply.headers }
-    delete responseHeaders['set-cookie']
+    if (frontend) {
+      const cookies = reply.headers['set-cookie']?.filter(cookie => !privateCookie(cookie, dshCookie))
+        .map(cookie => cookie.replace(/;\s*Domain=[^;]*/giu, ''))
+      if (cookies?.length) responseHeaders['set-cookie'] = cookies
+      else delete responseHeaders['set-cookie']
+      if (responseHeaders.location !== undefined) {
+        try {
+          const location = new URL(responseHeaders.location)
+          if (loopbackPort(location.href) === port) {
+            responseHeaders.location = 'https://' + req.headers.host + location.pathname + location.search + location.hash
+          }
+        } catch { /* Relative redirects already use the preview origin. */ }
+      }
+    } else delete responseHeaders['set-cookie']
     delete responseHeaders.connection
-    if (req.method === 'GET' && String(reply.headers['content-type'] ?? '').includes('text/html')) {
+    if (!frontend && req.method === 'GET' && String(reply.headers['content-type'] ?? '').includes('text/html')) {
       sendHtml(reply, res, responseHeaders)
       return
     }
@@ -261,11 +292,11 @@ function refuseUpgrade(socket: Duplex, status: number): void {
 }
 
 /** Splice an admitted WebSocket handshake (DSH live streams) onto the loopback Web server. */
-function tunnel(req: IncomingMessage, socket: Duplex, head: Buffer, port: number, dshCookie: string, sockets: Set<Duplex>): void {
+function tunnel(req: IncomingMessage, socket: Duplex, head: Buffer, port: number, dshCookie: string, sockets: Set<Duplex>, frontend = false): void {
   sockets.add(socket)
   const upstream = httpRequest({
     hostname: '127.0.0.1', port, method: req.method, path: req.url,
-    headers: loopbackHeaders({ ...req.headers }, port, dshCookie),
+    headers: loopbackHeaders({ ...req.headers }, port, dshCookie, frontend),
   })
   socket.once('close', () => { sockets.delete(socket); upstream.destroy() })
   upstream.on('error', () => { socket.destroy() })
@@ -292,7 +323,7 @@ function tunnel(req: IncomingMessage, socket: Duplex, head: Buffer, port: number
 }
 
 /** Pair one phone, then proxy all DSH Web routes through a revocable cookie. */
-function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, config: Config) {
+function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, config: Config, preview: (port: number) => Promise<string>) {
   const { host: authority, origin } = new URL(baseUrl)
   const sockets = new Set<Duplex>()
   let ticket = ''
@@ -301,6 +332,7 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
   let browserExpiresAt = 0
   let used = false
   const paired = (): boolean => used && Date.now() < browserExpiresAt
+  const admits = (req: IncomingMessage): boolean => paired() && equalToken(cookieValue(req.headers.cookie), browserToken)
   /** Renew the invitation once expired or spent, never while a phone is paired. */
   const invite = (): Invitation => {
     if (paired()) return { paired: true, expiresAt: browserExpiresAt }
@@ -318,13 +350,15 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
   const target = (req: IncomingMessage): URL | undefined => {
     if (req.headers.host !== authority || req.url === undefined || !req.url.startsWith('/')) return undefined
     if (req.headers.origin !== undefined && req.headers.origin !== origin) return undefined
-    const url = new URL(req.url, baseUrl)
-    return url.origin === origin ? url : undefined
+    try {
+      const url = new URL(req.url, baseUrl)
+      return url.origin === origin ? url : undefined
+    } catch { return undefined }
   }
   /** Status refusing a paired-browser request, or undefined when it may reach DSH. */
   const refuse = (req: IncomingMessage, url: URL): number | undefined => {
     if (req.headers['sec-fetch-site'] === 'cross-site' && (req.method !== 'GET' || url.pathname !== '/')) return 403
-    if (Date.now() >= browserExpiresAt || !equalToken(cookieValue(req.headers.cookie), browserToken)) return 401
+    if (!admits(req)) return 401
     if (url.pathname === '/api/remote-control') return 403
     return undefined
   }
@@ -359,16 +393,89 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
       res.writeHead(status, { 'cache-control': 'no-store' }).end()
       return
     }
+    if (url.pathname === '/api/remote-control/preview') {
+      if (req.method !== 'POST') { res.writeHead(405).end(); return }
+      const chunks: Buffer[] = []
+      let size = 0
+      req.on('data', (chunk: Buffer) => { size += chunk.length; if (size <= 1024) chunks.push(chunk) })
+      req.on('end', () => {
+        if (size > 1024) { res.writeHead(413).end(); return }
+        let body: unknown
+        try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { res.writeHead(400).end(); return }
+        if (!record(body) || typeof body.port !== 'number' || !Number.isInteger(body.port)
+          || body.port < 1 || body.port > 65535 || body.port === dshPort) {
+          res.writeHead(400).end('请输入有效的前端开发端口'); return
+        }
+        void preview(body.port).then(link => {
+          res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+            .end(JSON.stringify({ url: link }))
+        }, (error: unknown) => {
+          res.writeHead(409, { 'cache-control': 'no-store' }).end(error instanceof Error ? error.message : String(error))
+        })
+      })
+      return
+    }
     forward(req, res, dshPort, dshCookie)
   })
   server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     socket.on('error', () => { socket.destroy() })
     const url = target(req)
-    const status = url === undefined || req.headers.upgrade?.toLowerCase() !== 'websocket' ? 403 : refuse(req, url)
+    const status = url === undefined || url.pathname === '/api/remote-control/preview'
+      || req.headers.upgrade?.toLowerCase() !== 'websocket' ? 403 : refuse(req, url)
     if (status === undefined) tunnel(req, socket, head, dshPort, dshCookie, sockets)
     else refuseUpgrade(socket, status)
   })
-  return { server, sockets, invite, paired, pairedUntil }
+  return { server, sockets, invite, paired, pairedUntil, admits }
+}
+
+/** An independent origin preserves frontend root paths and never exposes DSH credentials. */
+function frontendProxy(baseUrl: string, port: number, dshCookie: string, parent: Tunnel['proxy'], config: Config) {
+  const { host, origin } = new URL(baseUrl)
+  const sockets = new Set<Duplex>()
+  const token = randomBytes(32).toString('base64url')
+  let ticket = ''
+  let expiresAt = 0
+  const invite = (): string => {
+    ticket = randomBytes(32).toString('base64url')
+    expiresAt = Math.min(Date.now() + config.invitationTtlMs, parent.pairedUntil())
+    return baseUrl + '?__dsh_preview=' + ticket
+  }
+  const status = (req: IncomingMessage): number | undefined => {
+    if (req.headers.host !== host || req.url === undefined || !req.url.startsWith('/')
+      || (req.headers.origin !== undefined && req.headers.origin !== origin)
+      || req.headers['sec-fetch-site'] === 'cross-site') return 403
+    try { if (new URL(req.url, baseUrl).origin !== origin) return 403 } catch { return 403 }
+    if (!parent.admits(req)) return 401
+    return undefined
+  }
+  const server = createServer((req, res) => {
+    const denied = status(req)
+    if (denied !== undefined) { res.writeHead(denied, { 'cache-control': 'no-store' }).end(); return }
+    const url = new URL(req.url!, baseUrl)
+    if (url.searchParams.has('__dsh_preview')) {
+      if (req.method !== 'GET' || url.pathname !== '/' || url.searchParams.size !== 1
+        || url.searchParams.getAll('__dsh_preview').length !== 1 || ticket === '' || Date.now() >= expiresAt
+        || !equalToken(url.searchParams.get('__dsh_preview') ?? undefined, ticket)) { res.writeHead(401).end(); return }
+      ticket = ''
+      res.writeHead(303, { location: '/', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer',
+        'set-cookie': 'dsh-frontend-preview=' + token + '; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age='
+          + Math.max(0, Math.floor((parent.pairedUntil() - Date.now()) / 1000)),
+      }).end()
+      return
+    }
+    if (!equalToken(cookieValue(req.headers.cookie, 'dsh-frontend-preview'), token)) {
+      res.writeHead(401, { 'cache-control': 'no-store' }).end(); return
+    }
+    forward(req, res, port, dshCookie, true)
+  })
+  server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+    socket.on('error', () => { socket.destroy() })
+    const denied = req.headers.upgrade?.toLowerCase() !== 'websocket' ? 403 : status(req)
+    const authentication = denied ?? (equalToken(cookieValue(req.headers.cookie, 'dsh-frontend-preview'), token) ? undefined : 401)
+    if (authentication === undefined) tunnel(req, socket, head, port, dshCookie, sockets, true)
+    else refuseUpgrade(socket, authentication)
+  })
+  return { server, sockets, invite }
 }
 
 async function listen(server: Server): Promise<number> {
@@ -423,6 +530,50 @@ async function closeProxy({ server, sockets }: Proxy): Promise<void> {
   await closed
 }
 
+/** Start one foreground HTTPS listener without replacing other Tailscale listeners. */
+async function launchTunnel(config: Config, command: 'serve' | 'funnel', port: number, proxy: Proxy):
+  Promise<{ child: ChildProcess; exited: Promise<void> }> {
+  const proxyPort = await listen(proxy.server)
+  const target = 'http://127.0.0.1:' + String(proxyPort)
+  const label = command === 'funnel' ? 'Funnel' : 'Serve'
+  const child = spawn(config.tailscaleBinary, [command, '--yes', '--https=' + String(port), target],
+    { env: cliEnv(), stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+  const output = captureOutput(child)
+  const failure = (message: string): Error => {
+    const detail = output()
+    return new Error(detail === '' ? message : message + ' — ' + detail)
+  }
+  let exitReason: Error | undefined
+  const exited = new Promise<void>((resolve) => {
+    child.once('error', (error) => { exitReason = failure(error.message); resolve() })
+    child.once('close', (code, signal) => {
+      exitReason ??= failure('Tailscale ' + label + ' exited (' + String(code ?? signal) + ')')
+      resolve()
+    })
+  })
+  try {
+    const deadline = Date.now() + config.startupTimeoutMs
+    while (Date.now() < deadline && exitReason === undefined) {
+      const status = await cliJson(config.tailscaleBinary, [command, 'status', '--json'])
+      if (JSON.stringify(status).includes(target)) return { child, exited }
+      if (command === 'funnel' && /funnel is not enabled/iu.test(output())) throw failure('Tailscale Funnel could not start')
+      await new Promise(resolve => setTimeout(resolve, 250))
+    }
+    throw exitReason ?? failure('Tailscale ' + label + ' did not become ready before the startup timeout')
+  } catch (error) {
+    await closeProxy(proxy)
+    await stopChild(child, exited, config.stopTimeoutMs)
+    throw error
+  }
+}
+
+/** A listener on this port may belong to another application; never replace it. */
+function usesPort(status: unknown, port: number): boolean {
+  if (!record(status)) return false
+  if (record(status.TCP) && String(port) in status.TCP) return true
+  return Object.values(status).some(value => usesPort(value, port))
+}
+
 export function apply(ctx: Context, config: Config): void {
   let active: Tunnel | undefined
   let operation: Promise<void> = Promise.resolve()
@@ -435,8 +586,50 @@ export function apply(ctx: Context, config: Config): void {
     const current = active
     active = undefined
     if (current === undefined) return
+    const preview = current.preview
+    if (preview !== undefined) {
+      delete current.preview
+      await closeProxy(preview.proxy)
+      await stopChild(preview.child, preview.exited, config.stopTimeoutMs)
+    }
     await closeProxy(current.proxy)
     await stopChild(current.child, current.exited, config.stopTimeoutMs)
+  }
+  const preview = async (port: number): Promise<string> => {
+    const current = active
+    if (current === undefined || !current.proxy.paired()) throw new Error('远程配对已过期，请重新连接')
+    if ([current.proxy.server, current.preview?.proxy.server].some(server =>
+      (server?.address() as AddressInfo | null | undefined)?.port === port)) throw new Error('不能预览远程控制代理端口')
+    if (!await listening(port)) throw new Error('该端口没有运行前端服务，请先在电脑上启动服务')
+    if (current.preview?.port === port) return current.preview.proxy.invite()
+    const httpsPort = config.funnelPort === 8443 ? 10000 : 8443
+    const previous = current.preview
+    if (previous !== undefined) {
+      delete current.preview
+      await closeProxy(previous.proxy)
+      await stopChild(previous.child, previous.exited, config.stopTimeoutMs)
+    }
+    if (usesPort(await cliJson(config.tailscaleBinary, ['serve', 'status', '--json']), httpsPort)) {
+      throw new Error('Tailscale HTTPS 端口 ' + httpsPort + ' 已被占用，未修改现有配置')
+    }
+    const base = new URL(current.baseUrl)
+    base.port = String(httpsPort)
+    const proxy = frontendProxy(base.href, port, current.dshCookie, current.proxy, config)
+    const { child, exited } = await launchTunnel(config, 'serve', httpsPort, proxy)
+    const started = { child, exited, proxy, port }
+    current.preview = started
+    const expiry = setTimeout(() => { void serialize(async () => {
+      if (current.preview !== started) return
+      delete current.preview
+      await closeProxy(proxy)
+      await stopChild(child, exited, config.stopTimeoutMs)
+    }) }, Math.max(0, current.proxy.pairedUntil() - Date.now())).unref()
+    void exited.then(() => {
+      clearTimeout(expiry)
+      if (current.preview?.child === child) delete current.preview
+      void closeProxy(proxy)
+    })
+    return proxy.invite()
   }
   // The tunnel serves every Workspace; a paired phone stays connected when the desktop changes Workspace.
   const start = async (workspaceId: string): Promise<Invitation & { workspaceId: string }> => {
@@ -455,55 +648,14 @@ export function apply(ctx: Context, config: Config): void {
     }
     const baseUrl = await publicUrl(config)
     const dshCookie = await localCookie(ctx)
-    const pairing = browserProxy(baseUrl, ctx.webServer.port, dshCookie, config)
-    const proxyPort = await listen(pairing.server)
-    const target = 'http://127.0.0.1:' + String(proxyPort)
-    const child = spawn(config.tailscaleBinary, [
-      command, '--yes', '--https=' + String(config.funnelPort), target,
-    ], { env: cliEnv(), stdio: ['ignore', 'pipe', 'pipe'], detached: true })
-    const output = captureOutput(child)
-    // Funnel prints why it refuses to start and then waits for an admin instead of exiting, so the
-    // reason has to travel with whichever failure ends the wait.
-    const failure = (message: string): Error => {
-      const detail = output()
-      return new Error(detail === '' ? message : message + ' — ' + detail)
-    }
-    let exitReason: Error | undefined
-    const exited = new Promise<void>((resolve) => {
-      child.once('error', (error) => { exitReason = failure(error.message); resolve() })
-      child.once('close', (code, signal) => {
-        exitReason ??= failure('Tailscale ' + label + ' exited (' + String(code ?? signal) + ')')
-        resolve()
-      })
-    })
+    const pairing = browserProxy(baseUrl, ctx.webServer.port, dshCookie, config,
+      port => serialize(() => preview(port)))
+    const { child, exited } = await launchTunnel(config, command, config.funnelPort, pairing)
+    active = { child, exited, proxy: pairing, baseUrl, dshCookie }
     void exited.then(() => {
-      if (active?.child === child) {
-        const current = active
-        active = undefined
-        void closeProxy(current.proxy)
-      }
+      if (active?.child === child) void serialize(stop)
     })
-    try {
-      const deadline = Date.now() + config.startupTimeoutMs
-      while (Date.now() < deadline && exitReason === undefined) {
-        const status = await cliJson(config.tailscaleBinary, [command, 'status', '--json'])
-        if (JSON.stringify(status).includes(target)) {
-          active = { child, exited, proxy: pairing }
-          return { ...pairing.invite(), workspaceId }
-        }
-        // A public ingress the tailnet has not enabled is a setup step, not a slow start: report it
-        // without the wait. `serve` needs no such permission.
-        if (config.access === 'public' && /funnel is not enabled/iu.test(output())) {
-          throw failure('Tailscale Funnel could not start')
-        }
-        await new Promise(resolve => setTimeout(resolve, 250))
-      }
-      throw exitReason ?? failure('Tailscale ' + label + ' did not become ready before the startup timeout')
-    } catch (error) {
-      await closeProxy(pairing)
-      await stopChild(child, exited, config.stopTimeoutMs)
-      throw error
-    }
+    return { ...pairing.invite(), workspaceId }
   }
   ctx.effect(() => ctx.connection.fetch.register({
     path: '/api/remote-control', methods: ['GET', 'POST'], requestBody: 'buffered',

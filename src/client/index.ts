@@ -9,6 +9,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { RemoteControlAction, type RemoteControlInjected } from './RemoteControlAction.tsx'
+import { FrontendPreviewAction, type FrontendPreviewInjected } from './FrontendPreviewAction.tsx'
 import { NARROW, SidebarToggle, proxiedFrame, type SidebarToggleInjected } from './SidebarToggle.tsx'
 import { SidebarDismiss } from './SidebarDismiss.tsx'
 import { AgentBoard, type AgentBoardInjected, type HarnessRemote } from './AgentBoard.tsx'
@@ -134,6 +135,22 @@ export function apply(ctx: Context): void {
       stop: async () => { await command('stop') },
     }),
   }, RemoteControlAction))
+  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+    name: 'conversation.session.header.utilities', id: 'remote-control.preview', order: 61, locale: NS,
+    inject: (): FrontendPreviewInjected => ({
+      preview: async port => {
+        const response = await fetch('/api/remote-control/preview', {
+          method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ port }),
+        })
+        if (!response.ok) throw new Error(await response.text())
+        const result: unknown = await response.json()
+        if (typeof result !== 'object' || result === null || !('url' in result) || typeof result.url !== 'string') {
+          throw new Error('Invalid frontend-preview response')
+        }
+        return result.url
+      },
+    }),
+  }, FrontendPreviewAction))
   ctx.slots.inject('conversation.header.leading', () => ctx.slots.register({
     name: 'conversation.header.leading',
     locale: NS,

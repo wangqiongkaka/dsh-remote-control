@@ -35,6 +35,8 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + 'input,textarea,select,[contenteditable="true"]{font-size:16px !important}'
   // The session utilities are desktop actions; keep the separate sidebar corner control.
   + `${FRAME} header[data-window-drag] [class*="_headerUtilities"]{display:none !important}`
+  + `${FRAME} header[data-window-drag] [class*="_headerUtilities"]:has([data-frontend-preview-action]){display:flex !important;margin-left:8px}`
+  + `${FRAME} header[data-window-drag] [class*="_headerUtilities"] [data-slot="conversation.session.header.utilities"] > :not([data-frontend-preview-action]){display:none !important}`
   // Keep session actions beside the sidebar corner control instead of leaving a wide empty gap.
   + `${FRAME} header[data-window-drag] [class*="_headerActions"]{margin-left:auto}`
   // The placeholder is not an editable element, so it keeps the 15px chat size beside a 16px

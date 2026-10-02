@@ -64,6 +64,29 @@ it('adds the drawer dismissal layer to the frame-wide overlay list', () => {
   }
 })
 
+it('registers frontend preview in the session header with the paired-phone endpoint', async () => {
+  const core = slots()
+  const disposers: (() => void)[] = []
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    url: 'https://host.tailnet.ts.net:8443/?pair=preview',
+  }), { status: 200, headers: { 'content-type': 'application/json' } }))
+  try {
+    apply(context(core, disposers))
+    const entry = core.entries('conversation.session.header.utilities').find(item => item.options.id === 'remote-control.preview')
+    expect(entry).toBeDefined()
+    const injected = (entry!.inject as () => { preview: (port: number) => Promise<string> })()
+    expect(await injected.preview(5173)).toBe('https://host.tailnet.ts.net:8443/?pair=preview')
+    expect(fetcher).toHaveBeenCalledWith('/api/remote-control/preview', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ port: 5173 }),
+    }))
+    fetcher.mockResolvedValueOnce(new Response('服务未启动', { status: 409 }))
+    await expect(injected.preview(5173)).rejects.toThrow('服务未启动')
+  } finally {
+    fetcher.mockRestore()
+    for (const dispose of disposers) dispose()
+  }
+})
+
 it('opens an Agent board Session through the Workspace UI navigation', () => {
   const core = slots()
   const disposers: (() => void)[] = []

@@ -390,3 +390,173 @@ it.skipIf(process.platform === 'win32')('serves tailnet peers alone when access 
     .toMatchObject({ url: expect.stringContaining('https://host.tailnet.ts.net/?pair=') })
 })
 
+it.skipIf(process.platform === 'win32')('previews one loopback frontend with isolated credentials, HMR and revocation', async () => {
+  const route = await controlRoute(`  if (args[0] !== 'serve') process.exit(9)
+  const state = path.join(home, args.find(arg => arg.startsWith('--https=')))
+  fs.writeFileSync(state, args.at(-1))
+  process.on('SIGTERM', () => { fs.unlinkSync(state); process.exit(0) })
+  setInterval(() => {}, 1000)`, 5_000,
+  `fs.readdirSync(home).some(name => name.startsWith('--https='))
+    ? JSON.stringify({ Web: Object.fromEntries(fs.readdirSync(home).filter(name => name.startsWith('--https='))
+    .map(name => [name, { Proxy: fs.readFileSync(path.join(home, name), 'utf8') }])),
+    ...(fs.existsSync(path.join(home, 'occupied')) ? { TCP: { 8443: { HTTPS: true } } } : {}) }) : '{}'`, false, 'tailnet')
+  const app = createServer((req, res) => {
+    const chunks: Buffer[] = []
+    req.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+    req.on('end', () => {
+      if (req.url === '/') {
+        res.writeHead(200, { 'content-type': 'text/html', 'set-cookie': [
+          'app-session=frontend; Path=/; HttpOnly', 'dsh-remote-control=forged; Path=/',
+        ] }).end('<head></head><script type="module" src="/@vite/client"></script>')
+      } else if (req.url === '/redirect') {
+        res.writeHead(302, { location: 'http://127.0.0.1:' + appPort + '/login?next=/' }).end()
+      } else res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+        url: req.url, host: req.headers.host, origin: req.headers.origin,
+        cookie: req.headers.cookie, body: Buffer.concat(chunks).toString('utf8'),
+      }))
+    })
+  })
+  const appSockets = new Set<Duplex>()
+  app.on('upgrade', (req, socket) => {
+    appSockets.add(socket)
+    socket.on('error', () => {})
+    socket.on('close', () => { appSockets.delete(socket) })
+    expect(req.headers.cookie).toBe('app-session=frontend')
+    expect(req.headers.origin).toBe('http://127.0.0.1:' + appPort)
+    expect(req.headers['sec-websocket-protocol']).toBe('vite-hmr')
+    socket.write('HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n')
+    socket.pipe(socket)
+  })
+  await new Promise<void>(resolve => { app.listen(0, '127.0.0.1', resolve) })
+  const appPort = (app.address() as AddressInfo).port
+  const second = createServer((_req, res) => { res.writeHead(200).end('second frontend') })
+  await new Promise<void>(resolve => { second.listen(0, '127.0.0.1', resolve) })
+  const request = (target: string, path: string, headers: Record<string, string> = {}, method = 'GET', body = ''):
+    Promise<{ status: number; headers: IncomingMessage['headers']; body: string }> => new Promise((resolve, reject) => {
+      const url = new URL(target)
+      const outgoing = httpRequest({ hostname: url.hostname, port: url.port, path, method, headers }, incoming => {
+        const chunks: Buffer[] = []
+        incoming.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+        incoming.on('end', () => { resolve({ status: incoming.statusCode!, headers: incoming.headers,
+          body: Buffer.concat(chunks).toString('utf8') }) })
+        incoming.on('error', reject)
+      })
+      outgoing.on('error', reject)
+      outgoing.end(body)
+    })
+  try {
+    const started = await begin(route)
+    const { url } = await started.json() as { url: string }
+    const dshTarget = await readFile(join(directory!, '--https=443'), 'utf8')
+    const host = 'host.tailnet.ts.net'
+    const pair = await request(dshTarget, '/' + new URL(url).search, { host })
+    const dshCookie = pair.headers['set-cookie']![0]!.split(';')[0]!
+    const open = (port: unknown, extra: Record<string, string> = {}) => request(dshTarget,
+      '/api/remote-control/preview', { host, cookie: dshCookie, origin: 'https://' + host,
+        'content-type': 'application/json', ...extra }, 'POST', JSON.stringify({ port }))
+    expect((await open(appPort, { cookie: '' })).status).toBe(401)
+    expect((await open(appPort, { origin: 'https://evil.invalid' })).status).toBe(403)
+    expect((await request(dshTarget, '/api/remote-control/preview', { host, cookie: dshCookie })).status).toBe(405)
+    expect((await request(dshTarget, '/api/remote-control/preview', { host, cookie: dshCookie }, 'POST', '{')).status).toBe(400)
+    expect((await request(dshTarget, '/api/remote-control/preview', { host, cookie: dshCookie }, 'POST', 'x'.repeat(1025))).status).toBe(413)
+    for (const port of [0, 65536, 1.5, '5173', 'http://other.invalid', (backend!.address() as AddressInfo).port]) {
+      expect((await open(port)).status).toBe(400)
+    }
+    expect((await open(await deadPort())).status).toBe(409)
+    const occupied = join(directory!, 'occupied')
+    await writeFile(occupied, 'other service')
+    const refused = await open(appPort)
+    expect(refused.status).toBe(409)
+    expect(refused.body).toContain('8443')
+    expect(await readFile(occupied, 'utf8')).toBe('other service')
+    await rm(occupied)
+    const opened = await open(appPort)
+    expect(opened.status).toBe(200)
+    const link = (JSON.parse(opened.body) as { url: string }).url
+    expect(link).toMatch(/^https:\/\/host\.tailnet\.ts\.net:8443\/\?__dsh_preview=/)
+    const frontendTarget = await readFile(join(directory!, '--https=8443'), 'utf8')
+    const previewHost = host + ':8443'
+    const previewPath = new URL(link).pathname + new URL(link).search
+    expect((await request(frontendTarget, '/', { host: previewHost, cookie: dshCookie })).status).toBe(401)
+    expect((await request(frontendTarget, previewPath, { host: previewHost })).status).toBe(401)
+    const admitted = await request(frontendTarget, previewPath, { host: previewHost, cookie: dshCookie })
+    expect(admitted.status).toBe(303)
+    expect(admitted.headers.location).toBe('/')
+    const previewCookie = admitted.headers['set-cookie']![0]!.split(';')[0]!
+    const credentials = dshCookie + '; ' + previewCookie + '; app-session=frontend'
+    const headers = { host: previewHost, cookie: credentials, origin: 'https://' + previewHost }
+    expect((await request(frontendTarget, previewPath, headers)).status).toBe(401)
+    expect((await request(frontendTarget, '/', { ...headers, cookie: previewCookie })).status).toBe(401)
+    expect((await request(frontendTarget, '/', { ...headers, host: 'other.invalid' })).status).toBe(403)
+    expect((await request(frontendTarget, '//[invalid', headers)).status).toBe(403)
+    expect((await request(dshTarget, '//[invalid', { host, cookie: dshCookie })).status).toBe(403)
+    expect((await request(frontendTarget, '/', { ...headers, cookie: dshCookie,
+      connection: 'Upgrade', upgrade: 'websocket' })).status).toBe(401)
+    const page = await request(frontendTarget, '/', headers)
+    expect(page.body).toContain('/@vite/client')
+    expect(page.body).not.toContain('data-dsh-remote-control')
+    expect(page.headers['set-cookie']).toEqual(['app-session=frontend; Path=/; HttpOnly'])
+    const appQuery = await request(frontendTarget, '/?pair=app&next=/', headers)
+    expect(appQuery.status).toBe(200)
+    expect(JSON.parse(appQuery.body).url).toBe('/?pair=app&next=/')
+    const echo = await request(frontendTarget, '/src/main.ts?raw', headers, 'POST', 'payload')
+    expect(JSON.parse(echo.body)).toEqual({ url: '/src/main.ts?raw', host: '127.0.0.1:' + appPort,
+      origin: 'http://127.0.0.1:' + appPort, cookie: 'app-session=frontend', body: 'payload' })
+    const redirected = await request(frontendTarget, '/redirect', headers)
+    expect(redirected.headers.location).toBe('https://' + previewHost + '/login?next=/')
+    const socket = await new Promise<Duplex>((resolve, reject) => {
+      const target = new URL(frontendTarget)
+      const outgoing = httpRequest({ hostname: target.hostname, port: target.port, path: '/?token=hmr',
+        headers: { ...headers, connection: 'Upgrade', upgrade: 'websocket', 'sec-websocket-protocol': 'vite-hmr' } })
+      outgoing.on('upgrade', (_reply, socket) => { resolve(socket) })
+      outgoing.on('response', reply => { reply.resume(); reject(new Error('HMR refused: ' + reply.statusCode)) })
+      outgoing.on('error', reject)
+      outgoing.end()
+    })
+    socket.on('error', () => {})
+    const closed = new Promise<void>(resolve => { socket.on('close', resolve) })
+    const echoed = new Promise<string>(resolve => { socket.once('data', chunk => { resolve(String(chunk)) }) })
+    socket.write('update')
+    expect(await echoed).toBe('update')
+    // A failed replacement keeps the existing preview alive.
+    expect((await open(await deadPort())).status).toBe(409)
+    expect((await request(frontendTarget, '/', headers)).status).toBe(200)
+    const next = await open(appPort)
+    expect(next.status).toBe(200)
+    expect(await readFile(join(directory!, '--https=8443'), 'utf8')).toBe(frontendTarget)
+    const { pairedUntil } = await (await route.fetch(new Request('http://localhost/api/remote-control'))).json() as { pairedUntil: number }
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(pairedUntil - 3000)
+    const switched = await open((second.address() as AddressInfo).port)
+    expect(switched.status).toBe(200)
+    await closed
+    await expect(request(frontendTarget, '/', headers)).rejects.toThrow()
+    const secondTarget = await readFile(join(directory!, '--https=8443'), 'utf8')
+    expect((await request(secondTarget, '/', headers)).status).toBe(401)
+    const secondLink = new URL((JSON.parse(switched.body) as { url: string }).url)
+    const secondPair = await request(secondTarget, secondLink.pathname + secondLink.search, { host: previewHost, cookie: dshCookie })
+    const secondHeaders = { host: previewHost, cookie: dshCookie + '; ' + secondPair.headers['set-cookie']![0]!.split(';')[0]! }
+    expect((await request(secondTarget, '/', secondHeaders)).body).toBe('second frontend')
+    // Expiry of the parent pairing fences the independent preview too.
+    vi.setSystemTime(pairedUntil + 1)
+    expect((await request(secondTarget, '/', secondHeaders)).status).toBe(401)
+    await expect.poll(() => readFile(join(directory!, '--https=8443'), 'utf8').then(() => true, () => false),
+      { timeout: 5000 }).toBe(false)
+    await expect(request(secondTarget, '/', secondHeaders)).rejects.toThrow()
+    vi.useRealTimers()
+    expect((await route.fetch(new Request('http://localhost/api/remote-control', {
+      method: 'POST', body: JSON.stringify({ action: 'stop' }),
+    }))).status).toBe(200)
+    await closed
+    await expect(request(secondTarget, '/', secondHeaders)).rejects.toThrow()
+    await expect(readFile(join(directory!, '--https=8443'), 'utf8')).rejects.toThrow()
+  } finally {
+    vi.useRealTimers()
+    await stop?.()
+    for (const socket of appSockets) socket.destroy()
+    app.closeAllConnections()
+    await new Promise<void>(resolve => { app.close(() => resolve()) })
+    second.closeAllConnections()
+    await new Promise<void>(resolve => { second.close(() => resolve()) })
+  }
+}, 30_000)
