@@ -20,6 +20,26 @@ pnpm dsh plugin --profile web add file:/Users/wangqiongkaka/AIProjetcs/dsh-plugi
 
 使用已安装的 `dsh` CLI 时，去掉 `pnpm`。安装后重启 Web profile 并重新打开 Web 页面。插件只向 profile 安装自己的 bundle，不要求修改 DSH 主仓库。若同版本重新打包，需要先移除旧包再安装，避免 pnpm 复用缓存。
 
+## 开发热更新
+
+热更新需要链接安装本仓库，并在目标 Profile 启用 `@deepseek-ai/dsh-hmr`、监听本插件的 `lib/`。安装 `.tgz` 实体包后的版本替换仍需重启；桌面 Profile 的安装操作使用应用内插件管理器。
+
+例如多个插件共同开发时，Profile 的 `hmr` 条目可以配置为：
+
+```yaml
+- id: hmr
+  name: "@deepseek-ai/dsh-hmr"
+  disabled: false
+  config:
+    base: /Users/wangqiongkaka/AIProjetcs/dsh-plugin
+    root:
+      - dsh-harness-provider/.cache/live/dist
+      - dsh-git-sidebar/lib
+      - dsh-remote-control/lib
+```
+
+配置生效后，运行 `npm run build` 即可发布新产物。构建会保留被监听的 `lib/` 目录，覆盖入口文件；不要先删除整个 `lib/`，否则目录监听会失效，后续构建无法触发重载。若旧构建已使监听失效，需要重新加载 HMR 配置或重启一次 DSH，之后的构建无需再重启。插件重载会执行其停止逻辑，当前手机配对连接需要重新开启。
+
 ## 使用与限制
 
 在电脑的 DSH Web 中打开任一会话，点击标题旁的链接图标。插件显示二维码和可复制链接。链接五分钟内只能配对一台手机；配对成功后浏览器会话默认持续十二小时。点击「停止远程控制」会关闭代理和前台 Funnel，立即撤销该次手机访问。链接过期前再次打开弹窗会复用同一链接，过期后自动换新链接。在其他工作区打开弹窗不会重启隧道；已配对时弹窗只显示配对状态，手机保持连接，可在手机上自行切换工作区。需要配对另一台手机时，停止后重新开启。

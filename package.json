@@ -34,7 +34,7 @@
     }
   },
   "scripts": {
-    "build": "node -e \"for(const dir of ['lib','dist']) require('node:fs').rmSync(dir,{recursive:true,force:true})\" && tsc -p tsconfig.build.json && tsdown",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json && tsdown",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "npm run build && npm run typecheck && npm run test",

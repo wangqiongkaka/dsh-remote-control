@@ -308,13 +308,14 @@ it.skipIf(process.platform === 'win32').each([
     TCP: { [port]: { HTTPS: true } },
     Web: { ['host.tailnet.ts.net:' + port]: { Handlers: { '/': { Proxy: args.at(-1) } } } },
   } } }
-  fs.writeFileSync(state, JSON.stringify(config))
+  fs.writeFileSync(state + '.next', JSON.stringify(config))
+  fs.renameSync(state + '.next', state)
   process.on('SIGTERM', () => { fs.writeFileSync(state, JSON.stringify(existing)); process.exit(0) })
   setInterval(() => {}, 1000)`, 5_000,
   `fs.existsSync(path.join(home, 'config')) ? fs.readFileSync(path.join(home, 'config'), 'utf8') : JSON.stringify(${JSON.stringify(existing)})`,
   false, access)
   const response = await begin(route)
-  expect(response.status).toBe(200)
+  expect(response.status, await response.clone().text()).toBe(200)
   expect(await response.json()).toMatchObject({ url: expect.stringContaining('https://host.tailnet.ts.net/?pair=') })
   const state = join(directory!, 'config')
   expect(JSON.parse(await readFile(state, 'utf8'))).toMatchObject(existing)
