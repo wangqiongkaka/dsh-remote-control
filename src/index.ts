@@ -106,13 +106,27 @@ function listening(port: number): Promise<boolean> {
   })
 }
 
+/** TCP listeners are shared by Serve and Funnel, including foreground sessions. */
+function portAvailable(status: unknown, port: number): boolean {
+  if (!record(status)) return false
+  if (Object.keys(status).length === 0) return true
+  if ('TCP' in status && (!record(status.TCP) || String(port) in status.TCP)) return false
+  if ('Foreground' in status && (!record(status.Foreground)
+    || Object.values(status.Foreground).some(session => !portAvailable(session, port)))) return false
+  // An unrecognised nonempty config cannot safely prove that the port is free.
+  return record(status.TCP) || record(status.Foreground)
+}
+
 /**
  * A DSH process can exit without stopping its tunnel, leaving a foreground serve session whose
- * loopback proxy died with that process. Nothing else `tailscale funnel` wrote has this shape, so
- * clearing it is what retires the orphaned CLI; any other existing config stays untouched.
+ * loopback proxy died with that process. Cleanup may retire the orphaned CLI only when there is
+ * no background configuration or other listener port that a reset would also remove.
  */
-async function abandoned(status: Record<string, unknown>): Promise<boolean> {
+async function abandoned(status: Record<string, unknown>, port: number): Promise<boolean> {
   if (Object.keys(status).length !== 1 || !('Foreground' in status)) return false
+  if (!record(status.Foreground) || Object.values(status.Foreground).some(session =>
+    !record(session) || !record(session.TCP) || Object.keys(session.TCP).length !== 1
+    || !(String(port) in session.TCP))) return false
   const targets: string[] = []
   const walk = (value: unknown): void => {
     if (Array.isArray(value)) { for (const item of value) walk(item); return }
@@ -446,9 +460,9 @@ export function apply(ctx: Context, config: Config): void {
     const command = config.access === 'public' ? 'funnel' : 'serve'
     const label = config.access === 'public' ? 'Funnel' : 'Serve'
     const existing = await cliJson(config.tailscaleBinary, [command, 'status', '--json'])
-    if (!record(existing) || Object.keys(existing).length > 0) {
-      if (!record(existing) || !await abandoned(existing)) {
-        throw new Error('Tailscale ' + label + ' already has a configuration')
+    if (!portAvailable(existing, config.funnelPort)) {
+      if (!record(existing) || !await abandoned(existing, config.funnelPort)) {
+        throw new Error('Tailscale ' + label + ' port ' + String(config.funnelPort) + ' already has a configuration')
       }
       // Either verb can own the leftover, so clear both before claiming the port.
       for (const other of ['serve', 'funnel']) await cliRun(config.tailscaleBinary, [other, 'reset'])

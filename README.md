@@ -34,7 +34,7 @@ pnpm dsh plugin --profile web add file:/Users/wangqiongkaka/AIProjetcs/dsh-plugi
 
 远程页面的「工作步骤展示」和「性能与用量」默认为「简洁」。DSH 只为本机页面保存这两项设置，远程页面上的选择只在当前页面有效，刷新后回到「简洁」，也不会改动电脑上的设置。手机宽度下的设置窗口不显示「模型」分区，模型配置请在电脑上进行。
 
-插件只在本机回环地址上代理已有的 DSH Web 服务。Tailscale 提供 HTTPS 入口（`access: tailnet` 时入口只在 tailnet 内可达，手机需登录同一 tailnet）；插件校验请求来源、消耗一次性配对凭证，并以独立 HttpOnly Cookie 授权手机。DSH 的本地浏览器 Cookie 不会发给手机。若本机已有 Funnel 配置，插件会拒绝启动以免覆盖它；唯一的例外是上一次 DSH 进程退出时遗留的 Foreground 会话（其回环后端已随该进程消失，清掉这条残留也会让孤立的 `tailscale funnel` 退出）。电脑关闭 DSH 或断开 Tailscale 后，远程入口不可用。
+插件只在本机回环地址上代理已有的 DSH Web 服务。Tailscale 提供 HTTPS 入口（`access: tailnet` 时入口只在 tailnet 内可达，手机需登录同一 tailnet）；插件校验请求来源、消耗一次性配对凭证，并以独立 HttpOnly Cookie 授权手机。DSH 的本地浏览器 Cookie 不会发给手机。插件允许与其他端口的 Serve/Funnel 映射共存，例如 DSH 使用 443、前端使用 8443；目标端口被后台或前台会话占用时会拒绝启动，报错包含端口，不会覆盖已有映射。唯一可自动清理的残留是配置中只有本插件目标端口的 Foreground 会话、且其所有回环后端都已停止；配置中包含其他端口或后台映射时不会执行全局清理。停止远程控制只关闭本次启动的代理和前台隧道，保留其他映射。电脑关闭 DSH 或断开 Tailscale 后，远程入口不可用。
 
 可通过 profile 的 `cordis.patch.yml` 覆盖 `remote-control` 行的 `tailscaleBinary`、`access`、`funnelPort`（443、8443 或 10000）、`invitationTtlMs`、`browserTtlMs`、`startupTimeoutMs` 和 `stopTimeoutMs`。`access` 默认 `public`，用 `tailscale funnel` 开公网入口；改为 `tailnet` 则用 `tailscale serve`，只有同一 tailnet 内的设备能打开链接，不再暴露公网入口（公网入口会把这些请求中继到本机，链路慢时首屏会很慢）。Funnel 的命令形式参见 [Tailscale CLI 文档](https://tailscale.com/docs/reference/tailscale-cli/funnel)。
 
@@ -49,6 +49,8 @@ npm run dev -- --host 0.0.0.0
 在手机浏览器的独立标签页中打开 `http://电脑的IP:实际端口`，例如 `http://100.x.y.z:5173`。使用 Tailscale 时通过 `tailscale ip -4` 获取电脑的地址；同一局域网下也可以使用电脑的局域网 IP。端口以开发服务启动输出为准，电脑防火墙和 Tailscale 访问规则须允许该连接。此方式无需插件代理或额外配对，服务访问权限由网络规则和应用自身管理。Vite 的监听配置参见 [官方文档](https://vite.dev/config/server-options)，Tailscale 直连方式参见 [官方文档](https://tailscale.com/docs/how-to/connect-to-devices)。
 
 页面中的 API 地址若写成 `localhost`，会指向手机自身；可通过开发服务的同源代理访问电脑上的后端。此方式用于手机实际浏览器中的页面预览，不提供 Console、Network 或断点调试工具。
+
+需要 HTTPS 时也可以直接使用 Tailscale 原生代理，前端仍可监听回环地址。启动服务后运行 `tailscale serve --https=8443 http://127.0.0.1:5173`，手机打开 `https://电脑的完整Tailscale域名:8443`；前台命令按 `Ctrl+C` 关闭。8443 须未被占用，手机需连接同一 tailnet，开发框架也须允许该域名。新增服务使用不同的 HTTPS 端口即可，无需修改插件代码。参见 [Tailscale Serve 文档](https://tailscale.com/docs/reference/tailscale-cli/serve)。
 
 ## 验证
 

@@ -290,6 +290,69 @@ const begin = (route: ConnectionFetchRoute): Promise<Response> => route.fetch(
   }),
 )
 
+it.skipIf(process.platform === 'win32').each([
+  ['tailnet', false], ['tailnet', true], ['public', false], ['public', true],
+] as const)('preserves other %s mappings (foreground: %s) while starting and stopping DSH', async (access, foreground) => {
+  const service = {
+    TCP: { 8443: { HTTPS: true } },
+    Web: { 'host.tailnet.ts.net:8443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:8000' } } } },
+  }
+  const existing = foreground ? { Foreground: { other: service } } : service
+  const route = await controlRoute(`  const state = path.join(home, 'config')
+  const existing = fs.existsSync(state) ? JSON.parse(fs.readFileSync(state, 'utf8')) : ${JSON.stringify(existing)}
+  if (args[1] === 'reset') { fs.writeFileSync(path.join(home, 'reset'), '1'); fs.writeFileSync(state, '{}'); return }
+  if (args[0] !== ${JSON.stringify(access === 'tailnet' ? 'serve' : 'funnel')}) process.exit(9)
+  const port = args.find(arg => arg.startsWith('--https='))?.slice('--https='.length)
+  if (port !== '443') process.exit(8)
+  const config = { ...existing, Foreground: { ...existing.Foreground, dsh: {
+    TCP: { [port]: { HTTPS: true } },
+    Web: { ['host.tailnet.ts.net:' + port]: { Handlers: { '/': { Proxy: args.at(-1) } } } },
+  } } }
+  fs.writeFileSync(state, JSON.stringify(config))
+  process.on('SIGTERM', () => { fs.writeFileSync(state, JSON.stringify(existing)); process.exit(0) })
+  setInterval(() => {}, 1000)`, 5_000,
+  `fs.existsSync(path.join(home, 'config')) ? fs.readFileSync(path.join(home, 'config'), 'utf8') : JSON.stringify(${JSON.stringify(existing)})`,
+  false, access)
+  const response = await begin(route)
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({ url: expect.stringContaining('https://host.tailnet.ts.net/?pair=') })
+  const state = join(directory!, 'config')
+  expect(JSON.parse(await readFile(state, 'utf8'))).toMatchObject(existing)
+  const stopped = await route.fetch(new Request('http://localhost/api/remote-control', {
+    method: 'POST', body: JSON.stringify({ action: 'stop' }),
+  }))
+  expect(stopped.status).toBe(200)
+  expect(JSON.parse(await readFile(state, 'utf8'))).toEqual(existing)
+  await expect(readFile(join(directory!, 'reset'), 'utf8')).rejects.toThrow()
+})
+
+it.skipIf(process.platform === 'win32').each([
+  { TCP: { 443: { HTTPS: true } } },
+  { TCP: { 443: { TCPForward: '127.0.0.1:8000' } } },
+  { TCP: { 8443: { HTTPS: true } }, Foreground: { other: { TCP: { 443: { HTTPS: true } } } } },
+  { TCP: null },
+  { Foreground: { other: null } },
+])('refuses occupied or unreadable listeners without resetting other mappings: %j', async existing => {
+  const route = await controlRoute(`  fs.writeFileSync(path.join(home, 'mutation'), args.join(' '))
+  process.exit(9)`, 1_000, `JSON.stringify(${JSON.stringify(existing)})`, false, 'tailnet')
+  const response = await begin(route)
+  expect(response.status).toBe(409)
+  await expect(readFile(join(directory!, 'mutation'), 'utf8')).rejects.toThrow()
+})
+
+it.skipIf(process.platform === 'win32')('does not reset a dead foreground session containing another port', async () => {
+  const existing = { Foreground: { other: {
+    TCP: { 443: { HTTPS: true }, 8443: { HTTPS: true } },
+    Web: { 'host.tailnet.ts.net:443': { Handlers: {
+      '/': { Proxy: 'http://127.0.0.1:' + String(await deadPort()) },
+    } } },
+  } } }
+  const route = await controlRoute(`  fs.writeFileSync(path.join(home, 'mutation'), args.join(' '))
+  process.exit(9)`, 1_000, `JSON.stringify(${JSON.stringify(existing)})`, false, 'tailnet')
+  expect((await begin(route)).status).toBe(409)
+  await expect(readFile(join(directory!, 'mutation'), 'utf8')).rejects.toThrow()
+})
+
 it.skipIf(process.platform === 'win32')('reports an unenabled tailnet instead of waiting out the timeout', async () => {
   const route = await controlRoute(`  process.stderr.write('Funnel is not enabled on your tailnet.\\nTo enable, visit:\\n\\n         https://login.tailscale.com/f/funnel?node=abc\\n')
   setInterval(() => {}, 1000)`, 30_000)
@@ -352,7 +415,7 @@ it.skipIf(process.platform === 'win32')('still refuses a foreground tunnel that 
       foreground('http://127.0.0.1:' + String((live.address() as AddressInfo).port)))
     const response = await begin(route)
     expect(response.status).toBe(409)
-    expect(await response.text()).toBe('Tailscale Funnel already has a configuration')
+    expect(await response.text()).toBe('Tailscale Funnel port 443 already has a configuration')
   } finally {
     await new Promise<void>(resolve => { live.close(() => resolve()) })
   }
@@ -389,4 +452,3 @@ it.skipIf(process.platform === 'win32')('serves tailnet peers alone when access 
   expect(await response.json())
     .toMatchObject({ url: expect.stringContaining('https://host.tailnet.ts.net/?pair=') })
 })
-
