@@ -58,8 +58,8 @@ interface Tunnel {
   }
 }
 
-/** A pairing link, or the expiry of the phone already paired through the tunnel. */
-type Invitation = { url: string; expiresAt: number } | { paired: true; expiresAt: number }
+/** A usable pairing link alongside the current phone's independent access expiry. */
+type Invitation = { url: string; expiresAt: number; pairedUntil: number }
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -309,22 +309,21 @@ function tunnel(req: IncomingMessage, socket: Duplex, head: Buffer, port: number
 function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, config: Config) {
   const { host: authority, origin } = new URL(baseUrl)
   const sockets = new Set<Duplex>()
+  const responses = new Set<ServerResponse>()
   let ticket = ''
   let browserToken = ''
   let inviteExpiresAt = 0
   let browserExpiresAt = 0
   let used = false
-  const paired = (): boolean => used && Date.now() < browserExpiresAt
-  /** Renew the invitation once expired or spent, never while a phone is paired. */
+  const paired = (): boolean => browserToken !== '' && Date.now() < browserExpiresAt
+  /** Renew expired or spent invitations without disturbing the current phone. */
   const invite = (): Invitation => {
-    if (paired()) return { paired: true, expiresAt: browserExpiresAt }
     if (used || Date.now() >= inviteExpiresAt) {
       ticket = randomBytes(32).toString('base64url')
-      browserToken = randomBytes(32).toString('base64url')
       inviteExpiresAt = Date.now() + config.invitationTtlMs
       used = false
     }
-    return { url: baseUrl + '?pair=' + ticket, expiresAt: inviteExpiresAt }
+    return { url: baseUrl + '?pair=' + ticket, expiresAt: inviteExpiresAt, pairedUntil: pairedUntil() }
   }
   /** The dialog follows the pairing state without being reopened. */
   const pairedUntil = (): number => paired() ? browserExpiresAt : 0
@@ -357,7 +356,11 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
         return
       }
       used = true
+      browserToken = randomBytes(32).toString('base64url')
       browserExpiresAt = Date.now() + config.browserTtlMs
+      // Replace only admitted old-phone streams; the new pairing response must remain open.
+      for (const socket of sockets) socket.destroy()
+      for (const response of responses) response.destroy()
       res.writeHead(303, {
         'cache-control': 'no-store',
         'referrer-policy': 'no-referrer',
@@ -373,6 +376,8 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
       res.writeHead(status, { 'cache-control': 'no-store' }).end()
       return
     }
+    responses.add(res)
+    res.once('close', () => { responses.delete(res) })
     forward(req, res, dshPort, dshCookie)
   })
   server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {

@@ -12,10 +12,8 @@ import { NS } from './locales.ts'
 
 /** Host commands passed through the slot injection face. */
 export interface RemoteControlInjected {
-  /** A pairing link with its expiry, or when the already paired phone's access ends. */
-  start: (workspaceId: string) => Promise<{ url: string; expiresAt: number } | { pairedUntil: number }>
-  /** Whether a phone holds the tunnel right now, and until when. */
-  status: () => Promise<{ paired: boolean; pairedUntil: number }>
+  /** A usable pairing link and the current phone's independent access expiry (0 if unpaired). */
+  start: (workspaceId: string) => Promise<{ url: string; expiresAt: number; pairedUntil: number }>
   stop: () => Promise<void>
 }
 
@@ -81,49 +79,44 @@ export function RemoteControlAction(props: RemoteControlActionProps): React.JSX.
   const workspaceId = useWorkspaces(state => state.items.find(item => item.sessionIds.includes(sessionId))?.workspaceId)
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [stopping, setStopping] = useState(false)
   const [url, setUrl] = useState<string>()
-  const [inviteUntil, setInviteUntil] = useState<number>()
   const [pairedUntil, setPairedUntil] = useState<number>()
   const [qr, setQr] = useState<string>()
   const [error, setError] = useState<string>()
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
-    if (!open || workspaceId === undefined || url !== undefined || pairedUntil !== undefined
-      || busy || error !== undefined) return
-    setBusy(true)
-    void props.start(workspaceId).then((result) => {
-      if ('url' in result) { setUrl(result.url); setInviteUntil(result.expiresAt) }
-      else setPairedUntil(result.pairedUntil)
-    }, (reason: unknown) => {
-      setError(reason instanceof Error ? reason.message : String(reason))
-    }).finally(() => { setBusy(false) })
-  }, [open, workspaceId, url, pairedUntil, busy, error, props.start])
-
-  // A displayed link is spent the moment a phone pairs, and it lapses after a few minutes: keep the
-  // dialog on the live state instead of leaving a dead QR code in front of the user.
-  useEffect(() => {
-    if (!open || url === undefined || workspaceId === undefined) return
-    const timer = setInterval(() => {
-      void props.status().then((state) => {
-        if (state.paired) {
-          setPairedUntil(state.pairedUntil)
-          setUrl(undefined)
-          return
-        }
-        if (inviteUntil !== undefined && Date.now() >= inviteUntil) {
-          void props.start(workspaceId).then((result) => {
-            if ('url' in result) { setUrl(result.url); setInviteUntil(result.expiresAt) }
-            else { setPairedUntil(result.pairedUntil); setUrl(undefined) }
-          }, () => {})
-        }
-      }, () => {})
-    }, 2_000)
-    return () => { clearInterval(timer) }
-  }, [open, url, inviteUntil, workspaceId, props.start, props.status])
+    if (!open || workspaceId === undefined || stopping || error !== undefined) return
+    let alive = true
+    let pending = false
+    // The server reuses a valid invitation, renewing only when spent or expired. Polling never
+    // changes the paired browser's access, and stops before a stop command can close the tunnel.
+    const refresh = async (initial = false): Promise<void> => {
+      if (pending) return
+      pending = true
+      if (initial) setBusy(true)
+      try {
+        const result = await props.start(workspaceId)
+        if (!alive) return
+        setUrl(result.url)
+        setPairedUntil(result.pairedUntil > 0 ? result.pairedUntil : undefined)
+      } catch (reason: unknown) {
+        if (alive && initial) setError(reason instanceof Error ? reason.message : String(reason))
+      } finally {
+        pending = false
+        if (alive && initial) setBusy(false)
+      }
+    }
+    void refresh(true)
+    const timer = setInterval(() => { void refresh() }, 2_000)
+    return () => { alive = false; clearInterval(timer) }
+  }, [open, workspaceId, stopping, error, props.start])
 
   useEffect(() => {
-    if (url === undefined) { setQr(undefined); return }
+    setQr(undefined)
+    setCopied(false)
+    if (url === undefined) return
     let alive = true
     void QRCode.toString(url, { type: 'svg', width: 240, margin: 2 }).then(
       (svg) => { if (alive) setQr(`data:image/svg+xml,${encodeURIComponent(svg)}`) },
@@ -141,7 +134,7 @@ export function RemoteControlAction(props: RemoteControlActionProps): React.JSX.
       title={t('title')} onClick={() => {
         // Re-ask on every open: the link may be spent or expired, or this Workspace may have changed.
         setUrl(undefined)
-        setInviteUntil(undefined)
+        setQr(undefined)
         setPairedUntil(undefined)
         setError(undefined)
         setCopied(false)
@@ -151,50 +144,52 @@ export function RemoteControlAction(props: RemoteControlActionProps): React.JSX.
     </button>
     <Modal open={open} onClose={() => { setOpen(false) }} title={t('title')} closeLabel={t('close')}
       description={pairedUntil === undefined ? t('description') : t('paired')}
-      footer={(url !== undefined || pairedUntil !== undefined) && <Button variant="outline" disabled={busy}
+      footer={(url !== undefined || pairedUntil !== undefined) && <Button variant="outline" disabled={busy || stopping}
         onClick={() => {
-          setBusy(true)
+          setStopping(true)
           void props.stop().then(() => {
-            setUrl(undefined); setInviteUntil(undefined); setPairedUntil(undefined); setQr(undefined); setOpen(false)
+            setUrl(undefined); setPairedUntil(undefined); setQr(undefined); setOpen(false)
           }, (reason: unknown) => {
             setError(reason instanceof Error ? reason.message : String(reason))
-          }).finally(() => { setBusy(false) })
+          }).finally(() => { setStopping(false) })
         }}>{t('stop')}</Button>}>
-      {busy && url === undefined && pairedUntil === undefined && <div role="status" style={styles.status}>
-        <StateDot state="ongoing" />
-        <span style={styles.secondary}>{t('loading')}</span>
-      </div>}
-      {pairedUntil !== undefined && <div role="status" style={styles.column}>
-        <div style={styles.meta}>
-          <span style={styles.metaLabel}>{t('pairedUntil')}</span>
-          <span style={styles.metaValue}>{formatUntil(pairedUntil)}</span>
-        </div>
-        <p style={styles.secondary}>{t('pairedAnother')}</p>
-      </div>}
-      {error !== undefined && <div role="alert" style={styles.column}>
-        <p style={styles.danger}>{t('error')}: {error}</p>
-        <div style={styles.actions}>
-          <Button variant="outline" onClick={() => { setError(undefined) }}>{t('retry')}</Button>
-        </div>
-      </div>}
-      {url !== undefined && <div style={styles.qr}>
-        {qr === undefined
-          ? <p style={styles.centered}>{t('qrUnavailable')}</p>
-          : <img style={styles.qrImage} src={qr} alt={t('title')} width={240} height={240} />}
-        <p style={styles.centered}>{t('oneUse')}</p>
-        <div style={styles.linkField}>
-          <Input readOnly aria-label={t('copy')} value={url} style={styles.linkValue}
-            onFocus={(event) => { event.currentTarget.select() }} />
-          <Button variant="ghost" size="sm" style={styles.linkCopy}
-            aria-label={t(copied ? 'copied' : 'copy')} title={t(copied ? 'copied' : 'copy')}
-            icon={copied ? <IconCheckOutlineRegular size={14} /> : <IconCopyOutlineRegular size={14} />}
-            onClick={() => {
-              void navigator.clipboard.writeText(url).then(() => { setCopied(true) }, (reason: unknown) => {
-                setError(reason instanceof Error ? reason.message : String(reason))
-              })
-            }} />
-        </div>
-      </div>}
+      <div style={styles.column}>
+        {busy && url === undefined && pairedUntil === undefined && <div role="status" style={styles.status}>
+          <StateDot state="ongoing" />
+          <span style={styles.secondary}>{t('loading')}</span>
+        </div>}
+        {pairedUntil !== undefined && <div role="status" style={styles.column}>
+          <div style={styles.meta}>
+            <span style={styles.metaLabel}>{t('pairedUntil')}</span>
+            <span style={styles.metaValue}>{formatUntil(pairedUntil)}</span>
+          </div>
+          <p style={styles.secondary}>{t('pairedAnother')}</p>
+        </div>}
+        {error !== undefined && <div role="alert" style={styles.column}>
+          <p style={styles.danger}>{t('error')}: {error}</p>
+          <div style={styles.actions}>
+            <Button variant="outline" onClick={() => { setError(undefined) }}>{t('retry')}</Button>
+          </div>
+        </div>}
+        {url !== undefined && <div style={styles.qr}>
+          {qr === undefined
+            ? <p style={styles.centered}>{t('qrUnavailable')}</p>
+            : <img style={styles.qrImage} src={qr} alt={t('title')} width={240} height={240} />}
+          <p style={styles.centered}>{t('oneUse')}</p>
+          <div style={styles.linkField}>
+            <Input readOnly aria-label={t('copy')} value={url} style={styles.linkValue}
+              onFocus={(event) => { event.currentTarget.select() }} />
+            <Button variant="ghost" size="sm" style={styles.linkCopy}
+              aria-label={t(copied ? 'copied' : 'copy')} title={t(copied ? 'copied' : 'copy')}
+              icon={copied ? <IconCheckOutlineRegular size={14} /> : <IconCopyOutlineRegular size={14} />}
+              onClick={() => {
+                void navigator.clipboard.writeText(url).then(() => { setCopied(true) }, (reason: unknown) => {
+                  setError(reason instanceof Error ? reason.message : String(reason))
+                })
+              }} />
+          </div>
+        </div>}
+      </div>
     </Modal>
   </>
 }

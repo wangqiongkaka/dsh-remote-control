@@ -17,6 +17,7 @@ let stop: (() => Promise<void>) | undefined
 let compressedHtml = false
 
 afterEach(async () => {
+  vi.useRealTimers()
   compressedHtml = false
   await stop?.()
   stop = undefined
@@ -26,7 +27,7 @@ afterEach(async () => {
   directory = undefined
 })
 
-it.skipIf(process.platform === 'win32')('pairs once, forwards the full Web UI, and revokes the phone', async () => {
+it.skipIf(process.platform === 'win32')('keeps one paired phone, renews invitations, and revokes replaced or stopped access', async () => {
   directory = await mkdtemp(join(tmpdir(), 'dsh-remote-control-'))
   const state = join(directory, 'funnel-target')
   const binary = join(directory, 'tailscale')
@@ -69,6 +70,11 @@ else if (args[0] === 'funnel') {
       })
       return
     }
+    if (req.url === '/api/stream') {
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      res.write('data: connected\n\n')
+      return
+    }
     res.writeHead(404).end()
   })
   backend.on('upgrade', (req: IncomingMessage, socket: Duplex) => {
@@ -98,7 +104,7 @@ else if (args[0] === 'funnel') {
   }
   const config: Config = {
     tailscaleBinary: binary, access: 'public', funnelPort: 443, invitationTtlMs: 60_000,
-    browserTtlMs: 60_000, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000,
+    browserTtlMs: 180_000, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000,
   }
   apply(ctx as never as Context, config)
   if (route === undefined) throw new Error('Control route not installed')
@@ -167,8 +173,11 @@ else if (args[0] === 'funnel') {
   expect(cookie).toMatch(/^dsh-remote-control=/u)
   expect((await request(new URL(url).pathname + new URL(url).search)).status).toBe(401)
   expect((await request(new URL(first).pathname + new URL(first).search)).status).toBe(401)
-  expect(await invite('workspace-2')).toMatchObject({ paired: true, expiresAt: expect.any(Number) })
-  expect(await invite('workspace-1')).toMatchObject({ paired: true })
+  const next = await invite('workspace-2') as { url: string; expiresAt: number; pairedUntil: number }
+  expect(next).toMatchObject({ url: expect.any(String), expiresAt: expect.any(Number), pairedUntil: expect.any(Number) })
+  expect(next.url).not.toBe(url)
+  expect(next.pairedUntil).toBeGreaterThan(Date.now())
+  expect(await invite('workspace-1')).toMatchObject({ ...next, workspaceId: 'workspace-1' })
   expect(await (await control.fetch(new Request('http://localhost/api/remote-control'))).json())
     .toEqual({ active: true, paired: true, pairedUntil: expect.any(Number) })
   const page = await request('/', {
@@ -222,9 +231,49 @@ else if (args[0] === 'funnel') {
   socket.write('ping')
   expect(await echoed).toBe('ping')
   expect((await upgrade({ cookie: cookie ?? '', origin: 'https://evil.invalid' })).status).toBe(403)
+  const stream = await new Promise<IncomingMessage>((resolve, reject) => {
+    const outgoing = httpRequest({ hostname: local.hostname, port: Number(local.port), path: '/api/stream',
+      headers: { ...headers, cookie: cookie ?? '' } }, resolve)
+    outgoing.on('error', reject)
+    outgoing.end()
+  })
+  stream.on('error', () => {})
+  stream.resume()
+  const streamClosed = new Promise<void>(resolve => { stream.once('close', () => { resolve() }) })
+  // Refreshing an expired invitation must not rotate the current phone's cookie or close its streams.
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(next.expiresAt + 1)
+  const renewed = await invite('workspace-1') as { url: string }
+  expect((await request('/' + new URL(next.url).search)).status).toBe(401)
+  vi.useRealTimers()
+  expect(renewed.url).not.toBe(next.url)
+  expect((await request('/api/echo', { cookie: cookie ?? '' })).status).toBe(200)
+  expect(socket.destroyed).toBe(false)
+  expect(stream.destroyed).toBe(false)
+  expect(await readFile(state, 'utf8')).toBe(proxy)
+  expect((await request('/?pair=wrong')).status).toBe(401)
+  expect((await request('/api/echo', { cookie: cookie ?? '' })).status).toBe(200)
+  // Only a successful scan replaces access, including already established HTTP and WebSocket streams.
+  const replacement = await request('/' + new URL(renewed.url).search)
+  expect(replacement.status).toBe(303)
+  const replacementCookie = replacement.headers.get('set-cookie')?.split(';', 1)[0]
+  expect(replacementCookie).toMatch(/^dsh-remote-control=/u)
+  expect(replacementCookie).not.toBe(cookie)
+  await Promise.all([socketClosed, streamClosed])
+  expect((await request('/api/echo', { cookie: cookie ?? '' })).status).toBe(401)
+  expect((await upgrade({ cookie: cookie ?? '', origin: 'https://host.tailnet.ts.net' })).status).toBe(401)
+  expect((await request('/api/echo', { cookie: replacementCookie ?? '' })).status).toBe(200)
+  expect((await request('/' + new URL(renewed.url).search)).status).toBe(401)
+  const again = await invite('workspace-1') as { url: string; pairedUntil: number }
+  expect(again.url).not.toBe(renewed.url)
+  expect(again.pairedUntil).toBeGreaterThan(Date.now())
+  const replacementSocket = (await upgrade({ cookie: replacementCookie ?? '', origin: 'https://host.tailnet.ts.net' })).socket
+  if (replacementSocket === undefined) throw new Error('Replacement WebSocket was refused')
+  replacementSocket.on('error', () => {})
+  const replacementClosed = new Promise<void>(resolve => { replacementSocket.once('close', () => { resolve() }) })
   expect((await post({ action: 'stop' })).status).toBe(200)
-  await socketClosed
-  await expect(request('/api/echo', { cookie: cookie ?? '' })).rejects.toThrow()
+  await replacementClosed
+  await expect(request('/api/echo', { cookie: replacementCookie ?? '' })).rejects.toThrow()
   await writeFile(state, 'http://127.0.0.1:9999')
   expect((await post({ action: 'start', workspaceId: 'workspace-1' })).status).toBe(409)
 })

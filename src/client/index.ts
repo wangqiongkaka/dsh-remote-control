@@ -117,20 +117,12 @@ export function apply(ctx: Context): void {
     inject: (): RemoteControlInjected => ({
       start: workspaceId => command('start', workspaceId).then((result) => {
         if ('url' in result && typeof result.url === 'string'
-          && 'expiresAt' in result && typeof result.expiresAt === 'number') {
-          return { url: result.url, expiresAt: result.expiresAt }
+          && 'expiresAt' in result && typeof result.expiresAt === 'number'
+          && 'pairedUntil' in result && typeof result.pairedUntil === 'number') {
+          return { url: result.url, expiresAt: result.expiresAt, pairedUntil: result.pairedUntil }
         }
-        if ('expiresAt' in result && typeof result.expiresAt === 'number') return { pairedUntil: result.expiresAt }
         throw new Error('Missing remote-control URL')
       }),
-      status: async () => {
-        const response = await fetch('/api/remote-control')
-        if (!response.ok) throw new Error(await response.text())
-        const state: unknown = await response.json()
-        if (typeof state !== 'object' || state === null) throw new Error('Invalid remote-control response')
-        const { paired, pairedUntil } = state as { paired?: unknown; pairedUntil?: unknown }
-        return { paired: paired === true, pairedUntil: typeof pairedUntil === 'number' ? pairedUntil : 0 }
-      },
       stop: async () => { await command('stop') },
     }),
   }, RemoteControlAction))
