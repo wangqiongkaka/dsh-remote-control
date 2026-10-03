@@ -39,7 +39,6 @@ export default [
       'client/SidebarDismiss': 'src/client/SidebarDismiss.tsx',
       'client/agent-board': 'src/client/agent-board.ts',
       'client/AgentBoard': 'src/client/AgentBoard.tsx',
-      'client/FrontendPreviewAction': 'src/client/FrontendPreviewAction.tsx',
       'phone-document': 'src/phone-document.ts',
     },
     outDir: 'dist', format: 'esm', platform: 'node', clean: false,
