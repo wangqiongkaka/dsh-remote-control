@@ -19,6 +19,7 @@ let compressedHtml = false
 
 afterEach(async () => {
   vi.useRealTimers()
+  vi.restoreAllMocks()
   compressedHtml = false
   await stop?.()
   stop = undefined
@@ -37,8 +38,10 @@ it('defaults to unlimited phone access while preserving finite lifetime configur
   expect(() => z.resolve({ browserTtlMs: -1 }, Config, {})).toThrow()
 })
 
-it.skipIf(process.platform === 'win32').each([180_000, 0])(
-  'keeps one paired phone, renews invitations, and revokes replaced or stopped access (TTL: %s)', async (browserTtlMs) => {
+it.skipIf(process.platform === 'win32').each([
+  ['tailscale', 180_000], ['tailscale', 0], ['cloudflare', 0],
+] as const)(
+  'keeps one paired phone across reconnects and revokes replaced or stopped access (%s, TTL: %s)', async (publicTunnel, browserTtlMs) => {
   directory = await mkdtemp(join(tmpdir(), 'dsh-remote-control-'))
   const state = join(directory, 'funnel-target')
   const binary = join(directory, 'tailscale')
@@ -48,8 +51,12 @@ const state = ${JSON.stringify(state)}
 const args = process.argv.slice(2)
 if (args[0] === 'status') console.log(JSON.stringify({ BackendState: 'Running', Self: { DNSName: 'host.tailnet.ts.net.' } }))
 else if (args[1] === 'status') console.log(fs.existsSync(state) ? JSON.stringify({ Web: { Proxy: fs.readFileSync(state, 'utf8') } }) : '{}')
-else if (args[0] === 'funnel') {
+else if (args[0] === 'funnel' || args[0] === 'tunnel') {
   fs.writeFileSync(state, args.at(-1))
+  if (args[0] === 'tunnel') {
+    process.stderr.write('https://phone-test.trycloudflare.')
+    setTimeout(() => { process.stderr.write('com\\n' + 'startup diagnostics '.repeat(200) + '\\nRegistered tunnel connection\\n') }, 20)
+  }
   process.on('SIGTERM', () => { fs.unlinkSync(state); process.exit(0) })
   setInterval(() => {}, 1000)
 } else process.exit(1)
@@ -113,8 +120,20 @@ else if (args[0] === 'funnel') {
       if (route !== undefined) stop = async () => { await dispose() }
     },
   }
+  let readinessCalls = 0
+  if (publicTunnel === 'cloudflare') {
+    const nativeFetch = globalThis.fetch
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) !== 'https://phone-test.trycloudflare.com/') return nativeFetch(input, init)
+      readinessCalls++
+      if (readinessCalls === 1) throw new TypeError('DNS record not yet available')
+      if (readinessCalls === 2) return new Response(null, { status: 530 })
+      return new Response(null, { status: 401, headers: { 'x-dsh-remote-control': 'unpaired' } })
+    })
+  }
   const config: Config = {
-    tailscaleBinary: binary, access: 'public', funnelPort: 443, invitationTtlMs: 60_000,
+    publicTunnel, cloudflaredBinary: binary,
+    tailscaleBinary: publicTunnel === 'cloudflare' ? join(directory, 'no-tailscale') : binary, access: 'public', funnelPort: 443, invitationTtlMs: 60_000,
     browserTtlMs, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000,
   }
   apply(ctx as never as Context, config)
@@ -126,8 +145,11 @@ else if (args[0] === 'funnel') {
   expect((await post({ action: 'start', workspaceId: 'missing' })).status).toBe(409)
   const started = await post({ action: 'start', workspaceId: 'workspace-1' })
   expect(started.status).toBe(200)
+  if (publicTunnel === 'cloudflare') expect(readinessCalls).toBe(3)
   const { url: first } = await started.json() as { url: string }
-  expect(first).toMatch(/^https:\/\/host\.tailnet\.ts\.net\/\?pair=/u)
+  const hostname = publicTunnel === 'cloudflare' ? 'phone-test.trycloudflare.com' : 'host.tailnet.ts.net'
+  const origin = 'https://' + hostname
+  expect(first).toMatch(new RegExp('^' + origin.replaceAll('.', '\\.') + '/\\?pair='))
   const invite = async (workspaceId: string) => (await post({ action: 'start', workspaceId })).json() as Promise<Record<string, unknown>>
   expect(await invite('workspace-2'))
     .toMatchObject({ url: first, workspaceId: 'workspace-2', expiresAt: expect.any(Number) })
@@ -138,7 +160,7 @@ else if (args[0] === 'funnel') {
   expect(url).not.toBe(first)
   const proxy = await readFile(state, 'utf8')
   const local = new URL(proxy)
-  const headers = { host: 'host.tailnet.ts.net' }
+  const headers = { host: hostname }
   const request = (path: string, more: Record<string, string> = {}, method = 'GET', body = ''): Promise<Response> =>
     new Promise((resolve, reject) => {
       const outgoing = httpRequest({
@@ -232,15 +254,15 @@ else if (args[0] === 'funnel') {
   expect((await request('/', {
     cookie: cookie ?? '', 'sec-fetch-site': 'cross-site',
   })).status).toBe(200)
-  const echo = await request('/api/echo', { cookie: cookie ?? '', origin: 'https://host.tailnet.ts.net' })
+  const echo = await request('/api/echo', { cookie: cookie ?? '', origin })
   expect(await echo.json()).toEqual({ origin: 'http://127.0.0.1:' + dshPort, cookie: 'dsh-session=signed', body: '' })
-  const posted = await request('/api/echo', { cookie: cookie ?? '', origin: 'https://host.tailnet.ts.net' }, 'POST', '{"message":"hello"}')
+  const posted = await request('/api/echo', { cookie: cookie ?? '', origin }, 'POST', '{"message":"hello"}')
   expect(await posted.json()).toMatchObject({ body: '{"message":"hello"}', cookie: 'dsh-session=signed' })
   expect((await request('/api/remote-control', { cookie: cookie ?? '' })).status).toBe(403)
   expect((await request('/api/echo', { cookie: cookie ?? '', 'sec-fetch-site': 'cross-site' })).status).toBe(403)
   expect((await request('/api/echo', { cookie: cookie ?? '', origin: 'https://evil.invalid' })).status).toBe(403)
   expect((await request('/api/echo', { cookie: 'dsh-remote-control=wrong' })).headers.get('set-cookie')).toBeNull()
-  const socket = (await upgrade({ cookie: cookie ?? '', origin: 'https://host.tailnet.ts.net' })).socket
+  const socket = (await upgrade({ cookie: cookie ?? '', origin })).socket
   if (socket === undefined) throw new Error('WebSocket upgrade was refused')
   socket.on('error', () => {})
   const socketClosed = new Promise<void>((resolve) => { socket.once('close', () => { resolve() }) })
@@ -278,7 +300,7 @@ else if (args[0] === 'funnel') {
   expect(replacementCookie).not.toBe(cookie)
   await Promise.all([socketClosed, streamClosed])
   expect((await request('/api/echo', { cookie: cookie ?? '' })).status).toBe(401)
-  expect((await upgrade({ cookie: cookie ?? '', origin: 'https://host.tailnet.ts.net' })).status).toBe(401)
+  expect((await upgrade({ cookie: cookie ?? '', origin })).status).toBe(401)
   expect((await request('/api/echo', { cookie: replacementCookie ?? '' })).status).toBe(200)
   expect((await request('/' + new URL(renewed.url).search)).status).toBe(401)
   const again = await invite('workspace-1') as { url: string; pairedUntil: number }
@@ -293,21 +315,23 @@ else if (args[0] === 'funnel') {
   expect(later.headers.get('set-cookie')).toBe(browserTtlMs === 0 ? replacement.headers.get('set-cookie') : null)
   expect(await (await control.fetch(new Request('http://localhost/api/remote-control'))).json())
     .toEqual({ active: true, paired: browserTtlMs === 0, pairedUntil: browserTtlMs === 0 ? -1 : 0 })
-  const laterUpgrade = await upgrade({ cookie: replacementCookie ?? '', origin: 'https://host.tailnet.ts.net' })
+  const laterUpgrade = await upgrade({ cookie: replacementCookie ?? '', origin })
   if (browserTtlMs === 0) {
     expect(laterUpgrade.socket).toBeDefined()
     laterUpgrade.socket?.destroy()
   } else expect(laterUpgrade.status).toBe(401)
   vi.useRealTimers()
-  const replacementSocket = (await upgrade({ cookie: replacementCookie ?? '', origin: 'https://host.tailnet.ts.net' })).socket
+  const replacementSocket = (await upgrade({ cookie: replacementCookie ?? '', origin })).socket
   if (replacementSocket === undefined) throw new Error('Replacement WebSocket was refused')
   replacementSocket.on('error', () => {})
   const replacementClosed = new Promise<void>(resolve => { replacementSocket.once('close', () => { resolve() }) })
   expect((await post({ action: 'stop' })).status).toBe(200)
   await replacementClosed
   await expect(request('/api/echo', { cookie: replacementCookie ?? '' })).rejects.toThrow()
-  await writeFile(state, 'http://127.0.0.1:9999')
-  expect((await post({ action: 'start', workspaceId: 'workspace-1' })).status).toBe(409)
+  if (publicTunnel === 'tailscale') {
+    await writeFile(state, 'http://127.0.0.1:9999')
+    expect((await post({ action: 'start', workspaceId: 'workspace-1' })).status).toBe(409)
+  }
 })
 
 /** A fake Tailscale CLI that answers status and then runs `funnel` as the given script body. */
@@ -317,9 +341,14 @@ const fs = require('node:fs')
 const path = require('node:path')
 const home = path.dirname(process.argv[1])
 const args = process.argv.slice(2)
-if (args[0] === 'status') console.log(JSON.stringify({ BackendState: 'Running', Self: { DNSName: 'host.tailnet.ts.net.' } }))
+if (args[0] === 'status') {
+  const stateFile = path.join(home, 'backend-state')
+  const state = fs.existsSync(stateFile) ? fs.readFileSync(stateFile, 'utf8') : 'Running'
+  if (state === 'unavailable') process.exit(7)
+  console.log(JSON.stringify({ BackendState: state, Self: { DNSName: 'host.tailnet.ts.net.' } }))
+}
 else if (args[1] === 'status') console.log(${status})
-else if (args[0] === 'funnel' || args[0] === 'serve') {
+else if (args[0] === 'funnel' || args[0] === 'serve' || args[0] === 'tunnel') {
 ${funnel}
 } else process.exit(1)
 `
@@ -328,7 +357,7 @@ ${funnel}
 /** Applies the plugin against a fake CLI and returns its control route. */
 async function controlRoute(
   funnel: string, startupTimeoutMs: number, status = "'{}'", wrap = false,
-  access: Config['access'] = 'public',
+  access: Config['access'] = 'public', publicTunnel: Config['publicTunnel'] = 'tailscale', overrides: Partial<Config> = {},
 ): Promise<ConnectionFetchRoute> {
   directory = await mkdtemp(join(tmpdir(), 'dsh-remote-control-'))
   const binary = join(directory, 'tailscale')
@@ -358,8 +387,8 @@ async function controlRoute(
     },
   }
   apply(ctx as never as Context, {
-    tailscaleBinary: binary, access, funnelPort: 443, invitationTtlMs: 60_000,
-    browserTtlMs: 60_000, startupTimeoutMs, stopTimeoutMs: 5_000,
+    tailscaleBinary: binary, publicTunnel, cloudflaredBinary: binary, access, funnelPort: 443, invitationTtlMs: 60_000,
+    browserTtlMs: 60_000, startupTimeoutMs, stopTimeoutMs: 5_000, ...overrides,
   })
   if (route === undefined) throw new Error('Control route not installed')
   return route
@@ -533,4 +562,92 @@ it.skipIf(process.platform === 'win32')('serves tailnet peers alone when access 
   expect(response.status).toBe(200)
   expect(await response.json())
     .toMatchObject({ url: expect.stringContaining('https://host.tailnet.ts.net/?pair=') })
+})
+
+it.skipIf(process.platform === 'win32').each([
+  ['https://phone-test.trycloudflare.com\n', 'missing registration'],
+  ['Registered tunnel connection\nhttps://phone-test.trycloudflare.com.evil.invalid\n', 'untrusted hostname'],
+])('refuses an unusable Cloudflare announcement (%s, %s) and closes its listener', async (message) => {
+  const route = await controlRoute(`  fs.writeFileSync(path.join(home, 'target'), args.at(-1))
+  process.on('SIGTERM', () => { fs.writeFileSync(path.join(home, 'stopped'), 'yes'); process.exit(0) })
+  process.stderr.write(${JSON.stringify(message)})
+  setInterval(() => {}, 1000)`, 2_000, "'{}'", false, 'public', 'cloudflare')
+  const response = await begin(route)
+  expect(response.status).toBe(409)
+  expect(await response.text()).toContain('Cloudflare Tunnel did not become ready before the startup timeout')
+  expect(await readFile(join(directory!, 'stopped'), 'utf8')).toBe('yes')
+  const target = await readFile(join(directory!, 'target'), 'utf8')
+  await expect(fetch(target)).rejects.toThrow()
+  expect(await (await route.fetch(new Request('http://localhost/api/remote-control'))).json()).toEqual({ active: false })
+})
+
+it.skipIf(process.platform === 'win32')('reports Cloudflare startup failures and keeps other Tailscale mappings untouched', async () => {
+  const route = await controlRoute(`  if (args[0] !== 'tunnel') { fs.writeFileSync(path.join(home, 'tailscale-used'), 'yes'); process.exit(9) }
+  process.stderr.write('Unable to reach Cloudflare edge\\n')
+  process.exit(7)`, 5_000, "JSON.stringify({TCP:{443:{HTTPS:true},8443:{HTTPS:true}}})", false, 'public', 'cloudflare')
+  const response = await begin(route)
+  expect(response.status).toBe(409)
+  expect(await response.text()).toContain('Cloudflare Tunnel exited (7) — Unable to reach Cloudflare edge')
+  await expect(readFile(join(directory!, 'tailscale-used'), 'utf8')).rejects.toThrow()
+})
+
+
+it('defaults to choosing the public tunnel from the Mac Tailscale connection state', () => {
+  expect(z.resolve({}, Config, {})[0].publicTunnel).toBe('auto')
+})
+
+it.skipIf(process.platform === 'win32').each(['Running', 'Stopped', 'NeedsLogin', 'unavailable'])(
+  'selects the public tunnel only when starting remote control (Tailscale: %s)', async (state) => {
+  const nativeFetch = globalThis.fetch
+  vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => String(input) === 'https://auto-phone.trycloudflare.com/'
+    ? Promise.resolve(new Response(null, { status: 401, headers: { 'x-dsh-remote-control': 'unpaired' } }))
+    : nativeFetch(input, init))
+  const route = await controlRoute(`  if (args[1] === 'reset') process.exit(9)
+  const state = fs.readFileSync(path.join(home, 'backend-state'), 'utf8')
+  const expected = state === 'Running' ? 'funnel' : 'tunnel'
+  if (args[0] !== expected) process.exit(8)
+  fs.writeFileSync(path.join(home, 'target'), args.at(-1))
+  if (args[0] === 'tunnel') console.log('https://auto-phone.trycloudflare.com\\nRegistered tunnel connection')
+  process.on('SIGTERM', () => { fs.unlinkSync(path.join(home, 'target')); process.exit(0) })
+  setInterval(() => {}, 1000)`, 5_000,
+  `fs.existsSync(path.join(home, 'target'))
+    ? JSON.stringify({ TCP: {8443:{HTTPS:true}}, Web:{Proxy:fs.readFileSync(path.join(home, 'target'),'utf8')} })
+    : JSON.stringify({ TCP:{8443:{HTTPS:true}} })`, false, 'public', 'auto')
+  await writeFile(join(directory!, 'backend-state'), state)
+  const response = await begin(route)
+  expect(response.status, await response.clone().text()).toBe(200)
+  const first = await response.json() as { url: string }
+  const hostname = state === 'Running' ? 'host.tailnet.ts.net' : 'auto-phone.trycloudflare.com'
+  expect(new URL(first.url).hostname).toBe(hostname)
+  // Merely opening the existing session never replaces its origin or phone authorization.
+  await writeFile(join(directory!, 'backend-state'), state === 'Running' ? 'Stopped' : 'Running')
+  expect(await (await begin(route)).json()).toMatchObject({ url: first.url })
+  expect((await route.fetch(new Request('http://localhost/api/remote-control', {
+    method: 'POST', body: JSON.stringify({ action: 'stop' }),
+  }))).status).toBe(200)
+  const restarted = await begin(route)
+  expect(restarted.status, await restarted.clone().text()).toBe(200)
+  const next = await restarted.json() as { url: string }
+  expect(new URL(next.url).hostname).toBe(state === 'Running' ? 'auto-phone.trycloudflare.com' : 'host.tailnet.ts.net')
+})
+
+it.skipIf(process.platform === 'win32')('uses Cloudflare in auto mode when Tailscale is not installed', async () => {
+  const nativeFetch = globalThis.fetch
+  vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => String(input) === 'https://auto-phone.trycloudflare.com/'
+    ? Promise.resolve(new Response(null, { status: 401, headers: { 'x-dsh-remote-control': 'unpaired' } }))
+    : nativeFetch(input, init))
+  const route = await controlRoute(`  if (args[0] !== 'tunnel') process.exit(9)
+  console.log('https://auto-phone.trycloudflare.com\\nRegistered tunnel connection')
+  setInterval(() => {}, 1000)`, 5_000, "'{}'", false, 'public', 'auto', { tailscaleBinary: '/no-tailscale-installed' })
+  const response = await begin(route)
+  expect(response.status, await response.clone().text()).toBe(200)
+  expect(new URL((await response.json() as {url:string}).url).hostname).toBe('auto-phone.trycloudflare.com')
+})
+
+it.skipIf(process.platform === 'win32')('never exposes a private tailnet service through the auto Cloudflare fallback', async () => {
+  const route = await controlRoute(`  fs.writeFileSync(path.join(home, 'mutation'), 'yes'); process.exit(9)`,
+    5_000, "'{}'", false, 'tailnet', 'auto')
+  await writeFile(join(directory!, 'backend-state'), 'Stopped')
+  expect((await begin(route)).status).toBe(409)
+  await expect(readFile(join(directory!, 'mutation'), 'utf8')).rejects.toThrow()
 })
