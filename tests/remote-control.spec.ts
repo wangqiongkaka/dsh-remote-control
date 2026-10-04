@@ -6,9 +6,10 @@ import type { AddressInfo } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { gzipSync } from 'node:zlib'
 import type { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import { afterEach, expect, it, vi } from 'vitest'
-import { apply, type Config } from '../dist/index.js'
+import { apply, Config } from '../dist/index.js'
 
 let directory: string | undefined
 let backend: Server | undefined
@@ -27,7 +28,17 @@ afterEach(async () => {
   directory = undefined
 })
 
-it.skipIf(process.platform === 'win32')('keeps one paired phone, renews invitations, and revokes replaced or stopped access', async () => {
+it('defaults to unlimited phone access while preserving finite lifetime configuration', () => {
+  expect(z.resolve({}, Config, {})[0].browserTtlMs).toBe(0)
+  expect(z.resolve({}, Config, {})[0].invitationTtlMs).toBe(5 * 60_000)
+  expect(z.resolve({ browserTtlMs: 0 }, Config, {})[0].browserTtlMs).toBe(0)
+  expect(z.resolve({ browserTtlMs: 12 * 60 * 60_000 }, Config, {})[0].browserTtlMs).toBe(12 * 60 * 60_000)
+  expect(() => z.resolve({ browserTtlMs: 999 }, Config, {})).toThrow()
+  expect(() => z.resolve({ browserTtlMs: -1 }, Config, {})).toThrow()
+})
+
+it.skipIf(process.platform === 'win32').each([180_000, 0])(
+  'keeps one paired phone, renews invitations, and revokes replaced or stopped access (TTL: %s)', async (browserTtlMs) => {
   directory = await mkdtemp(join(tmpdir(), 'dsh-remote-control-'))
   const state = join(directory, 'funnel-target')
   const binary = join(directory, 'tailscale')
@@ -104,7 +115,7 @@ else if (args[0] === 'funnel') {
   }
   const config: Config = {
     tailscaleBinary: binary, access: 'public', funnelPort: 443, invitationTtlMs: 60_000,
-    browserTtlMs: 180_000, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000,
+    browserTtlMs, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000,
   }
   apply(ctx as never as Context, config)
   if (route === undefined) throw new Error('Control route not installed')
@@ -171,12 +182,16 @@ else if (args[0] === 'funnel') {
   expect(paired.headers.get('location')).toBe('/')
   const cookie = paired.headers.get('set-cookie')?.split(';', 1)[0]
   expect(cookie).toMatch(/^dsh-remote-control=/u)
+  expect(paired.headers.get('set-cookie')).toContain(
+    'Max-Age=' + String(browserTtlMs === 0 ? 400 * 24 * 60 * 60 : browserTtlMs / 1000))
+  expect(paired.headers.get('set-cookie')).toContain('; Path=/; HttpOnly; Secure; SameSite=Lax')
   expect((await request(new URL(url).pathname + new URL(url).search)).status).toBe(401)
   expect((await request(new URL(first).pathname + new URL(first).search)).status).toBe(401)
   const next = await invite('workspace-2') as { url: string; expiresAt: number; pairedUntil: number }
   expect(next).toMatchObject({ url: expect.any(String), expiresAt: expect.any(Number), pairedUntil: expect.any(Number) })
   expect(next.url).not.toBe(url)
-  expect(next.pairedUntil).toBeGreaterThan(Date.now())
+  if (browserTtlMs === 0) expect(next.pairedUntil).toBe(-1)
+  else expect(next.pairedUntil).toBeGreaterThan(Date.now())
   expect(await invite('workspace-1')).toMatchObject({ ...next, workspaceId: 'workspace-1' })
   expect(await (await control.fetch(new Request('http://localhost/api/remote-control'))).json())
     .toEqual({ active: true, paired: true, pairedUntil: expect.any(Number) })
@@ -184,6 +199,7 @@ else if (args[0] === 'funnel') {
     cookie: cookie ?? '', accept: 'text/html', 'accept-encoding': 'gzip',
   })
   expect(page.status).toBe(200)
+  expect(page.headers.get('set-cookie')).toBe(browserTtlMs === 0 ? paired.headers.get('set-cookie') : null)
   const markup = await page.text()
   // A compressed body must never come back rewritten as if it were text.
   expect(markup).toContain('<main>DSH Web</main>')
@@ -223,6 +239,7 @@ else if (args[0] === 'funnel') {
   expect((await request('/api/remote-control', { cookie: cookie ?? '' })).status).toBe(403)
   expect((await request('/api/echo', { cookie: cookie ?? '', 'sec-fetch-site': 'cross-site' })).status).toBe(403)
   expect((await request('/api/echo', { cookie: cookie ?? '', origin: 'https://evil.invalid' })).status).toBe(403)
+  expect((await request('/api/echo', { cookie: 'dsh-remote-control=wrong' })).headers.get('set-cookie')).toBeNull()
   const socket = (await upgrade({ cookie: cookie ?? '', origin: 'https://host.tailnet.ts.net' })).socket
   if (socket === undefined) throw new Error('WebSocket upgrade was refused')
   socket.on('error', () => {})
@@ -266,7 +283,22 @@ else if (args[0] === 'funnel') {
   expect((await request('/' + new URL(renewed.url).search)).status).toBe(401)
   const again = await invite('workspace-1') as { url: string; pairedUntil: number }
   expect(again.url).not.toBe(renewed.url)
-  expect(again.pairedUntil).toBeGreaterThan(Date.now())
+  if (browserTtlMs === 0) expect(again.pairedUntil).toBe(-1)
+  else expect(again.pairedUntil).toBeGreaterThan(Date.now())
+  // Unlimited access survives elapsed time; a configured finite lifetime still expires.
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(Date.now() + 401 * 24 * 60 * 60_000)
+  const later = await request('/api/echo', { cookie: replacementCookie ?? '' })
+  expect(later.status).toBe(browserTtlMs === 0 ? 200 : 401)
+  expect(later.headers.get('set-cookie')).toBe(browserTtlMs === 0 ? replacement.headers.get('set-cookie') : null)
+  expect(await (await control.fetch(new Request('http://localhost/api/remote-control'))).json())
+    .toEqual({ active: true, paired: browserTtlMs === 0, pairedUntil: browserTtlMs === 0 ? -1 : 0 })
+  const laterUpgrade = await upgrade({ cookie: replacementCookie ?? '', origin: 'https://host.tailnet.ts.net' })
+  if (browserTtlMs === 0) {
+    expect(laterUpgrade.socket).toBeDefined()
+    laterUpgrade.socket?.destroy()
+  } else expect(laterUpgrade.status).toBe(401)
+  vi.useRealTimers()
   const replacementSocket = (await upgrade({ cookie: replacementCookie ?? '', origin: 'https://host.tailnet.ts.net' })).socket
   if (replacementSocket === undefined) throw new Error('Replacement WebSocket was refused')
   replacementSocket.on('error', () => {})

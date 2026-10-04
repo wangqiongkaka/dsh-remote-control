@@ -72,6 +72,22 @@ it('shows a usable QR code on each open while a phone remains paired', async () 
   expect(stop).not.toHaveBeenCalled()
 })
 
+it('shows unlimited access as paired without formatting an expiry date', async () => {
+  start.mockResolvedValue(invitation('unlimited', -1))
+  await click('button[aria-label="title"]')
+  const dialog = document.querySelector('[role="dialog"]')
+  expect(dialog?.textContent).toContain('pairedForever')
+  expect(dialog?.textContent).toContain('pairedAnother')
+  expect(dialog?.textContent).not.toContain('1970-')
+  expect(dialog?.querySelector('img')).not.toBeNull()
+  await click('button[aria-label="close"]')
+  await click('button[aria-label="title"]')
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain('pairedForever')
+  await click('[role="dialog"] > button:last-child')
+  expect(stop).toHaveBeenCalledOnce()
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
+})
+
 it('refreshes spent or expired invitations without hiding the QR code after pairing', async () => {
   start.mockResolvedValueOnce(invitation('first', 0)).mockResolvedValue(invitation('next'))
   await click('button[aria-label="title"]')

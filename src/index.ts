@@ -26,6 +26,7 @@ export interface Config {
   access: 'public' | 'tailnet'
   funnelPort: 443 | 8443 | 10000
   invitationTtlMs: number
+  /** Phone access lifetime; 0 disables time-based expiry. */
   browserTtlMs: number
   startupTimeoutMs: number
   stopTimeoutMs: number
@@ -36,7 +37,7 @@ export const Config: z<Config> = z.object({
   access: z.union([z.const('public'), z.const('tailnet')]).default('public'),
   funnelPort: z.union([z.const(443), z.const(8443), z.const(10000)]).default(443),
   invitationTtlMs: z.natural().min(1_000).default(5 * 60_000),
-  browserTtlMs: z.natural().min(1_000).max(24 * 60 * 60_000).default(12 * 60 * 60_000),
+  browserTtlMs: z.union([z.const(0), z.natural().min(1_000).max(24 * 60 * 60_000)]).default(0),
   startupTimeoutMs: z.natural().min(1_000).default(30_000),
   stopTimeoutMs: z.natural().min(1_000).default(5_000),
 })
@@ -53,12 +54,12 @@ interface Tunnel {
   proxy: Proxy & {
     invite: () => Invitation
     paired: () => boolean
-    /** When the paired phone's access ends, or 0 while nobody is paired. */
+    /** Access expiry, -1 for unlimited access, or 0 while nobody is paired. */
     pairedUntil: () => number
   }
 }
 
-/** A usable pairing link alongside the current phone's independent access expiry. */
+/** A usable pairing link and phone access expiry (-1 unlimited, 0 unpaired). */
 type Invitation = { url: string; expiresAt: number; pairedUntil: number }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -316,6 +317,11 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
   let browserExpiresAt = 0
   let used = false
   const paired = (): boolean => browserToken !== '' && Date.now() < browserExpiresAt
+  // Browsers cap persistent cookies at 400 days. Renew the same credential on phone visits
+  // without imposing an expiry on server authorization or keeping it after revocation.
+  const browserCookie = (): string => 'dsh-remote-control=' + browserToken + '; Max-Age='
+    + String(config.browserTtlMs === 0 ? 400 * 24 * 60 * 60 : Math.floor(config.browserTtlMs / 1000))
+    + '; Path=/; HttpOnly; Secure; SameSite=Lax'
   /** Renew expired or spent invitations without disturbing the current phone. */
   const invite = (): Invitation => {
     if (used || Date.now() >= inviteExpiresAt) {
@@ -326,7 +332,7 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
     return { url: baseUrl + '?pair=' + ticket, expiresAt: inviteExpiresAt, pairedUntil: pairedUntil() }
   }
   /** The dialog follows the pairing state without being reopened. */
-  const pairedUntil = (): number => paired() ? browserExpiresAt : 0
+  const pairedUntil = (): number => paired() ? (browserExpiresAt === Infinity ? -1 : browserExpiresAt) : 0
   /** Host/Origin fence: the request URL on the public origin, or undefined to refuse with 403. */
   const target = (req: IncomingMessage): URL | undefined => {
     if (req.headers.host !== authority || req.url === undefined || !req.url.startsWith('/')) return undefined
@@ -357,7 +363,7 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
       }
       used = true
       browserToken = randomBytes(32).toString('base64url')
-      browserExpiresAt = Date.now() + config.browserTtlMs
+      browserExpiresAt = config.browserTtlMs === 0 ? Infinity : Date.now() + config.browserTtlMs
       // Replace only admitted old-phone streams; the new pairing response must remain open.
       for (const socket of sockets) socket.destroy()
       for (const response of responses) response.destroy()
@@ -365,9 +371,7 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
         'cache-control': 'no-store',
         'referrer-policy': 'no-referrer',
         location: '/',
-        'set-cookie': 'dsh-remote-control=' + browserToken + '; Max-Age='
-          + String(Math.floor(config.browserTtlMs / 1000))
-          + '; Path=/; HttpOnly; Secure; SameSite=Lax',
+        'set-cookie': browserCookie(),
       }).end()
       return
     }
@@ -376,6 +380,7 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
       res.writeHead(status, { 'cache-control': 'no-store' }).end()
       return
     }
+    if (config.browserTtlMs === 0) res.setHeader('set-cookie', browserCookie())
     responses.add(res)
     res.once('close', () => { responses.delete(res) })
     forward(req, res, dshPort, dshCookie)

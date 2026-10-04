@@ -12,7 +12,7 @@ import { NS } from './locales.ts'
 
 /** Host commands passed through the slot injection face. */
 export interface RemoteControlInjected {
-  /** A usable pairing link and the current phone's independent access expiry (0 if unpaired). */
+  /** A usable pairing link and phone access expiry (-1 unlimited, 0 unpaired). */
   start: (workspaceId: string) => Promise<{ url: string; expiresAt: number; pairedUntil: number }>
   stop: () => Promise<void>
 }
@@ -100,7 +100,7 @@ export function RemoteControlAction(props: RemoteControlActionProps): React.JSX.
         const result = await props.start(workspaceId)
         if (!alive) return
         setUrl(result.url)
-        setPairedUntil(result.pairedUntil > 0 ? result.pairedUntil : undefined)
+        setPairedUntil(result.pairedUntil === 0 ? undefined : result.pairedUntil)
       } catch (reason: unknown) {
         if (alive && initial) setError(reason instanceof Error ? reason.message : String(reason))
       } finally {
@@ -161,7 +161,7 @@ export function RemoteControlAction(props: RemoteControlActionProps): React.JSX.
         {pairedUntil !== undefined && <div role="status" style={styles.column}>
           <div style={styles.meta}>
             <span style={styles.metaLabel}>{t('pairedUntil')}</span>
-            <span style={styles.metaValue}>{formatUntil(pairedUntil)}</span>
+            <span style={styles.metaValue}>{pairedUntil === -1 ? t('pairedForever') : formatUntil(pairedUntil)}</span>
           </div>
           <p style={styles.secondary}>{t('pairedAnother')}</p>
         </div>}
