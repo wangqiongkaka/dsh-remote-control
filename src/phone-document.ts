@@ -6,6 +6,20 @@ import { NARROW_SCREEN_STYLE } from './narrow-style.ts'
 export const VIEWPORT_META = '<meta name="viewport" content="width=device-width, initial-scale=1, '
   + 'interactive-widget=resizes-content">'
 
+/** A standalone phone page: pairing failures cannot load the authenticated shell's assets. */
+export function remoteErrorDocument(reason: string): string {
+  const message = reason.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+  return '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">' + VIEWPORT_META
+    + '<title>无法打开远程页面</title><style>'
+    + ':root{color-scheme:light dark;font:14px/22px system-ui,sans-serif;color:CanvasText;background:Canvas}'
+    + 'body{margin:0;padding:16px;min-height:100svh;box-sizing:border-box;display:grid;place-items:center}'
+    + 'main{box-sizing:border-box;width:min(100%,440px);padding:24px;border:1px solid GrayText;border-radius:16px}'
+    + 'h1{font-size:20px;line-height:28px;margin:0 0 16px}p{margin:0;overflow-wrap:anywhere}'
+    + 'p+p{margin-top:12px;color:GrayText}</style></head><body><main>'
+    + '<h1>无法打开远程页面</h1><p role="alert">' + message + '</p>'
+    + '<p>请在电脑上重新打开远程控制弹窗，扫描新二维码。</p></main></body></html>'
+}
+
 const VIEWPORT_TAG = /<meta[^>]*name=["']viewport["'][^>]*>/iu
 
 /**

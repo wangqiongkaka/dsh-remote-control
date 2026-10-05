@@ -17,7 +17,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
-import { phoneDocument } from './phone-document.ts'
+import { phoneDocument, remoteErrorDocument } from './phone-document.ts'
 
 export const name = 'dsh-remote-control'
 export const inject = ['connection', 'webServer', 'workspaceRegistry']
@@ -339,6 +339,15 @@ function tunnel(req: IncomingMessage, socket: Duplex, head: Buffer, port: number
   upstream.end()
 }
 
+/** Explain a refused page without exposing the scanned token or loading protected assets. */
+function remoteFailure(res: ServerResponse, status: number, reason: string): void {
+  res.writeHead(status, {
+    'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
+    'referrer-policy': 'no-referrer', 'x-dsh-remote-control': status === 401 ? 'unpaired' : 'refused',
+    'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+  }).end(remoteErrorDocument(reason))
+}
+
 /** Pair one phone, then proxy all DSH Web routes through a revocable cookie. */
 function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, config: Config) {
   const sockets = new Set<Duplex>()
@@ -387,15 +396,30 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
   const server = createServer((req, res) => {
     const url = target(req)
     if (url === undefined) {
-      res.writeHead(403).end()
+      if (req.method === 'GET' && String(req.headers.accept ?? '').includes('text/html')) {
+        remoteFailure(res, 403, '请求来源不符合远程入口要求，请直接用手机浏览器打开二维码链接。')
+      } else res.writeHead(403).end()
       return
     }
     if (url.searchParams.has('pair')) {
       const pair = url.searchParams.getAll('pair')
       if (req.method !== 'GET' || url.pathname !== '/' || url.searchParams.size !== 1
-        || pair.length !== 1 || used || Date.now() >= inviteExpiresAt
-        || !equalToken(pair[0], ticket)) {
-        res.writeHead(401).end()
+        || pair.length !== 1 || pair[0] === '') {
+        remoteFailure(res, 401, '二维码链接格式不正确，请使用完整的二维码链接。')
+        return
+      }
+      const invalid = !equalToken(pair[0], ticket)
+      if (used || Date.now() >= inviteExpiresAt || invalid) {
+        // A spent QR may still be on screen before the desktop polls. Reopening it in the
+        // paired browser uses its existing access; the invitation still admits nobody else.
+        if (refuse(req, url) === undefined) {
+          res.writeHead(303, {
+            'cache-control': 'no-store', 'referrer-policy': 'no-referrer', location: '/',
+          }).end()
+        } else {
+          remoteFailure(res, 401, invalid ? '二维码链接无效或已更新，旧链接不能用于新的配对。'
+            : used ? '二维码已使用，只能配对一次。' : '二维码已过期。')
+        }
         return
       }
       used = true
@@ -419,6 +443,13 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
     }
     const status = refuse(req, url)
     if (status !== undefined) {
+      if (req.method === 'GET' && url.pathname === '/') {
+        remoteFailure(res, status, cookieValue(req.headers.cookie) === undefined
+          ? '浏览器未提供访问凭据，请允许保存网站数据，并在同一手机浏览器里重新扫码。'
+          : browserHash !== '' && Date.now() >= browserExpiresAt ? '手机访问权限已过期。'
+            : '访问凭据无效或配对已被替换，需要重新扫码。')
+        return
+      }
       res.writeHead(status, {
         'cache-control': 'no-store', 'x-dsh-remote-control': status === 401 ? 'unpaired' : 'refused',
       }).end()

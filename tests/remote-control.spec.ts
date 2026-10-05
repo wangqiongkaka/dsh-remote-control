@@ -174,6 +174,20 @@ else if (args[0] === 'funnel') {
       outgoing.on('error', reject)
       outgoing.end(body)
     })
+  const scanError = async (path: string, reason: string, more: Record<string, string> = {}, status = 401) => {
+    const response = await request(path, more)
+    expect(response.status).toBe(status)
+    expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer')
+    expect(response.headers.get('set-cookie')).toBeNull()
+    const page = await response.text()
+    expect(page).toContain('无法打开远程页面')
+    expect(page).toContain(reason)
+    expect(page).toContain('新二维码')
+    expect(page).toContain('name="viewport"')
+    expect(page).not.toContain('<script>')
+  }
   const upgrade = (more: Record<string, string>): Promise<{ status?: number; socket?: Duplex }> =>
     new Promise((resolve, reject) => {
       const outgoing = httpRequest({
@@ -189,6 +203,14 @@ else if (args[0] === 'funnel') {
   expect((await upgrade({})).status).toBe(401)
   expect((await request('//other.invalid/?pair=x')).status).toBe(403)
   expect((await request('/?pair=wrong')).status).toBe(401)
+  await scanError('/?pair=wrong', '二维码链接无效或已更新')
+  await scanError('/?pair=x&pair=y', '二维码链接格式不正确')
+  await scanError('/?pair=', '二维码链接格式不正确')
+  await scanError('/?pair=%3Cscript%3Ealert(1)%3C%2Fscript%3E', '二维码链接无效或已更新')
+  await scanError('/', '浏览器未提供访问凭据')
+  await scanError('/' + new URL(url).search, '请求来源不符合远程入口要求', {
+    accept: 'text/html', origin: 'https://other.invalid',
+  }, 403)
   const paired = await request(new URL(url).pathname + new URL(url).search, { 'sec-fetch-site': 'cross-site' })
   expect(paired.status).toBe(303)
   expect(paired.headers.get('location')).toBe('/')
@@ -197,11 +219,25 @@ else if (args[0] === 'funnel') {
   expect(paired.headers.get('set-cookie')).toContain(
     'Max-Age=' + String(browserTtlMs === 0 ? 400 * 24 * 60 * 60 : browserTtlMs / 1000))
   expect(paired.headers.get('set-cookie')).toContain('; Path=/; HttpOnly; Secure; SameSite=Lax')
+
+  // Before the desktop polls a new QR, the paired browser can reopen the code it just scanned.
+  expect((await request('/api/echo', { cookie: cookie ?? '' })).status).toBe(200)
+  const repeat = await request('/' + new URL(url).search, { cookie: cookie ?? '', 'sec-fetch-site': 'cross-site' })
+  expect(repeat.status).toBe(303)
+  expect(repeat.headers.get('location')).toBe('/')
+  expect(repeat.headers.get('set-cookie')).toBeNull()
+  await scanError('/' + new URL(url).search, '二维码已使用')
+  expect((await request('/' + new URL(url).search, { cookie: 'dsh-remote-control=wrong' })).status).toBe(401)
+  for (const malformed of ['/api/echo' + new URL(url).search, '/?pair=x&pair=y', '/?pair=x&extra=y']) {
+    expect((await request(malformed, { cookie: cookie ?? '' })).status).toBe(401)
+  }
+  expect((await request('/' + new URL(url).search, { cookie: cookie ?? '' }, 'POST')).status).toBe(401)
   expect((await request(new URL(url).pathname + new URL(url).search)).status).toBe(401)
   expect((await request(new URL(first).pathname + new URL(first).search)).status).toBe(401)
   const next = await invite('workspace-2') as { url: string; expiresAt: number; pairedUntil: number }
   expect(next).toMatchObject({ url: expect.any(String), expiresAt: expect.any(Number), pairedUntil: expect.any(Number) })
   expect(next.url).not.toBe(url)
+  await scanError('/' + new URL(url).search, '二维码链接无效或已更新')
   if (browserTtlMs === 0) expect(next.pairedUntil).toBe(-1)
   else expect(next.pairedUntil).toBeGreaterThan(Date.now())
   expect(await invite('workspace-1')).toMatchObject({ ...next, workspaceId: 'workspace-1' })
@@ -272,11 +308,18 @@ else if (args[0] === 'funnel') {
   // Refreshing an expired invitation must not rotate the current phone's cookie or close its streams.
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(next.expiresAt + 1)
+  await scanError('/' + new URL(next.url).search, '二维码已过期')
   const renewed = await invite('workspace-1') as { url: string }
   expect((await request('/' + new URL(next.url).search)).status).toBe(401)
   vi.useRealTimers()
   expect(renewed.url).not.toBe(next.url)
   expect((await request('/api/echo', { cookie: cookie ?? '' })).status).toBe(200)
+  expect(socket.destroyed).toBe(false)
+  expect(stream.destroyed).toBe(false)
+  // An expired QR in the same browser still enters the page without rotating access or closing streams.
+  const expired = await request('/' + new URL(next.url).search, { cookie: cookie ?? '' })
+  expect(expired.status).toBe(303)
+  expect(expired.headers.get('set-cookie')).toBeNull()
   expect(socket.destroyed).toBe(false)
   expect(stream.destroyed).toBe(false)
   expect(await readFile(state, 'utf8')).toBe(proxy)
@@ -290,6 +333,8 @@ else if (args[0] === 'funnel') {
   expect(replacementCookie).not.toBe(cookie)
   await Promise.all([socketClosed, streamClosed])
   expect((await request('/api/echo', { cookie: cookie ?? '' })).status).toBe(401)
+  await scanError('/', '访问凭据无效或配对已被替换', { cookie: cookie ?? '' })
+  expect((await request('/' + new URL(url).search, { cookie: cookie ?? '' })).status).toBe(401)
   expect((await upgrade({ cookie: cookie ?? '', origin })).status).toBe(401)
   expect((await request('/api/echo', { cookie: replacementCookie ?? '' })).status).toBe(200)
   expect((await request('/' + new URL(renewed.url).search)).status).toBe(401)
@@ -303,6 +348,7 @@ else if (args[0] === 'funnel') {
   const later = await request('/api/echo', { cookie: replacementCookie ?? '' })
   expect(later.status).toBe(browserTtlMs === 0 ? 200 : 401)
   expect(later.headers.get('set-cookie')).toBe(browserTtlMs === 0 ? replacement.headers.get('set-cookie') : null)
+  if (browserTtlMs !== 0) await scanError('/', '手机访问权限已过期', { cookie: replacementCookie ?? '' })
   expect(await (await control.fetch(new Request('http://localhost/api/remote-control'))).json())
     .toEqual({ active: true, paired: browserTtlMs === 0, pairedUntil: browserTtlMs === 0 ? -1 : 0 })
   const laterUpgrade = await upgrade({ cookie: replacementCookie ?? '', origin })
@@ -652,6 +698,7 @@ else if (args[0] === 'funnel') {
   }, 5_000)
   expect((await phone('/api/echo', cookie)).status).toBe(204)
   expect((await phone('/api/echo', cookie)).setCookie).toContain(cookie + '; Max-Age=')
+  expect((await phone('/' + new URL(url).search, cookie)).status).toBe(303)
   expect((await phone('/api/echo')).status).toBe(401)
   expect((await phone('/api/echo', 'dsh-remote-control=wrong')).status).toBe(401)
 
