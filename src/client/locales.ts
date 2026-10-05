@@ -5,7 +5,11 @@ export const NS = 'remote-control'
 /** Chinese UI copy for pairing and tunnel control. */
 export const zh = {
   title: '移动端远程控制',
-  description: '扫码或在手机上打开链接，即可进入当前工作区。配对后可使用完整 DSH Web 界面。',
+  waiting: '等待手机连接',
+  connected: '手机已连接',
+  statusLoading: '正在获取连接状态…',
+  statusUnavailable: '连接状态暂不可用',
+  description: '扫码或在手机上打开链接，即可使用 DSH。连接后从左侧栏选择工作区和会话。',
   loading: '正在开启安全隧道…',
   copy: '复制链接',
   copied: '已复制',
@@ -13,6 +17,8 @@ export const zh = {
   close: '关闭',
   error: '无法开启远程控制',
   retry: '重试',
+  refresh: '刷新二维码',
+  refreshing: '正在刷新…',
   oneUse: '链接仅能使用一次，使用后或过期会自动更新。',
   sidebar: '侧边栏',
   qrUnavailable: '二维码暂不可用，请复制链接在手机上打开。',
@@ -45,7 +51,11 @@ export type RemoteControlKey = keyof typeof zh
 /** English UI copy for pairing and tunnel control. */
 export const en: Record<RemoteControlKey, string> = {
   title: 'Mobile remote control',
-  description: 'Scan or open the link on your phone to enter this workspace. Paired devices can use the full DSH Web UI.',
+  waiting: 'Waiting for phone connection',
+  connected: 'Phone connected',
+  statusLoading: 'Checking connection…',
+  statusUnavailable: 'Connection status unavailable',
+  description: 'Scan or open the link on your phone to use DSH. Once connected, choose a workspace and session from the sidebar.',
   loading: 'Starting secure tunnel…',
   copy: 'Copy link',
   copied: 'Copied',
@@ -53,6 +63,8 @@ export const en: Record<RemoteControlKey, string> = {
   close: 'Close',
   error: 'Could not start remote control',
   retry: 'Retry',
+  refresh: 'Refresh QR code',
+  refreshing: 'Refreshing…',
   oneUse: 'Each link works once and refreshes automatically after use or expiry.',
   sidebar: 'Sidebar',
   qrUnavailable: 'QR code unavailable. Copy the link and open it on your phone.',

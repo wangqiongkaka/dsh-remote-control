@@ -26,6 +26,7 @@ let root: Root
 let mount: HTMLElement
 const start = vi.fn()
 const stop = vi.fn()
+const status = vi.fn()
 const invitation = (id: string, pairedUntil = Date.now() + 60_000) => ({
   url: `https://host.tailnet.ts.net/?pair=${id}`, expiresAt: Date.now() + 30_000, pairedUntil,
 })
@@ -40,6 +41,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   start.mockReset().mockResolvedValue(invitation('first'))
   stop.mockReset().mockResolvedValue(undefined)
+  status.mockReset().mockResolvedValue(false)
   mount = document.createElement('div')
   document.body.append(mount)
   root = createRoot(mount)
@@ -48,9 +50,63 @@ beforeEach(() => {
       sessionId: 'session-1', t: (key: string) => key,
       useWorkspaces: (select: (value: unknown) => unknown) => select({ items: [
         { workspaceId: 'workspace-1', sessionIds: ['session-1'] },
-      ] }), start, stop,
+      ] }), start, stop, status, wide: true,
     }))
   })
+})
+
+it('shows a phone entry and reads pairing status without starting the tunnel on hover', async () => {
+  const entry = document.querySelector<HTMLButtonElement>('button[aria-label="title"]')!
+  expect(entry.querySelector('svg[data-remote-control-phone]')).not.toBeNull()
+  await act(async () => { entry.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })) })
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('titlewaiting')
+  expect(start).not.toHaveBeenCalled()
+  status.mockResolvedValue(true)
+  await act(async () => { await vi.advanceTimersByTimeAsync(2_000) })
+  expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('titleconnected')
+  await click('button[aria-label="title"]')
+  expect(document.querySelector('[role="tooltip"]')).toBeNull()
+})
+
+it('opens pairing without a selected session or workspace', async () => {
+  await act(async () => {
+    root.render(createElement(RemoteControlAction as never, {
+      t: (key: string) => key, start, stop, status, wide: false,
+    }))
+  })
+  await click('button[aria-label="title"]')
+  expect(start).toHaveBeenCalledWith()
+  expect(document.querySelector('[role="dialog"] img')).not.toBeNull()
+})
+
+it('supports keyboard preview, reports unavailable status, and stops polling on blur', async () => {
+  status.mockRejectedValue(new Error('offline'))
+  const entry = document.querySelector<HTMLButtonElement>('button[aria-label="title"]')!
+  await act(async () => { entry.focus() })
+  const hint = document.querySelector('[role="tooltip"]')!
+  expect(hint.textContent).toBe('titlestatusUnavailable')
+  expect(entry.getAttribute('aria-describedby')).toBe(hint.id)
+  await act(async () => { entry.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+  expect(document.querySelector('[role="tooltip"]')).toBeNull()
+  await act(async () => { entry.blur(); await vi.advanceTimersByTimeAsync(4_000) })
+  expect(status).toHaveBeenCalledOnce()
+  expect(start).not.toHaveBeenCalled()
+})
+
+it('hides the pairing control on the paired phone', async () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  try {
+    await act(async () => {
+      root.render(createElement(RemoteControlAction as never, {
+        t: (key: string) => key, start, stop, status, wide: true,
+      }))
+    })
+    expect(document.querySelector('button[aria-label="title"]')).toBeNull()
+    expect(status).not.toHaveBeenCalled()
+    expect(start).not.toHaveBeenCalled()
+  } finally { proxy.remove() }
 })
 
 afterEach(() => {
@@ -86,6 +142,47 @@ it('shows unlimited access as paired without formatting an expiry date', async (
   await click('[role="dialog"] > button:last-child')
   expect(stop).toHaveBeenCalledOnce()
   expect(document.querySelector('[role="dialog"]')).toBeNull()
+})
+
+it('manually refreshes the QR while preserving phone access and blocking duplicate requests', async () => {
+  start.mockResolvedValue(invitation('first', -1))
+  await click('button[aria-label="title"]')
+  const original = document.querySelector('img')?.getAttribute('src')
+  let finish: ((value: ReturnType<typeof invitation>) => void) | undefined
+  start.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+  await click('button[aria-label="refresh"]')
+  expect(start).toHaveBeenLastCalledWith(undefined, true)
+  expect(document.querySelector<HTMLButtonElement>('button[aria-label="refresh"]')?.disabled).toBe(true)
+  expect(document.querySelector<HTMLButtonElement>('[role="dialog"] > button:last-child')?.disabled).toBe(true)
+  await act(async () => { await vi.advanceTimersByTimeAsync(4_000) })
+  expect(start).toHaveBeenCalledTimes(2)
+  start.mockResolvedValue(invitation('manual', -1))
+  await act(async () => { finish?.(invitation('manual', -1)) })
+  expect(document.querySelector<HTMLInputElement>('input')?.value).toContain('?pair=manual')
+  expect(document.querySelector('img')?.getAttribute('src')).not.toBe(original)
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain('pairedForever')
+  await act(async () => { await vi.advanceTimersByTimeAsync(2_000) })
+  expect(start).toHaveBeenLastCalledWith()
+  await click('button[aria-label="close"]')
+  await click('button[aria-label="title"]')
+  expect(start).toHaveBeenLastCalledWith()
+  expect(stop).not.toHaveBeenCalled()
+})
+
+it('keeps the existing QR on manual refresh failure and allows another refresh', async () => {
+  await click('button[aria-label="title"]')
+  const original = document.querySelector('img')?.getAttribute('src')
+  start.mockRejectedValueOnce(new Error('refresh failed'))
+  await click('button[aria-label="refresh"]')
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain('refresh failed')
+  expect(document.querySelector('img')?.getAttribute('src')).toBe(original)
+  expect(document.querySelector<HTMLButtonElement>('button[aria-label="refresh"]')?.disabled).toBe(false)
+  start.mockResolvedValue(invitation('retried'))
+  await click('button[aria-label="refresh"]')
+  expect(start).toHaveBeenLastCalledWith(undefined, true)
+  expect(document.querySelector('[role="alert"]')).toBeNull()
+  expect(document.querySelector<HTMLInputElement>('input')?.value).toContain('?pair=retried')
+  expect(stop).not.toHaveBeenCalled()
 })
 
 it('refreshes spent or expired invitations without hiding the QR code after pairing', async () => {

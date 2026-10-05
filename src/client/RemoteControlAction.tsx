@@ -1,24 +1,25 @@
-/** Session-header action and one-use QR dialog for public HTTPS pairing. */
+/** Sidebar-footer action and one-use QR dialog for public HTTPS pairing. */
 
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useId, useRef, useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import QRCode from 'qrcode/lib/browser.js'
 import {
-  Button, IconCheckOutlineRegular, IconCopyOutlineRegular, IconLinkOutlineRegular, Input, Modal, StateDot,
+  Button, IconCheckOutlineRegular, IconCopyOutlineRegular, Input, Modal, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { NS } from './locales.ts'
+import { proxiedFrame } from './SidebarToggle.tsx'
 
 /** Host commands passed through the slot injection face. */
 export interface RemoteControlInjected {
   /** A usable pairing link and phone access expiry (-1 unlimited, 0 unpaired). */
-  start: (workspaceId: string) => Promise<{ url: string; expiresAt: number; pairedUntil: number }>
+  start: (workspaceId?: string, refresh?: boolean) => Promise<{ url: string; expiresAt: number; pairedUntil: number }>
   stop: () => Promise<void>
+  status: () => Promise<boolean>
 }
 
-/** Header action props supplied by the slot renderer. */
-export type RemoteControlActionProps = PropsRuntime<'conversation.session.header.utilities'>
+/** Footer action props supplied by the slot renderer. */
+export type RemoteControlActionProps = PropsRuntime<'sidebar.footer.action'>
   & PropsLocale<typeof NS> & InjectFace<RemoteControlInjected>
 
 /**
@@ -28,6 +29,13 @@ export type RemoteControlActionProps = PropsRuntime<'conversation.session.header
  * back to the browser's 1em margins and doubles the dialog's vertical rhythm.
  */
 const styles: Record<string, CSSProperties> = {
+  hint: {
+    position: 'fixed', zIndex: 1100, transform: 'translateY(-100%)',
+    boxSizing: 'border-box', width: 208, maxWidth: 'calc(100vw - 16px)', padding: '12px 16px',
+    borderRadius: 'var(--dsw-radius-lg)', background: 'var(--dsw-alias-tooltip-bg)',
+    boxShadow: 'var(--dsw-shadow-lv3)', color: 'var(--dsw-static-neutral-bluish-00)',
+    pointerEvents: 'none', fontSize: 14, lineHeight: '22px',
+  },
   column: { display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 },
   status: { display: 'flex', alignItems: 'center', gap: 8 },
   secondary: { margin: 0, fontSize: 13, lineHeight: '20px', color: 'var(--dsw-alias-label-secondary)' },
@@ -60,6 +68,15 @@ const styles: Record<string, CSSProperties> = {
   },
 }
 
+const ENTRY_STYLE = ''
+  + '.rc-pair-entry{display:flex;flex:none;align-items:center;justify-content:center;width:36px;height:36px;'
+  + 'padding:0;border:0;border-radius:var(--dsw-radius-md);background:transparent;color:#f2994a;cursor:pointer}'
+  + '.rc-pair-entry:hover,.rc-pair-entry[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover)}'
+  + '.rc-pair-entry:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}'
+  + '[class*="_footArea"]:has(.rc-pair-entry[data-wide="true"]){position:relative}'
+  + '.rc-pair-entry[data-wide="true"]{position:absolute;right:40px;bottom:8px;z-index:1}'
+  + '[class*="_footArea"]:has(.rc-pair-entry[data-wide="true"]) [class*="_triggerRow"] > :first-child{margin-right:44px}'
+
 /**
  * Render an expiry as the client's own numeric stamp. `toLocaleString` follows
  * the browser locale, which prints an English date inside a Chinese dialog.
@@ -73,11 +90,19 @@ function formatUntil(at: number): string {
     + `${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-/** Show a link and QR code for the Session's owning Workspace. */
+/** Show pairing at the sidebar foot, including when no Session is open. */
 export function RemoteControlAction(props: RemoteControlActionProps): React.JSX.Element | null {
-  const { sessionId, useWorkspaces, t } = props
-  const workspaceId = useWorkspaces(state => state.items.find(item => item.sessionIds.includes(sessionId))?.workspaceId)
+  const { t, wide } = props
+  const remote = proxiedFrame()
+  const trigger = useRef<HTMLButtonElement>(null)
+  const hintId = useId()
+  const [hovered, setHovered] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const [connection, setConnection] = useState<'waiting' | 'connected' | 'statusLoading' | 'statusUnavailable'>('statusLoading')
+  const [position, setPosition] = useState({ left: 8, top: 8 })
   const [open, setOpen] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const forceRefresh = useRef(false)
   const [busy, setBusy] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [url, setUrl] = useState<string>()
@@ -85,9 +110,41 @@ export function RemoteControlAction(props: RemoteControlActionProps): React.JSX.
   const [qr, setQr] = useState<string>()
   const [error, setError] = useState<string>()
   const [copied, setCopied] = useState(false)
+  const preview = !remote && !open && (hovered || focused)
 
   useEffect(() => {
-    if (!open || workspaceId === undefined || stopping || error !== undefined) return
+    if (!preview) return
+    const place = (): void => {
+      const rect = trigger.current?.getBoundingClientRect()
+      if (rect) setPosition({ left: Math.max(8, Math.min(rect.right - 208, window.innerWidth - 216)), top: rect.top - 8 })
+    }
+    place()
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => { window.removeEventListener('resize', place); window.removeEventListener('scroll', place, true) }
+  }, [preview])
+
+  useEffect(() => {
+    if (!preview) return
+    let alive = true
+    let pending = false
+    const refresh = async (): Promise<void> => {
+      if (pending) return
+      pending = true
+      try {
+        const paired = await props.status()
+        if (alive) setConnection(paired ? 'connected' : 'waiting')
+      } catch {
+        if (alive) setConnection('statusUnavailable')
+      } finally { pending = false }
+    }
+    void refresh()
+    const timer = setInterval(() => { void refresh() }, 2_000)
+    return () => { alive = false; clearInterval(timer) }
+  }, [preview, props.status])
+
+  useEffect(() => {
+    if (!open || stopping || error !== undefined) return
     let alive = true
     let pending = false
     // The server reuses a valid invitation, renewing only when spent or expired. Polling never
@@ -97,7 +154,9 @@ export function RemoteControlAction(props: RemoteControlActionProps): React.JSX.
       pending = true
       if (initial) setBusy(true)
       try {
-        const result = await props.start(workspaceId)
+        const force = initial && forceRefresh.current
+        if (initial) forceRefresh.current = false
+        const result = await (force ? props.start(undefined, true) : props.start())
         if (!alive) return
         setUrl(result.url)
         setPairedUntil(result.pairedUntil === 0 ? undefined : result.pairedUntil)
@@ -111,7 +170,7 @@ export function RemoteControlAction(props: RemoteControlActionProps): React.JSX.
     void refresh(true)
     const timer = setInterval(() => { void refresh() }, 2_000)
     return () => { alive = false; clearInterval(timer) }
-  }, [open, workspaceId, stopping, error, props.start])
+  }, [open, stopping, error, props.start, refreshKey])
 
   useEffect(() => {
     setQr(undefined)
@@ -125,23 +184,33 @@ export function RemoteControlAction(props: RemoteControlActionProps): React.JSX.
     return () => { alive = false }
   }, [url])
 
-  if (workspaceId === undefined) return null
+  if (remote) return null
   return <>
-    <button type="button" aria-label={t('title')}
-      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28,
-        height: 28, border: 0, borderRadius: 28, background: 'transparent',
-        color: 'var(--dsw-alias-label-secondary)', cursor: 'pointer' }}
-      title={t('title')} onClick={() => {
+    <style>{ENTRY_STYLE}</style>
+    <button ref={trigger} className="rc-pair-entry" data-wide={wide} type="button" aria-label={t('title')}
+      aria-haspopup="dialog" aria-expanded={open} aria-describedby={preview ? hintId : undefined}
+      onMouseEnter={() => { setHovered(true) }} onMouseLeave={() => { setHovered(false) }}
+      onFocus={() => { setFocused(true) }} onBlur={() => { setFocused(false) }}
+      onKeyDown={event => { if (event.key === 'Escape') { setHovered(false); setFocused(false) } }}
+      onClick={() => {
         // Re-ask on every open: the link may be spent or expired, or this Workspace may have changed.
         setUrl(undefined)
         setQr(undefined)
         setPairedUntil(undefined)
         setError(undefined)
         setCopied(false)
+        forceRefresh.current = false
         setOpen(true)
       }}>
-      <IconLinkOutlineRegular size={16} />
+      <svg data-remote-control-phone width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <rect x="4.5" y="1.5" width="11" height="17" rx="2" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M8.5 16h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
     </button>
+    {preview && createPortal(<div id={hintId} role="tooltip" style={{ ...styles.hint, ...position }}>
+      <div style={{ fontWeight: 600 }}>{t('title')}</div>
+      <div style={{ marginTop: 6, opacity: .7 }}>{t(connection)}</div>
+    </div>, document.body)}
     <Modal open={open} onClose={() => { setOpen(false) }} title={t('title')} closeLabel={t('close')}
       description={pairedUntil === undefined ? t('description') : t('paired')}
       footer={(url !== undefined || pairedUntil !== undefined) && <Button variant="outline" disabled={busy || stopping}
@@ -176,6 +245,13 @@ export function RemoteControlAction(props: RemoteControlActionProps): React.JSX.
             ? <p style={styles.centered}>{t('qrUnavailable')}</p>
             : <img style={styles.qrImage} src={qr} alt={t('title')} width={240} height={240} />}
           <p style={styles.centered}>{t('oneUse')}</p>
+          <Button variant="outline" aria-label={t('refresh')} disabled={busy || stopping}
+            onClick={() => {
+              forceRefresh.current = true
+              setError(undefined)
+              setBusy(true)
+              setRefreshKey(value => value + 1)
+            }}>{t(busy ? 'refreshing' : 'refresh')}</Button>
           <div style={styles.linkField}>
             <Input readOnly aria-label={t('copy')} value={url} style={styles.linkValue}
               onFocus={(event) => { event.currentTarget.select() }} />

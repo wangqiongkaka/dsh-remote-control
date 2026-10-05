@@ -134,12 +134,17 @@ else if (args[0] === 'funnel') {
     method: 'POST', body: JSON.stringify(body),
   }))
   expect((await post({ action: 'start', workspaceId: 'missing' })).status).toBe(409)
-  const started = await post({ action: 'start', workspaceId: 'workspace-1' })
+  const started = await post({ action: 'start' })
   expect(started.status).toBe(200)
   const { url: first } = await started.json() as { url: string }
   const hostname = 'host.tailnet.ts.net'
   const origin = 'https://' + hostname
   expect(first).toMatch(new RegExp('^' + origin.replaceAll('.', '\\.') + '/\\?pair='))
+  // The global footer can pair without choosing a Session or Workspace.
+  const globalInvitation = await post({ action: 'start' })
+  expect(globalInvitation.status).toBe(200)
+  expect(await globalInvitation.json()).toMatchObject({ url: first })
+  expect((await post({ action: 'start', workspaceId: 42 })).status).toBe(400)
   const invite = async (workspaceId: string) => (await post({ action: 'start', workspaceId })).json() as Promise<Record<string, unknown>>
   expect(await invite('workspace-2'))
     .toMatchObject({ url: first, workspaceId: 'workspace-2', expiresAt: expect.any(Number) })
@@ -234,7 +239,7 @@ else if (args[0] === 'funnel') {
   expect((await request('/' + new URL(url).search, { cookie: cookie ?? '' }, 'POST')).status).toBe(401)
   expect((await request(new URL(url).pathname + new URL(url).search)).status).toBe(401)
   expect((await request(new URL(first).pathname + new URL(first).search)).status).toBe(401)
-  const next = await invite('workspace-2') as { url: string; expiresAt: number; pairedUntil: number }
+  let next = await invite('workspace-2') as { url: string; expiresAt: number; pairedUntil: number }
   expect(next).toMatchObject({ url: expect.any(String), expiresAt: expect.any(Number), pairedUntil: expect.any(Number) })
   expect(next.url).not.toBe(url)
   await scanError('/' + new URL(url).search, '二维码链接无效或已更新')
@@ -305,6 +310,20 @@ else if (args[0] === 'funnel') {
   stream.on('error', () => {})
   stream.resume()
   const streamClosed = new Promise<void>(resolve => { stream.once('close', () => { resolve() }) })
+  // Manual refresh replaces an unused invitation, preserving the phone's credentials and streams.
+  const manual = await post({ action: 'refresh' })
+  expect(manual.status).toBe(200)
+  const refreshed = await manual.json() as typeof next
+  expect(refreshed.url).not.toBe(next.url)
+  expect(refreshed.pairedUntil).toBe(next.pairedUntil)
+  await scanError('/' + new URL(next.url).search, '二维码链接无效或已更新')
+  expect((await request('/api/echo', { cookie: cookie ?? '' })).status).toBe(200)
+  expect(socket.destroyed).toBe(false)
+  expect(stream.destroyed).toBe(false)
+  expect((await post({ action: 'refresh', workspaceId: 42 })).status).toBe(400)
+  expect((await post({ action: 'refresh', workspaceId: 'missing' })).status).toBe(409)
+  expect(await invite('workspace-1')).toMatchObject({ ...refreshed, workspaceId: 'workspace-1' })
+  next = refreshed
   // Refreshing an expired invitation must not rotate the current phone's cookie or close its streams.
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(next.expiresAt + 1)

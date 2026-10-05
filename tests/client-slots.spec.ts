@@ -19,6 +19,7 @@ function slots(): SlotCore {
     children: {
       'conversation.header.leading': { kind: 'single', scope: 'root' },
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
+      'sidebar.footer.action': { kind: 'list', scope: 'root' },
       'shell.overlay': { kind: 'list', scope: 'root' },
       'settings.general.item': { kind: 'list', scope: 'root' },
       'settings.section': { kind: 'list', scope: 'root' },
@@ -49,6 +50,38 @@ it('activates the mobile sidebar control in the single leading slot', () => {
     expect(core.entries('conversation.header.leading')).toHaveLength(1)
   } finally {
     for (const dispose of disposers) dispose()
+  }
+})
+
+it('places the pairing entry at the sidebar foot instead of the session header', () => {
+  const core = slots()
+  const disposers: (() => void)[] = []
+  try {
+    apply(context(core, disposers))
+    expect(core.entries('sidebar.footer.action').map(entry => entry.options.id)).toContain('remote-control')
+    expect(core.entries('conversation.session.header.utilities').map(entry => entry.options.id)).not.toContain('remote-control')
+  } finally {
+    for (const dispose of disposers) dispose()
+  }
+})
+
+it('uses the refresh command only for an explicit manual QR refresh', async () => {
+  const core = slots()
+  const disposers: (() => void)[] = []
+  const fetcher = vi.fn(async (_url: string, _options?: RequestInit) =>
+    Response.json({ url: 'https://host/?pair=test', expiresAt: 1, pairedUntil: -1 }))
+  vi.stubGlobal('fetch', fetcher)
+  try {
+    apply(context(core, disposers))
+    const entry = core.entries('sidebar.footer.action').find(item => item.options.id === 'remote-control')!
+    const inject = entry.inject as () => { start: (workspaceId?: string, refresh?: boolean) => Promise<unknown> }
+    await inject().start(undefined, true)
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({ action: 'refresh' })
+    await inject().start()
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({ action: 'start' })
+  } finally {
+    for (const dispose of disposers) dispose()
+    vi.unstubAllGlobals()
   }
 })
 

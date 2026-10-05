@@ -55,7 +55,7 @@ interface Tunnel {
   child: ChildProcess
   exited: Promise<void>
   proxy: Proxy & {
-    invite: () => Invitation
+    invite: (refresh?: boolean) => Invitation
     paired: () => boolean
     /** Access expiry, -1 for unlimited access, or 0 while nobody is paired. */
     pairedUntil: () => number
@@ -365,9 +365,9 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
   const browserCookie = (browserToken: string): string => 'dsh-remote-control=' + browserToken + '; Max-Age='
     + String(config.browserTtlMs === 0 ? 400 * 24 * 60 * 60 : Math.floor(config.browserTtlMs / 1000))
     + '; Path=/; HttpOnly; Secure; SameSite=Lax'
-  /** Renew expired or spent invitations without disturbing the current phone. */
-  const invite = (): Invitation => {
-    if (used || Date.now() >= inviteExpiresAt) {
+  /** Renew invitations on request, expiry, or use without disturbing the current phone. */
+  const invite = (refresh = false): Invitation => {
+    if (refresh || used || Date.now() >= inviteExpiresAt) {
       ticket = randomBytes(32).toString('base64url')
       inviteExpiresAt = Date.now() + config.invitationTtlMs
       used = false
@@ -539,12 +539,13 @@ export function apply(ctx: Context, config: Config): void {
     await stopChild(current.child, current.exited, config.stopTimeoutMs)
   }
   // The tunnel serves every Workspace; a paired phone stays connected when the desktop changes Workspace.
-  const start = async (workspaceId: string): Promise<Invitation & { workspaceId: string }> => {
+  const start = async (workspaceId?: string, refresh = false): Promise<Invitation & { workspaceId?: string }> => {
+    if (workspaceId === undefined) return open(refresh)
     if (ctx.workspaceRegistry.get(workspaceId as WorkspaceId) === undefined) throw new Error('Unknown workspace')
-    return { ...await open(), workspaceId }
+    return { ...await open(refresh), workspaceId }
   }
-  const open = async (): Promise<Invitation> => {
-    if (active !== undefined) return active.proxy.invite()
+  const open = async (refresh = false): Promise<Invitation> => {
+    if (active !== undefined) return active.proxy.invite(refresh)
     const command = config.access === 'public' ? 'funnel' : 'serve'
     const label = 'Tailscale ' + (config.access === 'public' ? 'Funnel' : 'Serve')
     const baseUrl = publicUrl(config, await cliJson(config.tailscaleBinary, ['status', '--json']))
@@ -617,8 +618,9 @@ export function apply(ctx: Context, config: Config): void {
       try { body = await request.json() } catch { return new Response('Invalid JSON', { status: 400 }) }
       if (!record(body)) return new Response('Invalid request', { status: 400 })
       try {
-        if (body.action === 'start' && typeof body.workspaceId === 'string') {
-          return Response.json(await serialize(() => start(body.workspaceId as string)))
+        if ((body.action === 'start' || body.action === 'refresh')
+          && (body.workspaceId === undefined || typeof body.workspaceId === 'string')) {
+          return Response.json(await serialize(() => start(body.workspaceId as string | undefined, body.action === 'refresh')))
         }
         if (body.action === 'stop') {
           // Stopping revokes the phone; a reload or DSH exit only closes the tunnel.

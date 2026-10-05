@@ -22,11 +22,15 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     'remote-control': RemoteControlKey
   }
+  // Public root-scoped extension seat declared by the host's sidebar shell.
+  interface SlotMap {
+    'sidebar.footer.action': { kind: 'list'; scope: 'root'; owner: { wide: boolean } }
+  }
 }
 
 export const inject = ['slots', 'locale', 'layout']
 
-async function command(action: 'start' | 'stop', workspaceId?: string): Promise<object> {
+async function command(action: 'start' | 'stop' | 'refresh', workspaceId?: string): Promise<object> {
   const response = await fetch('/api/remote-control', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -108,13 +112,13 @@ export function apply(ctx: Context): void {
   // Any page that came through the proxy keeps Chat preferences in memory only (see chat-defaults),
   // whatever its width: it opens at Compact work steps and performance usage.
   ctx.effect(() => proxiedFrame() ? compactChatDefaults(ctx.slots) : () => {}, 'remote-control: compact chat')
-  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
-    name: 'conversation.session.header.utilities',
+  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
+    name: 'sidebar.footer.action',
     id: 'remote-control',
     order: 60,
     locale: NS,
     inject: (): RemoteControlInjected => ({
-      start: workspaceId => command('start', workspaceId).then((result) => {
+      start: (workspaceId, refresh = false) => command(refresh ? 'refresh' : 'start', workspaceId).then((result) => {
         if ('url' in result && typeof result.url === 'string'
           && 'expiresAt' in result && typeof result.expiresAt === 'number'
           && 'pairedUntil' in result && typeof result.pairedUntil === 'number') {
@@ -123,6 +127,17 @@ export function apply(ctx: Context): void {
         throw new Error('Missing remote-control URL')
       }),
       stop: async () => { await command('stop') },
+      status: async () => {
+        const response = await fetch('/api/remote-control', { cache: 'no-store' })
+        if (!response.ok) throw new Error(await response.text())
+        const result: unknown = await response.json()
+        if (typeof result !== 'object' || result === null || !('active' in result)
+          || typeof result.active !== 'boolean'
+          || (result.active && (!('paired' in result) || typeof result.paired !== 'boolean'))) {
+          throw new Error('Invalid remote-control status')
+        }
+        return result.active && 'paired' in result && result.paired === true
+      },
     }),
   }, RemoteControlAction))
   ctx.slots.inject('conversation.header.leading', () => ctx.slots.register({
