@@ -43,8 +43,6 @@ function savedHistory(): CompletionRecord<SessionId>[] {
 /** Host commands passed through the slot injection face. */
 export interface AgentBoardInjected {
   openSession: (sessionId: SessionId) => void
-  /** Observe explicit opens, including reopening the current Session. */
-  onSessionOpened: (listener: (sessionId: SessionId) => void) => () => void
   /** Each Session's harness (dsh, codex, claude-code…); empty where harness-provider is absent. */
   harnesses: (sessionIds: SessionId[]) => Promise<Readonly<Record<string, { harness: string }>>>
 }
@@ -217,7 +215,7 @@ function Tile({ state, count, selected, t, pick }: {
  * @returns the portal, or null off a proxied narrow frame and before the column exists.
  */
 export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
-  const { t, useSessions, useSessionStatus, useWorkspaces, openSession, onSessionOpened } = props
+  const { t, useSessions, useSessionStatus, useWorkspaces, openSession } = props
   const active = useNarrow() && proxiedFrame()
   const host = useCardHost(active)
   const now = useNow(host !== null)
@@ -228,46 +226,13 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
     ids: sessions.ids.filter(id => !workspaces.archivedSessionIds.includes(id)),
   }), [sessions, workspaces.archivedSessionIds])
   const statuses = useSessionStatus(value => value)
-  const [reminders, setReminders] = useState<ReadonlySet<SessionId>>(() => new Set())
-  useEffect(() => {
-    if (!active) return
-    return onSessionOpened(id => {
-      setReminders(current => {
-        if (!current.has(id)) return current
-        const next = new Set(current)
-        next.delete(id)
-        return next
-      })
-    })
-  }, [active, onSessionOpened])
-  const boardStatuses = useMemo(() => {
-    if (reminders.size === 0) return statuses
-    const next = new Map(statuses)
-    for (const id of reminders) {
-      const status = next.get(id)
-      if (status !== undefined) next.set(id, { ...status, completionUnread: true })
-    }
-    return next
-  }, [statuses, reminders])
-  const rows = useMemo(() => agentRows(list, boardStatuses), [list, boardStatuses])
+  const rows = useMemo(() => agentRows(list, statuses), [list, statuses])
   const [history, setHistory] = useState(savedHistory)
   const previous = useRef<typeof statuses>()
   useEffect(() => {
     if (!active || list.phase !== 'ready' || workspaces.phase !== 'ready') { previous.current = undefined; return }
     const before = previous.current
     previous.current = statuses
-    setReminders(current => {
-      const next = new Set<SessionId>()
-      for (const id of list.ids) {
-        const summary = list.byId[id]
-        const status = statuses.get(id)
-        if (summary === undefined || summary.blank || summary.origin === 'subagent' || status?.running !== false
-          || status.pendingInteraction !== undefined) continue
-        // The host acknowledges the main Session immediately; keep its stop until an explicit open.
-        if (current.has(id) || (before?.get(id)?.running === true && !status.completionUnread)) next.add(id)
-      }
-      return next.size === current.size && [...next].every(id => current.has(id)) ? current : next
-    })
     setHistory(current => {
       const next = completionHistory(list, statuses, before, current)
       return next.length === current.length && next.every((entry, index) =>
@@ -277,7 +242,7 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
   useEffect(() => {
     try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)) } catch { /* Storage may be disabled. */ }
   }, [history])
-  const completed = useMemo(() => historyRows(list, boardStatuses, history), [list, boardStatuses, history])
+  const completed = useMemo(() => historyRows(list, statuses, history), [list, statuses, history])
   const markedRows = useMemo(() => [...rows, ...completed], [rows, completed])
   const harnessOf = useHarnesses(host === null ? [] : markedRows, props.harnesses)
   const [filter, setFilter] = useState<AgentState>('running')

@@ -95,47 +95,6 @@ it('opens an Agent board Session through the Workspace UI navigation', () => {
   }
 })
 
-it('observes all main-view opens including a same-Session reopen and disposes the subscription', () => {
-  const core = slots()
-  const disposers: (() => void)[] = []
-  const listeners = new Set<() => void>()
-  let snapshot = { ids: ['s1', 's2'], byId: {
-    s1: { retainedBy: { mainView: 1, workspaceOperation: 0 } },
-    s2: { retainedBy: { mainView: 0, workspaceOperation: 0 } },
-  } }
-  const ctx = context(core, disposers)
-  Object.assign(ctx, { get: (name: string) => name === 'sessions' ? { list: {
-    getSnapshot: () => snapshot,
-    subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
-  } } : undefined })
-  const change = (id: 's1' | 's2', mainView: number, workspaceOperation = 0): void => {
-    snapshot = { ...snapshot, byId: { ...snapshot.byId, [id]: { retainedBy: { mainView, workspaceOperation } } } }
-    for (const listener of listeners) listener()
-  }
-  try {
-    apply(ctx)
-    const entry = core.entries('shell.overlay').find(item => item.options.id === 'remote-control.agents')!
-    const injected = (entry.inject as () => {
-      onSessionOpened: (listener: (id: string) => void) => () => void
-    })()
-    const opened: string[] = []
-    disposers.push(injected.onSessionOpened(id => { opened.push(id) }))
-    expect(opened).toEqual([])
-    change('s1', 2)
-    change('s1', 1)
-    change('s1', 1, 1)
-    change('s2', 1)
-    change('s1', 0)
-    expect(opened).toEqual(['s1', 's2'])
-    for (const dispose of disposers.splice(0)) dispose()
-    expect(listeners.size).toBe(0)
-    change('s1', 1)
-    expect(opened).toEqual(['s1', 's2'])
-  } finally {
-    for (const dispose of disposers) dispose()
-  }
-})
-
 // This plugin injects `remote` only, and cordis refuses `ctx.remote.harness` without its own inject
 // ("cannot get property ... without inject"): the namespace is read through `ctx.get`, and a lookup
 // that cannot answer yet rejects so the board asks again instead of settling on no logo.

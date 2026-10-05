@@ -7,7 +7,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { RemoteControlAction, type RemoteControlInjected } from './RemoteControlAction.tsx'
 import { NARROW, SidebarToggle, proxiedFrame, type SidebarToggleInjected } from './SidebarToggle.tsx'
 import { SidebarDismiss } from './SidebarDismiss.tsx'
@@ -141,28 +140,6 @@ export function apply(ctx: Context): void {
     inject: (): AgentBoardInjected => ({
       openSession: (sessionId) => {
         (ctx.get('uiWorkspace') as UiWorkspace | undefined)?.openSession(sessionId)
-      },
-      onSessionOpened: (listener) => {
-        const sessions = ctx.get('sessions') as {
-          list: {
-            getSnapshot: () => {
-              ids: readonly SessionId[]
-              byId: Readonly<Record<string, { retainedBy: { mainView?: number } }>>
-            }
-            subscribe: (listener: () => void) => () => void
-          }
-        } | undefined
-        if (sessions === undefined) return () => {}
-        let previous = sessions.list.getSnapshot()
-        return sessions.list.subscribe(() => {
-          const next = sessions.list.getSnapshot()
-          const before = previous
-          previous = next
-          // Navigation retains first, even for the same Session, then releases the old reference.
-          for (const id of next.ids) {
-            if ((next.byId[id]?.retainedBy.mainView ?? 0) > (before.byId[id]?.retainedBy.mainView ?? 0)) listener(id)
-          }
-        })
       },
       harnesses: async (sessionIds) => {
         // harness-provider's Remote namespace. Declaring it in `inject` would hold this whole plugin

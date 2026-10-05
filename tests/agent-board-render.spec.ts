@@ -31,12 +31,6 @@ let root: Root
 let mount: HTMLElement
 let opened: string[]
 let proxy: HTMLStyleElement
-const sessionOpened = new Set<(id: string) => void>()
-
-function onSessionOpened(listener: (id: string) => void): () => void {
-  sessionOpened.add(listener)
-  return () => { sessionOpened.delete(listener) }
-}
 
 /** The shell's sidebar column, with New Session between the logo row and the panel list. */
 function column(): HTMLElement {
@@ -70,9 +64,7 @@ function render(
       useWorkspaces: (select: (value: typeof workspaces) => unknown) => select(workspaceSnapshot),
       openSession: (id: string) => {
         opened.push(id)
-        for (const listener of sessionOpened) listener(id)
       },
-      onSessionOpened,
       harnesses: async (ids: string[]) => Object.fromEntries(ids.flatMap(id => marks[id] ? [[id, marks[id]]] : [])),
     }))
   })
@@ -122,7 +114,7 @@ it('keeps read completions in inline history after remounting', () => {
   expect(opened).toEqual(['done'])
 })
 
-it('reminds when the current Session finishes before returning to the sidebar, until reopened', async () => {
+it('does not re-remind a completion watched from inside the Session, but keeps it in history', async () => {
   const frame = document.createElement('div')
   frame.className = 'ui_layout__frame__h1'
   frame.setAttribute('data-sidebar-collapsed', '')
@@ -132,55 +124,39 @@ it('reminds when the current Session finishes before returning to the sidebar, u
   const running = new Map([['run', { running: true, pendingInteraction: undefined, completionUnread: false }]])
   render(sessions, {}, running)
   const finished = { ...sessions, byId: { ...sessions.byId, run: { ...sessions.byId.run, running: false, updatedAt: 10 } } }
+  // The host acknowledges the completion immediately: the user is watching the Session.
   const stopped = new Map([['run', { running: false, pendingInteraction: undefined, completionUnread: false }]])
   render(finished, {}, stopped)
   frame.removeAttribute('data-sidebar-collapsed')
   await act(async () => { await Promise.resolve() })
+  expect(host()?.querySelector('.rc-agents-tile[data-state="done"]')?.textContent).toBe('agents.done0')
+  expect(host()?.querySelectorAll('[data-remote-control-pick]')).toHaveLength(0)
+  click(host()?.querySelector('.rc-agents-tile[data-state="done"]'))
+  expect(host()?.querySelector('.rc-agents-empty')).toBeNull()
+  expect(host()?.querySelector('.rc-agents-history .rc-agents-title')?.textContent).toBe('运行中')
+  click(host()?.querySelector('.rc-agents-history [data-remote-control-pick]'))
+  expect(opened).toEqual(['run'])
+})
+
+it('still reminds of a completion that happened while the user was elsewhere', async () => {
+  column()
+  const sessions = { ...list, ids: ['run'], byId: { ...list.byId, run: { ...list.byId.run, running: false, updatedAt: 10 } } }
+  const running = new Map([['run', { running: true, pendingInteraction: undefined, completionUnread: false }]])
+  // The user never opened this Session, so the host keeps its completion unread.
+  const stopped = new Map([['run', { running: false, pendingInteraction: undefined, completionUnread: true }]])
+  render(sessions, {}, running)
+  render(sessions, {}, stopped)
+  await act(async () => { await Promise.resolve() })
   expect(host()?.querySelector('.rc-agents-tile[data-state="done"]')?.textContent).toBe('agents.done1')
   click(host()?.querySelector('.rc-agents-tile[data-state="done"]'))
-  expect(host()?.querySelector('.rc-agents-history')).toBeNull()
   expect(host()?.querySelector('.rc-agents-title')?.textContent).toBe('运行中')
   click(host()?.querySelector('[data-remote-control-pick]'))
   expect(opened).toEqual(['run'])
+  // Opening the Session is what clears the host's unread completion.
+  const read = new Map([['run', { running: false, pendingInteraction: undefined, completionUnread: false }]])
+  render(sessions, {}, read)
   expect(host()?.querySelector('.rc-agents-tile[data-state="done"]')?.textContent).toBe('agents.done0')
   expect(host()?.querySelector('.rc-agents-history .rc-agents-title')?.textContent).toBe('运行中')
-})
-
-it('acknowledges a current completion through any Session navigation, and reminds on the next run', () => {
-  column()
-  const sessions = { ...list, ids: ['run'], byId: { ...list.byId, run: { ...list.byId.run, running: false } } }
-  const running = new Map([['run', { running: true, pendingInteraction: undefined, completionUnread: false }]])
-  const stopped = new Map([['run', { running: false, pendingInteraction: undefined, completionUnread: false }]])
-  render(sessions, {}, running)
-  render(sessions, {}, stopped)
-  expect(host()?.querySelector('.rc-agents-tile[data-state="done"]')?.textContent).toBe('agents.done1')
-  act(() => { for (const listener of sessionOpened) listener('idle') })
-  expect(host()?.querySelector('.rc-agents-tile[data-state="done"]')?.textContent).toBe('agents.done1')
-  // Ordinary sidebar rows and search results notify through the same navigation source.
-  act(() => { for (const listener of sessionOpened) listener('run') })
-  expect(host()?.querySelector('.rc-agents-tile[data-state="done"]')?.textContent).toBe('agents.done0')
-  render(sessions, {}, running)
-  render(sessions, {}, stopped)
-  expect(host()?.querySelector('.rc-agents-tile[data-state="done"]')?.textContent).toBe('agents.done1')
-})
-
-it.each(['running', 'pending', 'archived', 'deleted'] as const)('retires local completion reminders when %s', (change) => {
-  column()
-  const sessions = { ...list, ids: ['run'], byId: { ...list.byId, run: { ...list.byId.run, running: false } } }
-  const running = new Map([['run', { running: true, pendingInteraction: undefined, completionUnread: false }]])
-  const stopped = new Map([['run', { running: false, pendingInteraction: undefined, completionUnread: false }]])
-  render(sessions, {}, running)
-  render(sessions, {}, stopped)
-  expect(host()?.querySelector('.rc-agents-tile[data-state="done"]')?.textContent).toBe('agents.done1')
-  const changed = change === 'running' ? running : change === 'pending'
-    ? new Map([['run', { running: false, pendingInteraction: { kind: 'approval' }, completionUnread: false }]]) : stopped
-  render(change === 'deleted' ? { ...sessions, ids: [] } : sessions, {}, changed,
-    change === 'archived' ? { ...workspaces, archivedSessionIds: ['run'] } : workspaces)
-  expect(host()?.querySelector('.rc-agents-tile[data-state="done"]')?.textContent).toBe('agents.done0')
-  if (change !== 'running') {
-    render(sessions, {}, stopped)
-    expect(host()?.querySelector('.rc-agents-tile[data-state="done"]')?.textContent).toBe('agents.done0')
-  }
 })
 
 it('restores the Harness icon for a completed history row', async () => {
@@ -254,7 +230,6 @@ it('does not erase saved history while the Session list is loading', () => {
 
 afterEach(() => {
   act(() => { root.unmount() })
-  expect(sessionOpened.size).toBe(0)
   proxy.remove()
   setNarrow(false)
 })
