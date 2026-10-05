@@ -1,13 +1,16 @@
 /** Paired mobile access to an existing DSH Web process through a managed CLI tunnel. */
 
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
-import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import {
   createServer, request as httpRequest, STATUS_CODES,
   type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse,
 } from 'node:http'
 import { promisify } from 'node:util'
 import { connect, type AddressInfo } from 'node:net'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
 import type { Duplex } from 'node:stream'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -170,6 +173,37 @@ async function localCookie(ctx: Context): Promise<string> {
   return cookie
 }
 
+/** A paired phone's access as it outlives the plugin instance: its cookie's hash and expiry (-1 unlimited). */
+interface Pairing { hash: string; expiresAt: number }
+
+/** DSH keeps user data under `$DSH_HOME`, or `~/.dsh` when that is unset or blank. */
+function pairingFile(): string {
+  const home = process.env.DSH_HOME?.trim()
+  return join(home === undefined || home === '' ? join(homedir(), '.dsh') : home, 'dsh-remote-control', 'pairing.json')
+}
+
+/** The stored pairing while it still grants access. */
+function loadPairing(): Pairing | undefined {
+  try {
+    const value: unknown = JSON.parse(readFileSync(pairingFile(), 'utf8'))
+    if (record(value) && typeof value.hash === 'string' && typeof value.expiresAt === 'number'
+      && (value.expiresAt === -1 || Date.now() < value.expiresAt)) return { hash: value.hash, expiresAt: value.expiresAt }
+  } catch { /* never paired, stopped, or unreadable */ }
+  return undefined
+}
+
+function savePairing(pairing: Pairing | undefined): void {
+  const file = pairingFile()
+  if (pairing === undefined) { rmSync(file, { force: true }); return }
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 })
+  rmSync(file, { force: true })
+  writeFileSync(file, JSON.stringify(pairing), { mode: 0o600 })
+}
+
+function tokenHash(token: string): string {
+  return createHash('sha256').update(token).digest('base64url')
+}
+
 function cookieValue(raw: string | undefined): string | undefined {
   return raw?.split(';').map(part => part.trim()).find(part => part.startsWith('dsh-remote-control='))?.slice('dsh-remote-control='.length)
 }
@@ -310,14 +344,16 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
   const sockets = new Set<Duplex>()
   const responses = new Set<ServerResponse>()
   let ticket = ''
-  let browserToken = ''
+  // Only the hash is kept, so the stored pairing cannot be replayed as the phone's cookie.
+  const restored = loadPairing()
+  let browserHash = restored?.hash ?? ''
   let inviteExpiresAt = 0
-  let browserExpiresAt = 0
+  let browserExpiresAt = restored === undefined ? 0 : restored.expiresAt === -1 ? Infinity : restored.expiresAt
   let used = false
-  const paired = (): boolean => browserToken !== '' && Date.now() < browserExpiresAt
+  const paired = (): boolean => browserHash !== '' && Date.now() < browserExpiresAt
   // Browsers cap persistent cookies at 400 days. Renew the same credential on phone visits
   // without imposing an expiry on server authorization or keeping it after revocation.
-  const browserCookie = (): string => 'dsh-remote-control=' + browserToken + '; Max-Age='
+  const browserCookie = (browserToken: string): string => 'dsh-remote-control=' + browserToken + '; Max-Age='
     + String(config.browserTtlMs === 0 ? 400 * 24 * 60 * 60 : Math.floor(config.browserTtlMs / 1000))
     + '; Path=/; HttpOnly; Secure; SameSite=Lax'
   /** Renew expired or spent invitations without disturbing the current phone. */
@@ -342,7 +378,9 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
   /** Status refusing a paired-browser request, or undefined when it may reach DSH. */
   const refuse = (req: IncomingMessage, url: URL): number | undefined => {
     if (req.headers['sec-fetch-site'] === 'cross-site' && (req.method !== 'GET' || url.pathname !== '/')) return 403
-    if (Date.now() >= browserExpiresAt || !equalToken(cookieValue(req.headers.cookie), browserToken)) return 401
+    const browserToken = cookieValue(req.headers.cookie)
+    if (Date.now() >= browserExpiresAt || browserToken === undefined
+      || !equalToken(tokenHash(browserToken), browserHash)) return 401
     if (url.pathname === '/api/remote-control') return 403
     return undefined
   }
@@ -361,8 +399,13 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
         return
       }
       used = true
-      browserToken = randomBytes(32).toString('base64url')
+      const browserToken = randomBytes(32).toString('base64url')
+      browserHash = tokenHash(browserToken)
       browserExpiresAt = config.browserTtlMs === 0 ? Infinity : Date.now() + config.browserTtlMs
+      // Without the record this phone still works; it only has to pair again after a reload.
+      try {
+        savePairing({ hash: browserHash, expiresAt: browserExpiresAt === Infinity ? -1 : browserExpiresAt })
+      } catch { /* unwritable DSH home */ }
       // Replace only admitted old-phone streams; the new pairing response must remain open.
       for (const socket of sockets) socket.destroy()
       for (const response of responses) response.destroy()
@@ -370,7 +413,7 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
         'cache-control': 'no-store',
         'referrer-policy': 'no-referrer',
         location: '/',
-        'set-cookie': browserCookie(),
+        'set-cookie': browserCookie(browserToken),
       }).end()
       return
     }
@@ -381,7 +424,8 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
       }).end()
       return
     }
-    if (config.browserTtlMs === 0) res.setHeader('set-cookie', browserCookie())
+    // Admitted, so the presented cookie is the credential itself.
+    if (config.browserTtlMs === 0) res.setHeader('set-cookie', browserCookie(cookieValue(req.headers.cookie) ?? ''))
     responses.add(res)
     res.once('close', () => { responses.delete(res) })
     forward(req, res, dshPort, dshCookie)
@@ -466,7 +510,10 @@ export function apply(ctx: Context, config: Config): void {
   // The tunnel serves every Workspace; a paired phone stays connected when the desktop changes Workspace.
   const start = async (workspaceId: string): Promise<Invitation & { workspaceId: string }> => {
     if (ctx.workspaceRegistry.get(workspaceId as WorkspaceId) === undefined) throw new Error('Unknown workspace')
-    if (active !== undefined) return { ...active.proxy.invite(), workspaceId }
+    return { ...await open(), workspaceId }
+  }
+  const open = async (): Promise<Invitation> => {
+    if (active !== undefined) return active.proxy.invite()
     const command = config.access === 'public' ? 'funnel' : 'serve'
     const label = 'Tailscale ' + (config.access === 'public' ? 'Funnel' : 'Serve')
     const baseUrl = publicUrl(config, await cliJson(config.tailscaleBinary, ['status', '--json']))
@@ -513,7 +560,7 @@ export function apply(ctx: Context, config: Config): void {
         const ready = JSON.stringify(await cliJson(config.tailscaleBinary, [command, 'status', '--json'])).includes(target)
         if (ready && exitReason === undefined) {
           active = { child, exited, proxy: pairing }
-          return { ...pairing.invite(), workspaceId }
+          return pairing.invite()
         }
         // A public ingress the tailnet has not enabled is a setup step, not a slow start: report it
         // without the wait. `serve` needs no such permission.
@@ -543,7 +590,8 @@ export function apply(ctx: Context, config: Config): void {
           return Response.json(await serialize(() => start(body.workspaceId as string)))
         }
         if (body.action === 'stop') {
-          await serialize(stop)
+          // Stopping revokes the phone; a reload or DSH exit only closes the tunnel.
+          await serialize(async () => { await stop(); savePairing(undefined) })
           return Response.json({ active: false })
         }
         return new Response('Invalid request', { status: 400 })
@@ -552,5 +600,20 @@ export function apply(ctx: Context, config: Config): void {
       }
     },
   }), 'remote-control: local control route')
-  ctx.effect(() => () => serialize(stop), 'remote-control: tunnel shutdown')
+  let disposed = false
+  ctx.effect(() => () => { disposed = true; return serialize(stop) }, 'remote-control: tunnel shutdown')
+  // A reload or DSH restart closes the tunnel, usually while nobody is at the desktop to reopen it.
+  // Reopen it for a phone that is still paired. The previous instance may still hold the port and
+  // Tailscale may still be connecting after login, so keep trying for a minute.
+  void (async () => {
+    const deadline = Date.now() + 60_000
+    while (!disposed && Date.now() < deadline) {
+      try {
+        // Checked in turn with the control route, so a stop that got in first is not undone.
+        await serialize(async () => { if (!disposed && loadPairing() !== undefined) await open() })
+        return
+      } catch { /* not ready yet */ }
+      await new Promise((resolve) => { setTimeout(resolve, 2_000).unref() })
+    }
+  })()
 }

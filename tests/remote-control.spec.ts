@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer, request as httpRequest, type IncomingMessage, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -27,6 +27,7 @@ afterEach(async () => {
   backend = undefined
   if (directory !== undefined) await rm(directory, { recursive: true, force: true })
   directory = undefined
+  delete process.env.DSH_HOME
 })
 
 it('only configures Tailscale instead of selecting or falling back to another tunnel', () => {
@@ -48,6 +49,7 @@ it('defaults to unlimited phone access while preserving finite lifetime configur
 it.skipIf(process.platform === 'win32').each([180_000, 0])(
   'keeps one paired phone across reconnects and revokes replaced or stopped access (TTL: %s)', async (browserTtlMs) => {
   directory = await mkdtemp(join(tmpdir(), 'dsh-remote-control-'))
+  process.env.DSH_HOME = directory
   const state = join(directory, 'funnel-target')
   const binary = join(directory, 'tailscale')
   await writeFile(binary, `#!/usr/bin/env node
@@ -346,6 +348,7 @@ async function controlRoute(
   access: Config['access'] = 'public', overrides: Partial<Config> = {},
 ): Promise<ConnectionFetchRoute> {
   directory = await mkdtemp(join(tmpdir(), 'dsh-remote-control-'))
+  process.env.DSH_HOME = directory
   const binary = join(directory, 'tailscale')
   if (wrap) {
     // /usr/local/bin/tailscale is a shell script without exec, so the CLI becomes a grandchild.
@@ -549,3 +552,118 @@ it.skipIf(process.platform === 'win32')('serves tailnet peers alone when access 
   expect(await response.json())
     .toMatchObject({ url: expect.stringContaining('https://host.tailnet.ts.net/?pair=') })
 })
+
+it.skipIf(process.platform === 'win32')('reopens the tunnel for a paired phone after a reload until the user stops it', async () => {
+  directory = await mkdtemp(join(tmpdir(), 'dsh-remote-control-'))
+  process.env.DSH_HOME = directory
+  const target = join(directory, 'funnel-target')
+  const pairing = join(directory, 'dsh-remote-control', 'pairing.json')
+  const binary = join(directory, 'tailscale')
+  await writeFile(binary, `#!/usr/bin/env node
+const fs = require('node:fs')
+const target = ${JSON.stringify(target)}
+const args = process.argv.slice(2)
+if (args[0] === 'status') console.log(JSON.stringify({ BackendState: 'Running', Self: { DNSName: 'host.tailnet.ts.net.' } }))
+else if (args[1] === 'status') console.log(fs.existsSync(target) ? JSON.stringify({ Web: { Proxy: fs.readFileSync(target, 'utf8') } }) : '{}')
+else if (args[0] === 'funnel') {
+  fs.writeFileSync(target, args.at(-1))
+  process.on('SIGTERM', () => { fs.unlinkSync(target); process.exit(0) })
+  setInterval(() => {}, 1000)
+} else process.exit(1)
+`)
+  await chmod(binary, 0o700)
+  backend = createServer((req, res) => {
+    if (req.url === '/?token=launch') {
+      res.writeHead(303, { location: '/', 'set-cookie': 'dsh-session=signed; Path=/; HttpOnly' }).end()
+      return
+    }
+    res.writeHead(req.headers.cookie === 'dsh-session=signed' ? 204 : 401).end()
+  })
+  await new Promise<void>(resolve => { backend?.listen(0, '127.0.0.1', resolve) })
+  const dshPort = (backend.address() as AddressInfo).port
+  /** One plugin instance, as a reload or a DSH restart creates it. */
+  const load = (): { control: ConnectionFetchRoute; unload: () => Promise<void> } => {
+    let route: ConnectionFetchRoute | undefined
+    let dispose: (() => void | Promise<void>) | undefined
+    apply({
+      connection: {
+        authenticatedUrl: (url: string) => url + '?token=launch',
+        fetch: { register(value: ConnectionFetchRoute) { route = value; return async () => {} } },
+      },
+      webServer: { port: dshPort },
+      workspaceRegistry: { get: (id: string) => ({ workspaceId: id }) },
+      effect(register: () => (() => void | Promise<void>)) {
+        const registered = register()
+        if (route !== undefined) dispose = registered
+      },
+    } as never as Context, {
+      tailscaleBinary: binary, access: 'public', funnelPort: 443, invitationTtlMs: 60_000,
+      browserTtlMs: 0, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000,
+    })
+    if (route === undefined) throw new Error('Control route not installed')
+    stop = async () => { await dispose?.() }
+    return { control: route, unload: stop }
+  }
+  const post = (control: ConnectionFetchRoute, body: object) => control.fetch(
+    new Request('http://localhost/api/remote-control', { method: 'POST', body: JSON.stringify(body) }))
+  /** A phone request arriving through whichever proxy the tunnel currently targets. */
+  const phone = async (path: string, cookie = ''): Promise<{ status: number; setCookie: string }> => {
+    const proxy = new URL(await readFile(target, 'utf8'))
+    return new Promise((resolve, reject) => {
+      httpRequest({
+        hostname: proxy.hostname, port: Number(proxy.port), path, headers: { host: 'host.tailnet.ts.net', cookie },
+      }, (reply) => {
+        reply.resume()
+        resolve({ status: reply.statusCode ?? 502, setCookie: String(reply.headers['set-cookie'] ?? '') })
+      }).on('error', reject).end()
+    })
+  }
+  const tunnelled = async (): Promise<boolean> => {
+    for (let waited = 0; waited < 8_000; waited += 100) {
+      if (await readFile(target, 'utf8').then(value => value.startsWith('http://127.0.0.1:'), () => false)) return true
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+    return false
+  }
+
+  const first = load()
+  const { url } = await (await post(first.control, { action: 'start', workspaceId: 'workspace-1' })).json() as { url: string }
+  const cookie = (await phone('/' + new URL(url).search)).setCookie.split(';', 1)[0] ?? ''
+  expect(cookie).toMatch(/^dsh-remote-control=/u)
+  expect((await phone('/api/echo', cookie)).status).toBe(204)
+  const firstProxy = await readFile(target, 'utf8')
+  // Only a hash survives on disk, readable by the owner alone.
+  expect(await readFile(pairing, 'utf8')).not.toContain(cookie.slice('dsh-remote-control='.length))
+  expect((await stat(pairing)).mode & 0o777).toBe(0o600)
+
+  await first.unload()
+  await expect(readFile(target, 'utf8')).rejects.toThrow()
+  // The previous instance's tunnel can still hold the port when the next one loads.
+  await writeFile(target, 'http://127.0.0.1:' + String(dshPort))
+  const second = load()
+  await new Promise(resolve => setTimeout(resolve, 500))
+  await rm(target)
+  expect(await tunnelled()).toBe(true)
+  expect(await readFile(target, 'utf8')).not.toBe(firstProxy)
+  // The proxy listens before the tunnel is confirmed ready.
+  await vi.waitFor(async () => {
+    expect(await (await second.control.fetch(new Request('http://localhost/api/remote-control'))).json())
+      .toEqual({ active: true, paired: true, pairedUntil: -1 })
+  }, 5_000)
+  expect((await phone('/api/echo', cookie)).status).toBe(204)
+  expect((await phone('/api/echo', cookie)).setCookie).toContain(cookie + '; Max-Age=')
+  expect((await phone('/api/echo')).status).toBe(401)
+  expect((await phone('/api/echo', 'dsh-remote-control=wrong')).status).toBe(401)
+
+  // Stopping is the user's revocation: nothing comes back on the next load.
+  expect((await post(second.control, { action: 'stop' })).status).toBe(200)
+  await expect(readFile(pairing, 'utf8')).rejects.toThrow()
+  await second.unload()
+  // Nor does access whose lifetime ran out while DSH was not running.
+  await writeFile(pairing, JSON.stringify({ hash: 'expired', expiresAt: Date.now() - 1 }))
+  const third = load()
+  await new Promise(resolve => setTimeout(resolve, 500))
+  await expect(readFile(target, 'utf8')).rejects.toThrow()
+  expect(await (await third.control.fetch(new Request('http://localhost/api/remote-control'))).json())
+    .toEqual({ active: false })
+}, 30_000)

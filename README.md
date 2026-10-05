@@ -38,11 +38,11 @@ pnpm dsh plugin --profile web add file:/Users/wangqiongkaka/AIProjetcs/dsh-plugi
       - dsh-remote-control/lib
 ```
 
-配置生效后，运行 `npm run build` 即可发布新产物。构建会保留被监听的 `lib/` 目录，覆盖入口文件；不要先删除整个 `lib/`，否则目录监听会失效，后续构建无法触发重载。若旧构建已使监听失效，需要重新加载 HMR 配置或重启一次 DSH，之后的构建无需再重启。插件重载会执行其停止逻辑，当前手机配对连接需要重新开启。
+配置生效后，运行 `npm run build` 即可发布新产物。构建会保留被监听的 `lib/` 目录，覆盖入口文件；不要先删除整个 `lib/`，否则目录监听会失效，后续构建无法触发重载。若旧构建已使监听失效，需要重新加载 HMR 配置或重启一次 DSH，之后的构建无需再重启。插件重载会关闭隧道；手机已配对时，新实例会自动重建隧道并沿用原配对，手机中断数秒后刷新即可继续使用。
 
 ## 使用与限制
 
-在电脑的 DSH Web 中打开任一会话，点击标题旁的链接图标。每次打开弹窗都会显示可用二维码和可复制链接，已连接时也会显示访问有效期。链接默认五分钟内有效且只能使用一次，使用后或过期会自动更新；配对成功后手机访问权限默认一直有效，弹窗显示「长期有效」。重新打开弹窗、更新二维码或切换工作区不会中断当前手机连接，也不会重启隧道。重新扫码成功后会替换原配对，立即撤销原手机的访问凭证并关闭其 HTTP 和 WebSocket 长连接，新连接按配置获得访问权限；无效或过期的扫码不会影响当前手机。点击「停止远程控制」、关闭 DSH 或重载插件都会撤销手机访问，需要重新扫码。
+在电脑的 DSH Web 中打开任一会话，点击标题旁的链接图标。每次打开弹窗都会显示可用二维码和可复制链接，已连接时也会显示访问有效期。链接默认五分钟内有效且只能使用一次，使用后或过期会自动更新；配对成功后手机访问权限默认一直有效，弹窗显示「长期有效」。重新打开弹窗、更新二维码或切换工作区不会中断当前手机连接，也不会重启隧道。重新扫码成功后会替换原配对，立即撤销原手机的访问凭证并关闭其 HTTP 和 WebSocket 长连接，新连接按配置获得访问权限；无效或过期的扫码不会影响当前手机。点击「停止远程控制」会撤销手机访问，需要重新扫码。重载插件或重启 DSH 只会暂时关闭隧道：手机已配对且访问权限未过期时，插件加载后自动重建隧道并沿用原配对，无需回到电脑旁重新扫码；尚未配对时不会自动开启。
 
 手机配对使用持久 Cookie，关闭并重新打开浏览器后可继续访问。服务端默认不按时间撤销权限；Cookie 设置为 400 天，并在手机访问时续期，这是 [Chrome 的 Cookie 保留上限](https://developer.chrome.com/blog/cookie-max-age-expires)。长期不访问、清除浏览器数据或浏览器提前删除 Cookie 后，需要重新扫码。
 
@@ -56,20 +56,23 @@ pnpm dsh plugin --profile web add file:/Users/wangqiongkaka/AIProjetcs/dsh-plugi
 
 远程页面的「工作步骤展示」和「性能与用量」默认为「简洁」。DSH 只为本机页面保存这两项设置，远程页面上的选择只在当前页面有效，刷新后回到「简洁」，也不会改动电脑上的设置。手机宽度下的设置窗口不显示「模型」分区，模型配置请在电脑上进行。
 
-插件只在本机回环地址上代理已有的 DSH Web 服务。所选隧道提供 HTTPS 入口（`access: tailnet` 时入口只在 tailnet 内可达，手机需登录同一 tailnet）；插件校验请求来源、消耗一次性配对凭证，并以独立 HttpOnly Cookie 授权手机。DSH 的本地浏览器 Cookie 不会发给手机。插件允许与其他端口的 Serve/Funnel 映射共存，例如 DSH 使用 443、前端使用 8443；目标端口被后台或前台会话占用时会拒绝启动，报错包含端口，不会覆盖已有映射。唯一可自动清理的残留是配置中只有本插件目标端口的 Foreground 会话、且其所有回环后端都已停止；配置中包含其他端口或后台映射时不会执行全局清理。停止远程控制只关闭本次启动的代理和前台隧道，保留其他映射。电脑关闭 DSH 或隧道进程后，远程入口不可用；Tailscale 入口也会在电脑断开 Tailscale 后失效。
+插件只在本机回环地址上代理已有的 DSH Web 服务。所选隧道提供 HTTPS 入口（`access: tailnet` 时入口只在 tailnet 内可达，手机需登录同一 tailnet）；插件校验请求来源、消耗一次性配对凭证，并以独立 HttpOnly Cookie 授权手机。DSH 的本地浏览器 Cookie 不会发给手机。插件允许与其他端口的 Serve/Funnel 映射共存，例如 DSH 使用 443、前端使用 8443；目标端口被后台或前台会话占用时会拒绝启动，报错包含端口，不会覆盖已有映射。唯一可自动清理的残留是配置中只有本插件目标端口的 Foreground 会话、且其所有回环后端都已停止；配置中包含其他端口或后台映射时不会执行全局清理。停止远程控制只关闭本次启动的代理和前台隧道，保留其他映射。电脑关闭 DSH 或隧道进程后，远程入口不可用；Tailscale 入口也会在电脑断开 Tailscale 后失效。为了在插件重载或 DSH 重启后恢复访问，配对成功时会把手机 Cookie 的 SHA-256 哈希和访问有效期写入 `$DSH_HOME/dsh-remote-control/pairing.json`（未设置 `DSH_HOME` 时为 `~/.dsh`，仅本人可读写）；文件中没有 Cookie 本身，停止远程控制时删除。自动重建在插件加载后的一分钟内每两秒尝试一次，以等待旧隧道释放端口或 Tailscale 完成连接；超时后需在电脑上重新打开弹窗，原配对仍然有效。
 
 可通过 profile 的 `cordis.patch.yml` 覆盖 `remote-control` 行的 `tailscaleBinary`、`access`、`funnelPort`（443、8443 或 10000）、`invitationTtlMs`、`browserTtlMs`、`startupTimeoutMs` 和 `stopTimeoutMs`。`browserTtlMs` 默认 `0`，表示手机访问权限一直有效；仍可设置 1,000 至 86,400,000 毫秒的有限有效期，显式配置会覆盖默认值。`access` 默认 `public`，使用 `tailscale funnel`；改为 `tailnet` 则用 `tailscale serve`，只有同一 tailnet 内的设备能打开链接，不再暴露公网入口。插件在本机映射注册后显示二维码，这不代表公网 DNS 与 Funnel 中继链路已验证可达；公网故障不会改用其他隧道或域名。电脑 Tailscale 关闭、未登录或不可用时，开启远控会报错。Funnel 的命令形式参见 [Tailscale CLI 文档](https://tailscale.com/docs/reference/tailscale-cli/funnel)。
 
 使用 Tailscale 入口并需要「直连优先、公网备用」时，保持 `access: public`，并在手机上开启 Tailscale、连接同一 tailnet、启用 Tailscale DNS（MagicDNS）。手机通过同一 HTTPS 域名访问 tailnet 内的服务，Tailscale 会优先尝试直接连接；同一 Wi-Fi 且设备间互通时可走本地路径，5G 下也会尝试直连，不能直连时回退到 Tailscale 中继。关闭手机 Tailscale DNS 或关闭 Tailscale 后，同一域名改经公网 DNS 和 Funnel 中继访问，需要公网入口可达。公网 Funnel 本身仍有中继和带宽限制，不能保证比 5G 下的 Tailscale 直连更快。该策略由 Tailscale 与 DNS 处理，适用于 Safari 和 Chrome。连接机制参见 [Tailscale 连接类型](https://tailscale.com/docs/reference/connection-types)、[MagicDNS](https://tailscale.com/docs/features/magicdns) 和 [Funnel 工作原理](https://tailscale.com/docs/features/tailscale-funnel)。
 
-已有 profile 的显式 `access: tailnet` 会覆盖插件的默认值，需要改为 `public` 并重新开启远程控制。插件重载后需重新扫码；配置中其他端口的 Serve/Funnel 服务会保留。
+已有 profile 的显式 `access: tailnet` 会覆盖插件的默认值，需要改为 `public` 并重新开启远程控制。配置中其他端口的 Serve/Funnel 服务会保留。
 
 ## 公网访问排查
 
+手机显示「网络出错，无法显示该页面」且一直打不开时，先在电脑上运行 `tailscale funnel status`，确认所选端口的映射仍在。电脑端没有隧道时，Funnel 中继仍会接受 TCP 连接，再在 TLS 握手阶段断开，与链路故障的表现相同；这通常发生在构建触发插件重载、DSH 重启或隧道进程退出之后，与手机使用 Wi-Fi 还是蜂窝网络无关。映射不在时重新打开远程控制弹窗即可重建隧道。
+
 手机开启 Tailscale DNS 时，完整 `ts.net` 域名通过 MagicDNS 解析为电脑的 tailnet 地址，访问内网路径；关闭后由手机当前网络的 DNS 解析为 Funnel 公网中继地址。内网可用不能证明公网链路也可用。排查时分开检查：
 
+
 1. 用当前网络 DNS 和另一家公共 DNS 查询该完整域名；`NXDOMAIN`、超时或解析结果不一致时先查 DNS。
-2. 公网 DNS 返回地址后，保留原域名的 Host、SNI 与证书验证，逐个测试返回地址上的 HTTPS。TCP 能连上但 TLS 握手断开属于解析之后的链路故障，不能通过修改插件内的 DNS 查询修复。
+2. 公网 DNS 返回地址后，保留原域名的 Host、SNI 与证书验证，逐个测试返回地址上的 HTTPS。映射存在时，TCP 能连上但 TLS 握手断开属于解析之后的链路故障，不能通过修改插件内的 DNS 查询修复。
 3. 用 `tailscale funnel status --json` 确认所选端口在 `AllowFunnel` 中启用，并通过 `tailscale netcheck` 检查电脑的 Tailscale 网络。
 4. 同一手机分别使用 Wi-Fi 和蜂窝网络测试，区分本地网络与 Funnel 服务故障。不要用 HTTPS IP 地址代替域名，也不要关闭证书校验。
 
