@@ -68,6 +68,31 @@ it('shows a phone entry and reads pairing status without starting the tunnel on 
   expect(document.querySelector('[role="tooltip"]')).toBeNull()
 })
 
+it('right-aligns the expanded sidebar phone entry and reserves room beside settings indicators', () => {
+  const footer = document.createElement('div')
+  footer.className = 'ui_sidebar__footArea__test'
+  footer.innerHTML = '<div class="settings__triggerRow__test"><button>设置</button><button>连接状态</button></div>'
+  document.body.append(footer)
+  footer.prepend(mount)
+  const entry = mount.querySelector<HTMLButtonElement>('.rc-pair-entry')!
+  const row = footer.querySelector<HTMLElement>('[class*="_triggerRow"]')!
+  try {
+    expect(getComputedStyle(footer).position).toBe('relative')
+    expect(getComputedStyle(entry).position).toBe('absolute')
+    expect(getComputedStyle(entry).right).toBe('0px')
+    expect(getComputedStyle(row).boxSizing).toBe('border-box')
+    expect(getComputedStyle(row).paddingRight).toBe('44px')
+    expect(getComputedStyle(row.firstElementChild!).marginRight).not.toBe('44px')
+    act(() => {
+      root.render(createElement(RemoteControlAction as never, {
+        t: (key: string) => key, start, stop, status, wide: false,
+      }))
+    })
+    expect(getComputedStyle(entry).position).not.toBe('absolute')
+    expect(getComputedStyle(row).paddingRight).not.toBe('44px')
+  } finally { document.body.append(mount); footer.remove() }
+})
+
 it('opens pairing without a selected session or workspace', async () => {
   await act(async () => {
     root.render(createElement(RemoteControlAction as never, {

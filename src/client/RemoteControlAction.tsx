@@ -74,8 +74,8 @@ const ENTRY_STYLE = ''
   + '.rc-pair-entry:hover,.rc-pair-entry[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover)}'
   + '.rc-pair-entry:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}'
   + '[class*="_footArea"]:has(.rc-pair-entry[data-wide="true"]){position:relative}'
-  + '.rc-pair-entry[data-wide="true"]{position:absolute;right:40px;bottom:8px;z-index:1}'
-  + '[class*="_footArea"]:has(.rc-pair-entry[data-wide="true"]) [class*="_triggerRow"] > :first-child{margin-right:44px}'
+  + '.rc-pair-entry[data-wide="true"]{position:absolute;right:0;bottom:8px;z-index:1}'
+  + '[class*="_footArea"]:has(.rc-pair-entry[data-wide="true"]) [class*="_triggerRow"]{box-sizing:border-box;padding-right:44px}'
 
 /**
  * Render an expiry as the client's own numeric stamp. `toLocaleString` follows
