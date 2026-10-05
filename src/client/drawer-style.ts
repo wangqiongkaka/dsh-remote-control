@@ -47,7 +47,9 @@ const TASK_MODE = '.hp-delegate[data-hp-mode]'
  * The current session's fill, the resting row shape that keeps a tap a tap on a touch device,
  * the Workspace cards, and touch-sized rows at phone width.
  */
-const DRAWER_SELECTION_STYLE = '[class*="_sessionRow"][aria-selected="true"]'
+// Standalone provider popups lack the host MenuSurface's opaque backing.
+const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg-layer-2) !important}'
+  + '[class*="_sessionRow"][aria-selected="true"]'
   + '{background:var(--dsw-specific-sidebar-nav-item-active) !important}'
   // The Agent card takes New Session's seat; a Workspace row's own New Session button stays.
   + '[class*="_sidebarCol"] button[class*="_newSession"]{display:none !important}'

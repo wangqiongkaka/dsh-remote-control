@@ -9,6 +9,28 @@ function sheet(): HTMLStyleElement | null {
 
 afterEach(() => { sheet()?.remove() })
 
+it.each([
+  ['light', 'rgb(255, 255, 255)', 'rgba(248, 249, 250, 0.58)'],
+  ['dark', 'rgb(44, 44, 46)', 'rgba(67, 69, 74, 0.45)'],
+])('gives quota panels and picker menus opaque %s theme backgrounds', (_, solid, translucent) => {
+  const host = document.createElement('style')
+  host.textContent = `.hp-menu,.hp-panel{background:${translucent}}`
+  const root = document.createElement('div')
+  root.innerHTML = '<div class="hp-anchor"><div class="hp-panel hp-panel-right">本周 剩余 95%</div></div>'
+    + '<div class="hp-anchor"><div class="hp-menu hp-menu-left">Codex</div></div>'
+  document.body.append(root)
+  const dispose = applyDrawerSelection()
+  // jsdom cannot resolve CSS variables; substitute only the theme's solid surface color.
+  sheet()!.textContent = sheet()!.textContent!.replaceAll('var(--dsw-alias-bg-layer-2)', solid)
+  // Provider styles can arrive after this plugin's sheet during a client reload.
+  document.head.append(host)
+  try {
+    for (const popup of root.querySelectorAll('.hp-panel,.hp-menu')) {
+      expect(getComputedStyle(popup).backgroundColor).toBe(solid)
+    }
+  } finally { dispose(); host.remove(); root.remove() }
+})
+
 it('separates the current session from a latched hover in the drawer', () => {
   const dispose = applyDrawerSelection()
   const css = sheet()?.textContent ?? ''
