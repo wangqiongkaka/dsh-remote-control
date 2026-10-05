@@ -2,6 +2,8 @@
 
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
+import dns from 'node:dns/promises'
+import https from 'node:https'
 import {
   createServer, request as httpRequest, STATUS_CODES,
   type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse,
@@ -457,6 +459,43 @@ async function closeProxy({ server, sockets }: Proxy): Promise<void> {
   await closed
 }
 
+/** Probe the public pairing service without credentials, even if the LAN DNS misses a new hostname. */
+async function cloudflareReady(url: string, timeoutMs: number): Promise<boolean> {
+  const signal = AbortSignal.timeout(timeoutMs)
+  try {
+    const response = await fetch(url, { redirect: 'manual', signal })
+    const ready = response.status === 401 && response.headers.get('x-dsh-remote-control') === 'unpaired'
+    await response.body?.cancel()
+    return ready
+  } catch (error) {
+    if (!(error instanceof Error) || !record(error.cause)
+      || !['ENOTFOUND', 'EAI_AGAIN'].includes(String(error.cause.code))) throw error
+  }
+  // Only this public tunnel's readiness probe uses fallback DNS. Keep system settings, Host,
+  // SNI and certificate verification intact; no DSH cookie or pairing ticket leaves the proxy.
+  const hostname = new URL(url).hostname
+  const resolver = new dns.Resolver({ timeout: timeoutMs, tries: 1 })
+  resolver.setServers(['8.8.8.8', '8.8.4.4'])
+  const cancel = (): void => { resolver.cancel() }
+  signal.throwIfAborted()
+  signal.addEventListener('abort', cancel, { once: true })
+  let addresses: string[]
+  try { addresses = await resolver.resolve4(hostname) }
+  finally { signal.removeEventListener('abort', cancel) }
+  if (addresses[0] === undefined) return false
+  return new Promise<boolean>((resolve, reject) => {
+    const request = https.request(url, {
+      signal, servername: hostname, family: 4,
+      lookup: (_host, _options, callback) => { callback(null, addresses[0]!, 4) },
+    }, (response) => {
+      response.resume()
+      resolve(response.statusCode === 401 && response.headers['x-dsh-remote-control'] === 'unpaired')
+    })
+    request.once('error', reject)
+    request.end()
+  })
+}
+
 export function apply(ctx: Context, config: Config): void {
   let active: Tunnel | undefined
   let operation: Promise<void> = Promise.resolve()
@@ -546,11 +585,7 @@ export function apply(ctx: Context, config: Config): void {
           // A registered tunnel may still have an unpublished DNS record or an unready edge.
           // Probe without credentials; only this proxy's unauthenticated response means it is ready.
           try {
-            const response = await fetch(baseUrl, {
-              redirect: 'manual', signal: AbortSignal.timeout(Math.max(1, Math.min(2_000, deadline - Date.now()))),
-            })
-            ready = response.status === 401 && response.headers.get('x-dsh-remote-control') === 'unpaired'
-            await response.body?.cancel()
+            ready = await cloudflareReady(baseUrl, Math.max(1, Math.min(2_000, deadline - Date.now())))
           } catch { ready = false }
         }
         if (ready && exitReason === undefined) {

@@ -1,10 +1,13 @@
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { createServer, request as httpRequest, type IncomingMessage, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { gzipSync } from 'node:zlib'
+import dns from 'node:dns/promises'
+import https from 'node:https'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
@@ -594,6 +597,33 @@ it.skipIf(process.platform === 'win32')('reports Cloudflare startup failures and
 
 it('defaults to choosing the public tunnel from the Mac Tailscale connection state', () => {
   expect(z.resolve({}, Config, {})[0].publicTunnel).toBe('auto')
+})
+
+it.skipIf(process.platform === 'win32')('starts Cloudflare when the system DNS cannot resolve its registered public hostname', async () => {
+  const nativeFetch = globalThis.fetch
+  vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => String(input) === 'https://dns-phone.trycloudflare.com/'
+    ? Promise.reject(new TypeError('fetch failed', { cause: Object.assign(new Error('getaddrinfo ENOTFOUND'), { code: 'ENOTFOUND' }) }))
+    : nativeFetch(input, init))
+  const resolver = new dns.Resolver()
+  const resolve = vi.spyOn(resolver, 'resolve4').mockResolvedValue(['127.0.0.1'])
+  const servers = vi.spyOn(resolver, 'setServers').mockImplementation(() => {})
+  vi.spyOn(dns, 'Resolver').mockImplementation(function () { return resolver })
+  const probe = vi.spyOn(https, 'request').mockImplementation((url, options, callback) => {
+    expect(String(url)).toBe('https://dns-phone.trycloudflare.com/')
+    expect(options).toMatchObject({ servername: 'dns-phone.trycloudflare.com', family: 4 })
+    expect(options).not.toHaveProperty('rejectUnauthorized', false)
+    expect(options).not.toHaveProperty('headers')
+    return httpRequest(readFileSync(join(directory!, 'target'), 'utf8'), { headers: { host: 'dns-phone.trycloudflare.com' } }, callback)
+  })
+  const route = await controlRoute(`  fs.writeFileSync(path.join(home, 'target'), args.at(-1))
+  console.log('https://dns-phone.trycloudflare.com\\nRegistered tunnel connection')
+  setInterval(() => {}, 1000)`, 2_000, "'{}'", false, 'public', 'cloudflare')
+  // The fake HTTPS transport still reaches the real pairing proxy and its Host fence.
+  const response = await begin(route)
+  expect(response.status, await response.clone().text()).toBe(200)
+  expect(probe).toHaveBeenCalledOnce()
+  expect(resolve).toHaveBeenCalledWith('dns-phone.trycloudflare.com')
+  expect(servers).toHaveBeenCalledWith(['8.8.8.8', '8.8.4.4'])
 })
 
 it.skipIf(process.platform === 'win32').each(['Running', 'Stopped', 'NeedsLogin', 'unavailable'])(

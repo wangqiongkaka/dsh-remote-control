@@ -80,6 +80,8 @@ pnpm dsh plugin --profile web add file:/Users/wangqiongkaka/AIProjetcs/dsh-plugi
 
 Mac 的 Tailscale 未连接时重新开启远程控制，二维码使用 `https://随机名称.trycloudflare.com/`；已连接时使用原来的 `ts.net` 入口。若要固定使用 Cloudflare，把 `publicTunnel` 改为 `cloudflare`。插件等待隧道注册连接，并确认公网地址能到达配对服务后才显示链接；只代理现有配对服务，不修改或清理其他 Tailscale 映射。手机不需要开启 Tailscale。配对后，同一手机、同一浏览器从 Wi-Fi 切换到 5G、断线后重新连接或关闭再打开浏览器，都继续使用相同的访问 Cookie，无需重新扫码。正在传输的连接可能因网络切换中断，是否自动重新连接由 DSH Web 客户端处理。
 
+系统 DNS 返回 `ENOTFOUND` 或 `EAI_AGAIN` 时，公网启动检测会改用 Google Public DNS（`8.8.8.8`、`8.8.4.4`）解析该 Cloudflare 域名，仍校验原域名的 HTTPS 证书。备用解析只用于插件启动检测，不修改 Mac、路由器或手机的 DNS 设置；手机网络若同样无法解析该域名，仍需处理该网络的 DNS。公网检测不发送 DSH Cookie 或配对凭证。
+
 运行中开启或关闭 Mac 的 Tailscale 不会自动替换入口；停止远控后再次开启会重新判断。Mac 从已连接变为未连接时，原来的 Tailscale 入口可能中断，需要重新开启远控并用新的 Cloudflare 二维码配对。Quick Tunnel 在每次重新启动后分配新域名；停止远控、重启 DSH 或插件重载后，需使用新二维码重新配对。新公网域名始终经过 Cloudflare，不具有 Tailscale 域名的 Wi-Fi 自动直连策略。`access: tailnet` 仍使用 Tailscale Serve，忽略 `publicTunnel`。
 
 Quick Tunnel 无需账号或自有域名，支持本插件使用的 WebSocket；没有可用性保证，最多 200 个同时进行的请求，不支持 SSE。需要固定域名或 SSE 时使用正式 Cloudflare Tunnel，此插件当前只支持 Quick Tunnel。限制参见 [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/) 和 [WebSocket 支持](https://developers.cloudflare.com/cloudflare-one/faq/cloudflare-tunnels-faq/)。

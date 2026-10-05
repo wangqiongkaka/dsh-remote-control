@@ -111,3 +111,17 @@ it('refreshes spent or expired invitations without hiding the QR code after pair
   await act(async () => { await vi.advanceTimersByTimeAsync(4_000) })
   expect(start).toHaveBeenCalledTimes(calls)
 })
+
+it('stops showing the startup spinner and offers retry when the tunnel times out', async () => {
+  start.mockImplementation(() => new Promise((_resolve, reject) => {
+    setTimeout(() => { reject(new Error('Cloudflare startup timeout')) }, 60_000)
+  }))
+  await click('button[aria-label="title"]')
+  expect(document.querySelector('[role="status"]')?.textContent).toContain('loading')
+  await act(async () => { await vi.advanceTimersByTimeAsync(59_999) })
+  expect(start).toHaveBeenCalledOnce()
+  await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+  expect(document.querySelector('[role="status"]')).toBeNull()
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain('Cloudflare startup timeout')
+  expect(document.querySelector('[role="alert"] button')?.textContent).toBe('retry')
+})
