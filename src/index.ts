@@ -2,8 +2,6 @@
 
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
-import dns from 'node:dns/promises'
-import https from 'node:https'
 import {
   createServer, request as httpRequest, STATUS_CODES,
   type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse,
@@ -26,8 +24,6 @@ export interface Config {
   tailscaleBinary: string
   /** `public` opens an internet ingress; `tailnet` serves Tailscale peers only. */
   access: 'public' | 'tailnet'
-  publicTunnel: 'auto' | 'tailscale' | 'cloudflare'
-  cloudflaredBinary: string
   funnelPort: 443 | 8443 | 10000
   invitationTtlMs: number
   /** Phone access lifetime; 0 disables time-based expiry. */
@@ -39,8 +35,6 @@ export interface Config {
 export const Config: z<Config> = z.object({
   tailscaleBinary: z.string().min(1).default('tailscale'),
   access: z.union([z.const('public'), z.const('tailnet')]).default('public'),
-  publicTunnel: z.union([z.const('auto'), z.const('tailscale'), z.const('cloudflare')]).default('auto'),
-  cloudflaredBinary: z.string().min(1).default('cloudflared'),
   funnelPort: z.union([z.const(443), z.const(8443), z.const(10000)]).default(443),
   invitationTtlMs: z.natural().min(1_000).default(5 * 60_000),
   browserTtlMs: z.union([z.const(0), z.natural().min(1_000).max(24 * 60 * 60_000)]).default(0),
@@ -155,7 +149,7 @@ async function abandoned(status: Record<string, unknown>, port: number): Promise
 function publicUrl(config: Config, status: unknown): string {
   if (!record(status) || status.BackendState !== 'Running' || !record(status.Self)
     || typeof status.Self.DNSName !== 'string' || status.Self.DNSName === '') {
-    throw new Error('Tailscale must be connected with MagicDNS and Funnel enabled')
+    throw new Error('Tailscale must be connected and have a MagicDNS name')
   }
   const hostname = status.Self.DNSName.replace(/\.$/u, '')
   const port = config.funnelPort === 443 ? '' : ':' + String(config.funnelPort)
@@ -312,7 +306,7 @@ function tunnel(req: IncomingMessage, socket: Duplex, head: Buffer, port: number
 }
 
 /** Pair one phone, then proxy all DSH Web routes through a revocable cookie. */
-function browserProxy(baseUrl: () => string, dshPort: number, dshCookie: string, config: Config) {
+function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, config: Config) {
   const sockets = new Set<Duplex>()
   const responses = new Set<ServerResponse>()
   let ticket = ''
@@ -333,17 +327,16 @@ function browserProxy(baseUrl: () => string, dshPort: number, dshCookie: string,
       inviteExpiresAt = Date.now() + config.invitationTtlMs
       used = false
     }
-    return { url: baseUrl() + '?pair=' + ticket, expiresAt: inviteExpiresAt, pairedUntil: pairedUntil() }
+    return { url: baseUrl + '?pair=' + ticket, expiresAt: inviteExpiresAt, pairedUntil: pairedUntil() }
   }
   /** The dialog follows the pairing state without being reopened. */
   const pairedUntil = (): number => paired() ? (browserExpiresAt === Infinity ? -1 : browserExpiresAt) : 0
   /** Host/Origin fence: the request URL on the public origin, or undefined to refuse with 403. */
   const target = (req: IncomingMessage): URL | undefined => {
-    if (baseUrl() === '') return undefined
-    const { host: authority, origin } = new URL(baseUrl())
+    const { host: authority, origin } = new URL(baseUrl)
     if (req.headers.host !== authority || req.url === undefined || !req.url.startsWith('/')) return undefined
     if (req.headers.origin !== undefined && req.headers.origin !== origin) return undefined
-    const url = new URL(req.url, baseUrl())
+    const url = new URL(req.url, baseUrl)
     return url.origin === origin ? url : undefined
   }
   /** Status refusing a paired-browser request, or undefined when it may reach DSH. */
@@ -411,14 +404,10 @@ async function listen(server: Server): Promise<number> {
   return (server.address() as AddressInfo).port
 }
 
-/* Keep startup diagnostics bounded and observe URL/connection announcements across chunk boundaries. */
-function captureOutput(child: ChildProcess, observe?: (output: string) => void, limit = 2_000): () => string {
+/** Keep startup diagnostics bounded. */
+function captureOutput(child: ChildProcess): () => string {
   let text = ''
-  const append = (chunk: Buffer): void => {
-    const appended = text + chunk.toString()
-    observe?.(appended)
-    text = appended.slice(-limit)
-  }
+  const append = (chunk: Buffer): void => { text = (text + chunk.toString()).slice(-2_000) }
   child.stdout?.on('data', append)
   child.stderr?.on('data', append)
   return () => text.replace(/\s+/gu, ' ').trim()
@@ -459,43 +448,6 @@ async function closeProxy({ server, sockets }: Proxy): Promise<void> {
   await closed
 }
 
-/** Probe the public pairing service without credentials, even if the LAN DNS misses a new hostname. */
-async function cloudflareReady(url: string, timeoutMs: number): Promise<boolean> {
-  const signal = AbortSignal.timeout(timeoutMs)
-  try {
-    const response = await fetch(url, { redirect: 'manual', signal })
-    const ready = response.status === 401 && response.headers.get('x-dsh-remote-control') === 'unpaired'
-    await response.body?.cancel()
-    return ready
-  } catch (error) {
-    if (!(error instanceof Error) || !record(error.cause)
-      || !['ENOTFOUND', 'EAI_AGAIN'].includes(String(error.cause.code))) throw error
-  }
-  // Only this public tunnel's readiness probe uses fallback DNS. Keep system settings, Host,
-  // SNI and certificate verification intact; no DSH cookie or pairing ticket leaves the proxy.
-  const hostname = new URL(url).hostname
-  const resolver = new dns.Resolver({ timeout: timeoutMs, tries: 1 })
-  resolver.setServers(['8.8.8.8', '8.8.4.4'])
-  const cancel = (): void => { resolver.cancel() }
-  signal.throwIfAborted()
-  signal.addEventListener('abort', cancel, { once: true })
-  let addresses: string[]
-  try { addresses = await resolver.resolve4(hostname) }
-  finally { signal.removeEventListener('abort', cancel) }
-  if (addresses[0] === undefined) return false
-  return new Promise<boolean>((resolve, reject) => {
-    const request = https.request(url, {
-      signal, servername: hostname, family: 4,
-      lookup: (_host, _options, callback) => { callback(null, addresses[0]!, 4) },
-    }, (response) => {
-      response.resume()
-      resolve(response.statusCode === 401 && response.headers['x-dsh-remote-control'] === 'unpaired')
-    })
-    request.once('error', reject)
-    request.end()
-  })
-}
-
 export function apply(ctx: Context, config: Config): void {
   let active: Tunnel | undefined
   let operation: Promise<void> = Promise.resolve()
@@ -515,44 +467,25 @@ export function apply(ctx: Context, config: Config): void {
   const start = async (workspaceId: string): Promise<Invitation & { workspaceId: string }> => {
     if (ctx.workspaceRegistry.get(workspaceId as WorkspaceId) === undefined) throw new Error('Unknown workspace')
     if (active !== undefined) return { ...active.proxy.invite(), workspaceId }
-    const automatic = config.access === 'public' && config.publicTunnel === 'auto'
-    let tailscaleStatus: unknown
-    if (automatic) {
-      // Choose once for this session. A stopped, logged-out, or unavailable client uses Cloudflare.
-      try { tailscaleStatus = await cliJson(config.tailscaleBinary, ['status', '--json']) } catch { /* unavailable */ }
-    }
-    const cloudflare = config.access === 'public' && (config.publicTunnel === 'cloudflare'
-      || (automatic && (!record(tailscaleStatus) || tailscaleStatus.BackendState !== 'Running')))
     const command = config.access === 'public' ? 'funnel' : 'serve'
-    const label = cloudflare ? 'Cloudflare Tunnel' : 'Tailscale ' + (config.access === 'public' ? 'Funnel' : 'Serve')
-    let baseUrl = ''
-    if (!cloudflare) {
-      const existing = await cliJson(config.tailscaleBinary, [command, 'status', '--json'])
-      if (!portAvailable(existing, config.funnelPort)) {
-        if (!record(existing) || !await abandoned(existing, config.funnelPort)) {
-          throw new Error(label + ' port ' + String(config.funnelPort) + ' already has a configuration')
-        }
-        // Either verb can own the leftover, so clear both before claiming the port.
-        for (const other of ['serve', 'funnel']) await cliRun(config.tailscaleBinary, [other, 'reset'])
+    const label = 'Tailscale ' + (config.access === 'public' ? 'Funnel' : 'Serve')
+    const baseUrl = publicUrl(config, await cliJson(config.tailscaleBinary, ['status', '--json']))
+    const existing = await cliJson(config.tailscaleBinary, [command, 'status', '--json'])
+    if (!portAvailable(existing, config.funnelPort)) {
+      if (!record(existing) || !await abandoned(existing, config.funnelPort)) {
+        throw new Error(label + ' port ' + String(config.funnelPort) + ' already has a configuration')
       }
-      baseUrl = publicUrl(config, tailscaleStatus ?? await cliJson(config.tailscaleBinary, ['status', '--json']))
+      // Either verb can own the leftover, so clear both before claiming the port.
+      for (const other of ['serve', 'funnel']) await cliRun(config.tailscaleBinary, [other, 'reset'])
     }
     const dshCookie = await localCookie(ctx)
-    // Cloudflare assigns the hostname after the listener starts. Until then every request is refused.
-    const pairing = browserProxy(() => baseUrl, ctx.webServer.port, dshCookie, config)
+    const pairing = browserProxy(baseUrl, ctx.webServer.port, dshCookie, config)
     const proxyPort = await listen(pairing.server)
     const target = 'http://127.0.0.1:' + String(proxyPort)
-    const child = spawn(cloudflare ? config.cloudflaredBinary : config.tailscaleBinary, cloudflare ? [
-      'tunnel', '--no-autoupdate', '--protocol', 'http2', '--url', target,
-    ] : [command, '--yes', '--https=' + String(config.funnelPort), target], {
+    const child = spawn(config.tailscaleBinary, [command, '--yes', '--https=' + String(config.funnelPort), target], {
       env: cliEnv(), stdio: ['ignore', 'pipe', 'pipe'], detached: true,
     })
-    let cloudflareUrl = ''
-    let connected = false
-    const output = captureOutput(child, cloudflare ? (text) => {
-      cloudflareUrl ||= text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com(?=\s|$)/u)?.[0] ?? ''
-      connected ||= text.includes('Registered tunnel connection')
-    } : undefined)
+    const output = captureOutput(child)
     // Funnel prints why it refuses to start and then waits for an admin instead of exiting, so the
     // reason has to travel with whichever failure ends the wait.
     const failure = (message: string): Error => {
@@ -577,24 +510,14 @@ export function apply(ctx: Context, config: Config): void {
     try {
       const deadline = Date.now() + config.startupTimeoutMs
       while (Date.now() < deadline && exitReason === undefined) {
-        let ready = cloudflare
-          ? cloudflareUrl !== '' && connected
-          : JSON.stringify(await cliJson(config.tailscaleBinary, [command, 'status', '--json'])).includes(target)
-        if (cloudflare && ready) {
-          baseUrl = cloudflareUrl + '/'
-          // A registered tunnel may still have an unpublished DNS record or an unready edge.
-          // Probe without credentials; only this proxy's unauthenticated response means it is ready.
-          try {
-            ready = await cloudflareReady(baseUrl, Math.max(1, Math.min(2_000, deadline - Date.now())))
-          } catch { ready = false }
-        }
+        const ready = JSON.stringify(await cliJson(config.tailscaleBinary, [command, 'status', '--json'])).includes(target)
         if (ready && exitReason === undefined) {
           active = { child, exited, proxy: pairing }
           return { ...pairing.invite(), workspaceId }
         }
         // A public ingress the tailnet has not enabled is a setup step, not a slow start: report it
         // without the wait. `serve` needs no such permission.
-        if (!cloudflare && config.access === 'public' && /funnel is not enabled/iu.test(output())) {
+        if (config.access === 'public' && /funnel is not enabled/iu.test(output())) {
           throw failure('Tailscale Funnel could not start')
         }
         await new Promise(resolve => setTimeout(resolve, 250))

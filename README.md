@@ -4,7 +4,7 @@
 
 ## 安装
 
-需要正在运行的 DSH Web profile。默认在开启远控时自动选择入口：Mac 的 Tailscale 已连接则使用 [Tailscale Funnel](https://tailscale.com/docs/features/tailscale-funnel)，需启用 MagicDNS、HTTPS 和 Funnel 权限；关闭、未登录或不可用则使用已安装的 [cloudflared](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/)，手机无需 Tailscale。两种工具都需在电脑上准备好，才能使用自动选择的两条路径。开发依赖中的 `link:` 路径假定本插件与 `deepseek-harness` 同在 `AIProjetcs` 目录下；如目录不同，先调整 `package.json` 的开发链接。打包产物不依赖这些路径。
+需要正在运行的 DSH Web profile，以及已连接的 Tailscale。默认使用 [Tailscale Funnel](https://tailscale.com/docs/features/tailscale-funnel) 提供公网 HTTPS 入口，需启用 MagicDNS、HTTPS 和 Funnel 权限；手机走公网入口时无需 Tailscale。开发依赖中的 `link:` 路径假定本插件与 `deepseek-harness` 同在 `AIProjetcs` 目录下；如目录不同，先调整 `package.json` 的开发链接。打包产物不依赖这些路径。
 
 ```sh
 cd /Users/wangqiongkaka/AIProjetcs/dsh-plugin/dsh-remote-control
@@ -58,33 +58,22 @@ pnpm dsh plugin --profile web add file:/Users/wangqiongkaka/AIProjetcs/dsh-plugi
 
 插件只在本机回环地址上代理已有的 DSH Web 服务。所选隧道提供 HTTPS 入口（`access: tailnet` 时入口只在 tailnet 内可达，手机需登录同一 tailnet）；插件校验请求来源、消耗一次性配对凭证，并以独立 HttpOnly Cookie 授权手机。DSH 的本地浏览器 Cookie 不会发给手机。插件允许与其他端口的 Serve/Funnel 映射共存，例如 DSH 使用 443、前端使用 8443；目标端口被后台或前台会话占用时会拒绝启动，报错包含端口，不会覆盖已有映射。唯一可自动清理的残留是配置中只有本插件目标端口的 Foreground 会话、且其所有回环后端都已停止；配置中包含其他端口或后台映射时不会执行全局清理。停止远程控制只关闭本次启动的代理和前台隧道，保留其他映射。电脑关闭 DSH 或隧道进程后，远程入口不可用；Tailscale 入口也会在电脑断开 Tailscale 后失效。
 
-可通过 profile 的 `cordis.patch.yml` 覆盖 `remote-control` 行的 `tailscaleBinary`、`cloudflaredBinary`、`publicTunnel`、`access`、`funnelPort`（443、8443 或 10000）、`invitationTtlMs`、`browserTtlMs`、`startupTimeoutMs` 和 `stopTimeoutMs`。`browserTtlMs` 默认 `0`，表示手机访问权限一直有效；仍可设置 1,000 至 86,400,000 毫秒的有限有效期，显式配置会覆盖默认值。`access` 默认 `public`，`publicTunnel` 默认 `auto`，开启远控时检查 Mac 的 Tailscale 状态：已连接则用 `tailscale funnel`，否则用 Cloudflare Quick Tunnel；也可显式配置 `tailscale` 或 `cloudflare` 固定入口。选择仅在创建新隧道时执行；重新打开弹窗、更新二维码、切换工作区和手机切换 Wi-Fi/5G 都不会更换已有入口；改为 `tailnet` 则用 `tailscale serve`，只有同一 tailnet 内的设备能打开链接，不再暴露公网入口（公网入口会把这些请求中继到本机，链路慢时首屏会很慢）。Funnel 的命令形式参见 [Tailscale CLI 文档](https://tailscale.com/docs/reference/tailscale-cli/funnel)。
+可通过 profile 的 `cordis.patch.yml` 覆盖 `remote-control` 行的 `tailscaleBinary`、`access`、`funnelPort`（443、8443 或 10000）、`invitationTtlMs`、`browserTtlMs`、`startupTimeoutMs` 和 `stopTimeoutMs`。`browserTtlMs` 默认 `0`，表示手机访问权限一直有效；仍可设置 1,000 至 86,400,000 毫秒的有限有效期，显式配置会覆盖默认值。`access` 默认 `public`，使用 `tailscale funnel`；改为 `tailnet` 则用 `tailscale serve`，只有同一 tailnet 内的设备能打开链接，不再暴露公网入口。插件在本机映射注册后显示二维码，这不代表公网 DNS 与 Funnel 中继链路已验证可达；公网故障不会改用其他隧道或域名。电脑 Tailscale 关闭、未登录或不可用时，开启远控会报错。Funnel 的命令形式参见 [Tailscale CLI 文档](https://tailscale.com/docs/reference/tailscale-cli/funnel)。
 
-使用 Tailscale 入口并需要「直连优先、公网备用」时，保持 `access: public` 和 `publicTunnel: tailscale`，并在手机上开启 Tailscale、连接同一 tailnet、启用 Tailscale DNS（MagicDNS）。手机通过同一 HTTPS 域名访问 tailnet 内的服务，Tailscale 会优先尝试直接连接；同一 Wi-Fi 且设备间互通时可走本地路径，5G 下也会尝试直连，不能直连时回退到 Tailscale 中继。关闭手机 Tailscale、改用公网 DNS 后，同一域名通过 Funnel 公网入口访问。公网 Funnel 本身仍有中继和带宽限制，不能保证比 5G 下的 Tailscale 直连更快。该策略由 Tailscale 与 DNS 处理，适用于 Safari 和 Chrome。连接机制参见 [Tailscale 连接类型](https://tailscale.com/docs/reference/connection-types)、[MagicDNS](https://tailscale.com/docs/features/magicdns) 和 [Funnel 工作原理](https://tailscale.com/docs/features/tailscale-funnel)。
+使用 Tailscale 入口并需要「直连优先、公网备用」时，保持 `access: public`，并在手机上开启 Tailscale、连接同一 tailnet、启用 Tailscale DNS（MagicDNS）。手机通过同一 HTTPS 域名访问 tailnet 内的服务，Tailscale 会优先尝试直接连接；同一 Wi-Fi 且设备间互通时可走本地路径，5G 下也会尝试直连，不能直连时回退到 Tailscale 中继。关闭手机 Tailscale DNS 或关闭 Tailscale 后，同一域名改经公网 DNS 和 Funnel 中继访问，需要公网入口可达。公网 Funnel 本身仍有中继和带宽限制，不能保证比 5G 下的 Tailscale 直连更快。该策略由 Tailscale 与 DNS 处理，适用于 Safari 和 Chrome。连接机制参见 [Tailscale 连接类型](https://tailscale.com/docs/reference/connection-types)、[MagicDNS](https://tailscale.com/docs/features/magicdns) 和 [Funnel 工作原理](https://tailscale.com/docs/features/tailscale-funnel)。
 
 已有 profile 的显式 `access: tailnet` 会覆盖插件的默认值，需要改为 `public` 并重新开启远程控制。插件重载后需重新扫码；配置中其他端口的 Serve/Funnel 服务会保留。
 
-## Cloudflare 公网入口
+## 公网访问排查
 
-自动模式在 Mac 未连接 Tailscale 时使用 Cloudflare Quick Tunnel。先安装 `cloudflared`，再配置 Profile：
+手机开启 Tailscale DNS 时，完整 `ts.net` 域名通过 MagicDNS 解析为电脑的 tailnet 地址，访问内网路径；关闭后由手机当前网络的 DNS 解析为 Funnel 公网中继地址。内网可用不能证明公网链路也可用。排查时分开检查：
 
-```yaml
-- id: remote-control
-  name: dsh-remote-control
-  config:
-    access: public
-    publicTunnel: auto
-    cloudflaredBinary: /你的实际安装路径/cloudflared
-    startupTimeoutMs: 60000
-```
+1. 用当前网络 DNS 和另一家公共 DNS 查询该完整域名；`NXDOMAIN`、超时或解析结果不一致时先查 DNS。
+2. 公网 DNS 返回地址后，保留原域名的 Host、SNI 与证书验证，逐个测试返回地址上的 HTTPS。TCP 能连上但 TLS 握手断开属于解析之后的链路故障，不能通过修改插件内的 DNS 查询修复。
+3. 用 `tailscale funnel status --json` 确认所选端口在 `AllowFunnel` 中启用，并通过 `tailscale netcheck` 检查电脑的 Tailscale 网络。
+4. 同一手机分别使用 Wi-Fi 和蜂窝网络测试，区分本地网络与 Funnel 服务故障。不要用 HTTPS IP 地址代替域名，也不要关闭证书校验。
 
-Mac 的 Tailscale 未连接时重新开启远程控制，二维码使用 `https://随机名称.trycloudflare.com/`；已连接时使用原来的 `ts.net` 入口。若要固定使用 Cloudflare，把 `publicTunnel` 改为 `cloudflare`。插件等待隧道注册连接，并确认公网地址能到达配对服务后才显示链接；只代理现有配对服务，不修改或清理其他 Tailscale 映射。手机不需要开启 Tailscale。配对后，同一手机、同一浏览器从 Wi-Fi 切换到 5G、断线后重新连接或关闭再打开浏览器，都继续使用相同的访问 Cookie，无需重新扫码。正在传输的连接可能因网络切换中断，是否自动重新连接由 DSH Web 客户端处理。
-
-系统 DNS 返回 `ENOTFOUND` 或 `EAI_AGAIN` 时，公网启动检测会改用 Google Public DNS（`8.8.8.8`、`8.8.4.4`）解析该 Cloudflare 域名，仍校验原域名的 HTTPS 证书。备用解析只用于插件启动检测，不修改 Mac、路由器或手机的 DNS 设置；手机网络若同样无法解析该域名，仍需处理该网络的 DNS。公网检测不发送 DSH Cookie 或配对凭证。
-
-运行中开启或关闭 Mac 的 Tailscale 不会自动替换入口；停止远控后再次开启会重新判断。Mac 从已连接变为未连接时，原来的 Tailscale 入口可能中断，需要重新开启远控并用新的 Cloudflare 二维码配对。Quick Tunnel 在每次重新启动后分配新域名；停止远控、重启 DSH 或插件重载后，需使用新二维码重新配对。新公网域名始终经过 Cloudflare，不具有 Tailscale 域名的 Wi-Fi 自动直连策略。`access: tailnet` 仍使用 Tailscale Serve，忽略 `publicTunnel`。
-
-Quick Tunnel 无需账号或自有域名，支持本插件使用的 WebSocket；没有可用性保证，最多 200 个同时进行的请求，不支持 SSE。需要固定域名或 SSE 时使用正式 Cloudflare Tunnel，此插件当前只支持 Quick Tunnel。限制参见 [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/) 和 [WebSocket 支持](https://developers.cloudflare.com/cloudflare-one/faq/cloudflare-tunnels-faq/)。
+旧配置中的 `publicTunnel` 和 `cloudflaredBinary` 已移除，应从本插件的 profile 配置中删除。配对后，同一手机、同一浏览器切换 Wi-Fi/5G、断线后重连或关闭再打开浏览器，仍使用相同的访问 Cookie；正在传输的连接可能因切网中断，是否自动重连由 DSH Web 客户端处理。
 
 ## 手机访问前端服务
 
@@ -102,4 +91,4 @@ npm run dev -- --host 0.0.0.0
 
 ## 验证
 
-运行 `npm run check`，依次完成构建、类型检查和全部测试；测试直接引用 `dist/` 构建产物。测试用假的 Tailscale/cloudflared 命令和本机 HTTP 服务验证一次性配对、二维码更新、替换配对时旧凭证及长连接的撤销、完整 Web 路由代理、Host/Origin 拒绝及停止后的撤销，并验证弹窗重新打开和已配对时的二维码展示。公网 HTTP 和 WebSocket 连通性需要通过实际隧道单独验证。
+运行 `npm run check`，依次完成构建、类型检查和全部测试；测试直接引用 `dist/` 构建产物。测试用假的 Tailscale 命令和本机 HTTP 服务验证一次性配对、二维码更新、替换配对时旧凭证及长连接的撤销、完整 Web 路由代理、Host/Origin 拒绝及停止后的撤销，并验证弹窗重新打开和已配对时的二维码展示。公网 HTTP 和 WebSocket 连通性需要通过实际隧道单独验证。

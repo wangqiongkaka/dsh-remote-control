@@ -1,7 +1,7 @@
 {
   "name": "dsh-remote-control",
   "version": "0.1.0",
-  "description": "One-use mobile pairing for DSH Web through Tailscale or Cloudflare tunnels",
+  "description": "One-use mobile pairing for DSH Web through Tailscale Serve or Funnel",
   "type": "module",
   "license": "MIT",
   "main": "lib/index.js",

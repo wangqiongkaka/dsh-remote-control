@@ -1,13 +1,10 @@
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
 import { createServer, request as httpRequest, type IncomingMessage, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { gzipSync } from 'node:zlib'
-import dns from 'node:dns/promises'
-import https from 'node:https'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
@@ -32,6 +29,13 @@ afterEach(async () => {
   directory = undefined
 })
 
+it('only configures Tailscale instead of selecting or falling back to another tunnel', () => {
+  const config = z.resolve({}, Config, {})[0]
+  expect(config.access).toBe('public')
+  expect(config).not.toHaveProperty('publicTunnel')
+  expect(config).not.toHaveProperty('cloudflaredBinary')
+})
+
 it('defaults to unlimited phone access while preserving finite lifetime configuration', () => {
   expect(z.resolve({}, Config, {})[0].browserTtlMs).toBe(0)
   expect(z.resolve({}, Config, {})[0].invitationTtlMs).toBe(5 * 60_000)
@@ -41,10 +45,8 @@ it('defaults to unlimited phone access while preserving finite lifetime configur
   expect(() => z.resolve({ browserTtlMs: -1 }, Config, {})).toThrow()
 })
 
-it.skipIf(process.platform === 'win32').each([
-  ['tailscale', 180_000], ['tailscale', 0], ['cloudflare', 0],
-] as const)(
-  'keeps one paired phone across reconnects and revokes replaced or stopped access (%s, TTL: %s)', async (publicTunnel, browserTtlMs) => {
+it.skipIf(process.platform === 'win32').each([180_000, 0])(
+  'keeps one paired phone across reconnects and revokes replaced or stopped access (TTL: %s)', async (browserTtlMs) => {
   directory = await mkdtemp(join(tmpdir(), 'dsh-remote-control-'))
   const state = join(directory, 'funnel-target')
   const binary = join(directory, 'tailscale')
@@ -54,12 +56,8 @@ const state = ${JSON.stringify(state)}
 const args = process.argv.slice(2)
 if (args[0] === 'status') console.log(JSON.stringify({ BackendState: 'Running', Self: { DNSName: 'host.tailnet.ts.net.' } }))
 else if (args[1] === 'status') console.log(fs.existsSync(state) ? JSON.stringify({ Web: { Proxy: fs.readFileSync(state, 'utf8') } }) : '{}')
-else if (args[0] === 'funnel' || args[0] === 'tunnel') {
+else if (args[0] === 'funnel') {
   fs.writeFileSync(state, args.at(-1))
-  if (args[0] === 'tunnel') {
-    process.stderr.write('https://phone-test.trycloudflare.')
-    setTimeout(() => { process.stderr.write('com\\n' + 'startup diagnostics '.repeat(200) + '\\nRegistered tunnel connection\\n') }, 20)
-  }
   process.on('SIGTERM', () => { fs.unlinkSync(state); process.exit(0) })
   setInterval(() => {}, 1000)
 } else process.exit(1)
@@ -123,20 +121,8 @@ else if (args[0] === 'funnel' || args[0] === 'tunnel') {
       if (route !== undefined) stop = async () => { await dispose() }
     },
   }
-  let readinessCalls = 0
-  if (publicTunnel === 'cloudflare') {
-    const nativeFetch = globalThis.fetch
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-      if (String(input) !== 'https://phone-test.trycloudflare.com/') return nativeFetch(input, init)
-      readinessCalls++
-      if (readinessCalls === 1) throw new TypeError('DNS record not yet available')
-      if (readinessCalls === 2) return new Response(null, { status: 530 })
-      return new Response(null, { status: 401, headers: { 'x-dsh-remote-control': 'unpaired' } })
-    })
-  }
   const config: Config = {
-    publicTunnel, cloudflaredBinary: binary,
-    tailscaleBinary: publicTunnel === 'cloudflare' ? join(directory, 'no-tailscale') : binary, access: 'public', funnelPort: 443, invitationTtlMs: 60_000,
+    tailscaleBinary: binary, access: 'public', funnelPort: 443, invitationTtlMs: 60_000,
     browserTtlMs, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000,
   }
   apply(ctx as never as Context, config)
@@ -148,9 +134,8 @@ else if (args[0] === 'funnel' || args[0] === 'tunnel') {
   expect((await post({ action: 'start', workspaceId: 'missing' })).status).toBe(409)
   const started = await post({ action: 'start', workspaceId: 'workspace-1' })
   expect(started.status).toBe(200)
-  if (publicTunnel === 'cloudflare') expect(readinessCalls).toBe(3)
   const { url: first } = await started.json() as { url: string }
-  const hostname = publicTunnel === 'cloudflare' ? 'phone-test.trycloudflare.com' : 'host.tailnet.ts.net'
+  const hostname = 'host.tailnet.ts.net'
   const origin = 'https://' + hostname
   expect(first).toMatch(new RegExp('^' + origin.replaceAll('.', '\\.') + '/\\?pair='))
   const invite = async (workspaceId: string) => (await post({ action: 'start', workspaceId })).json() as Promise<Record<string, unknown>>
@@ -331,10 +316,8 @@ else if (args[0] === 'funnel' || args[0] === 'tunnel') {
   expect((await post({ action: 'stop' })).status).toBe(200)
   await replacementClosed
   await expect(request('/api/echo', { cookie: replacementCookie ?? '' })).rejects.toThrow()
-  if (publicTunnel === 'tailscale') {
-    await writeFile(state, 'http://127.0.0.1:9999')
-    expect((await post({ action: 'start', workspaceId: 'workspace-1' })).status).toBe(409)
-  }
+  await writeFile(state, 'http://127.0.0.1:9999')
+  expect((await post({ action: 'start', workspaceId: 'workspace-1' })).status).toBe(409)
 })
 
 /** A fake Tailscale CLI that answers status and then runs `funnel` as the given script body. */
@@ -351,7 +334,7 @@ if (args[0] === 'status') {
   console.log(JSON.stringify({ BackendState: state, Self: { DNSName: 'host.tailnet.ts.net.' } }))
 }
 else if (args[1] === 'status') console.log(${status})
-else if (args[0] === 'funnel' || args[0] === 'serve' || args[0] === 'tunnel') {
+else if (args[0] === 'funnel' || args[0] === 'serve') {
 ${funnel}
 } else process.exit(1)
 `
@@ -360,7 +343,7 @@ ${funnel}
 /** Applies the plugin against a fake CLI and returns its control route. */
 async function controlRoute(
   funnel: string, startupTimeoutMs: number, status = "'{}'", wrap = false,
-  access: Config['access'] = 'public', publicTunnel: Config['publicTunnel'] = 'tailscale', overrides: Partial<Config> = {},
+  access: Config['access'] = 'public', overrides: Partial<Config> = {},
 ): Promise<ConnectionFetchRoute> {
   directory = await mkdtemp(join(tmpdir(), 'dsh-remote-control-'))
   const binary = join(directory, 'tailscale')
@@ -390,7 +373,7 @@ async function controlRoute(
     },
   }
   apply(ctx as never as Context, {
-    tailscaleBinary: binary, publicTunnel, cloudflaredBinary: binary, access, funnelPort: 443, invitationTtlMs: 60_000,
+    tailscaleBinary: binary, access, funnelPort: 443, invitationTtlMs: 60_000,
     browserTtlMs: 60_000, startupTimeoutMs, stopTimeoutMs: 5_000, ...overrides,
   })
   if (route === undefined) throw new Error('Control route not installed')
@@ -565,119 +548,4 @@ it.skipIf(process.platform === 'win32')('serves tailnet peers alone when access 
   expect(response.status).toBe(200)
   expect(await response.json())
     .toMatchObject({ url: expect.stringContaining('https://host.tailnet.ts.net/?pair=') })
-})
-
-it.skipIf(process.platform === 'win32').each([
-  ['https://phone-test.trycloudflare.com\n', 'missing registration'],
-  ['Registered tunnel connection\nhttps://phone-test.trycloudflare.com.evil.invalid\n', 'untrusted hostname'],
-])('refuses an unusable Cloudflare announcement (%s, %s) and closes its listener', async (message) => {
-  const route = await controlRoute(`  fs.writeFileSync(path.join(home, 'target'), args.at(-1))
-  process.on('SIGTERM', () => { fs.writeFileSync(path.join(home, 'stopped'), 'yes'); process.exit(0) })
-  process.stderr.write(${JSON.stringify(message)})
-  setInterval(() => {}, 1000)`, 2_000, "'{}'", false, 'public', 'cloudflare')
-  const response = await begin(route)
-  expect(response.status).toBe(409)
-  expect(await response.text()).toContain('Cloudflare Tunnel did not become ready before the startup timeout')
-  expect(await readFile(join(directory!, 'stopped'), 'utf8')).toBe('yes')
-  const target = await readFile(join(directory!, 'target'), 'utf8')
-  await expect(fetch(target)).rejects.toThrow()
-  expect(await (await route.fetch(new Request('http://localhost/api/remote-control'))).json()).toEqual({ active: false })
-})
-
-it.skipIf(process.platform === 'win32')('reports Cloudflare startup failures and keeps other Tailscale mappings untouched', async () => {
-  const route = await controlRoute(`  if (args[0] !== 'tunnel') { fs.writeFileSync(path.join(home, 'tailscale-used'), 'yes'); process.exit(9) }
-  process.stderr.write('Unable to reach Cloudflare edge\\n')
-  process.exit(7)`, 5_000, "JSON.stringify({TCP:{443:{HTTPS:true},8443:{HTTPS:true}}})", false, 'public', 'cloudflare')
-  const response = await begin(route)
-  expect(response.status).toBe(409)
-  expect(await response.text()).toContain('Cloudflare Tunnel exited (7) — Unable to reach Cloudflare edge')
-  await expect(readFile(join(directory!, 'tailscale-used'), 'utf8')).rejects.toThrow()
-})
-
-
-it('defaults to choosing the public tunnel from the Mac Tailscale connection state', () => {
-  expect(z.resolve({}, Config, {})[0].publicTunnel).toBe('auto')
-})
-
-it.skipIf(process.platform === 'win32')('starts Cloudflare when the system DNS cannot resolve its registered public hostname', async () => {
-  const nativeFetch = globalThis.fetch
-  vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => String(input) === 'https://dns-phone.trycloudflare.com/'
-    ? Promise.reject(new TypeError('fetch failed', { cause: Object.assign(new Error('getaddrinfo ENOTFOUND'), { code: 'ENOTFOUND' }) }))
-    : nativeFetch(input, init))
-  const resolver = new dns.Resolver()
-  const resolve = vi.spyOn(resolver, 'resolve4').mockResolvedValue(['127.0.0.1'])
-  const servers = vi.spyOn(resolver, 'setServers').mockImplementation(() => {})
-  vi.spyOn(dns, 'Resolver').mockImplementation(function () { return resolver })
-  const probe = vi.spyOn(https, 'request').mockImplementation((url, options, callback) => {
-    expect(String(url)).toBe('https://dns-phone.trycloudflare.com/')
-    expect(options).toMatchObject({ servername: 'dns-phone.trycloudflare.com', family: 4 })
-    expect(options).not.toHaveProperty('rejectUnauthorized', false)
-    expect(options).not.toHaveProperty('headers')
-    return httpRequest(readFileSync(join(directory!, 'target'), 'utf8'), { headers: { host: 'dns-phone.trycloudflare.com' } }, callback)
-  })
-  const route = await controlRoute(`  fs.writeFileSync(path.join(home, 'target'), args.at(-1))
-  console.log('https://dns-phone.trycloudflare.com\\nRegistered tunnel connection')
-  setInterval(() => {}, 1000)`, 2_000, "'{}'", false, 'public', 'cloudflare')
-  // The fake HTTPS transport still reaches the real pairing proxy and its Host fence.
-  const response = await begin(route)
-  expect(response.status, await response.clone().text()).toBe(200)
-  expect(probe).toHaveBeenCalledOnce()
-  expect(resolve).toHaveBeenCalledWith('dns-phone.trycloudflare.com')
-  expect(servers).toHaveBeenCalledWith(['8.8.8.8', '8.8.4.4'])
-})
-
-it.skipIf(process.platform === 'win32').each(['Running', 'Stopped', 'NeedsLogin', 'unavailable'])(
-  'selects the public tunnel only when starting remote control (Tailscale: %s)', async (state) => {
-  const nativeFetch = globalThis.fetch
-  vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => String(input) === 'https://auto-phone.trycloudflare.com/'
-    ? Promise.resolve(new Response(null, { status: 401, headers: { 'x-dsh-remote-control': 'unpaired' } }))
-    : nativeFetch(input, init))
-  const route = await controlRoute(`  if (args[1] === 'reset') process.exit(9)
-  const state = fs.readFileSync(path.join(home, 'backend-state'), 'utf8')
-  const expected = state === 'Running' ? 'funnel' : 'tunnel'
-  if (args[0] !== expected) process.exit(8)
-  fs.writeFileSync(path.join(home, 'target'), args.at(-1))
-  if (args[0] === 'tunnel') console.log('https://auto-phone.trycloudflare.com\\nRegistered tunnel connection')
-  process.on('SIGTERM', () => { fs.unlinkSync(path.join(home, 'target')); process.exit(0) })
-  setInterval(() => {}, 1000)`, 5_000,
-  `fs.existsSync(path.join(home, 'target'))
-    ? JSON.stringify({ TCP: {8443:{HTTPS:true}}, Web:{Proxy:fs.readFileSync(path.join(home, 'target'),'utf8')} })
-    : JSON.stringify({ TCP:{8443:{HTTPS:true}} })`, false, 'public', 'auto')
-  await writeFile(join(directory!, 'backend-state'), state)
-  const response = await begin(route)
-  expect(response.status, await response.clone().text()).toBe(200)
-  const first = await response.json() as { url: string }
-  const hostname = state === 'Running' ? 'host.tailnet.ts.net' : 'auto-phone.trycloudflare.com'
-  expect(new URL(first.url).hostname).toBe(hostname)
-  // Merely opening the existing session never replaces its origin or phone authorization.
-  await writeFile(join(directory!, 'backend-state'), state === 'Running' ? 'Stopped' : 'Running')
-  expect(await (await begin(route)).json()).toMatchObject({ url: first.url })
-  expect((await route.fetch(new Request('http://localhost/api/remote-control', {
-    method: 'POST', body: JSON.stringify({ action: 'stop' }),
-  }))).status).toBe(200)
-  const restarted = await begin(route)
-  expect(restarted.status, await restarted.clone().text()).toBe(200)
-  const next = await restarted.json() as { url: string }
-  expect(new URL(next.url).hostname).toBe(state === 'Running' ? 'auto-phone.trycloudflare.com' : 'host.tailnet.ts.net')
-})
-
-it.skipIf(process.platform === 'win32')('uses Cloudflare in auto mode when Tailscale is not installed', async () => {
-  const nativeFetch = globalThis.fetch
-  vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => String(input) === 'https://auto-phone.trycloudflare.com/'
-    ? Promise.resolve(new Response(null, { status: 401, headers: { 'x-dsh-remote-control': 'unpaired' } }))
-    : nativeFetch(input, init))
-  const route = await controlRoute(`  if (args[0] !== 'tunnel') process.exit(9)
-  console.log('https://auto-phone.trycloudflare.com\\nRegistered tunnel connection')
-  setInterval(() => {}, 1000)`, 5_000, "'{}'", false, 'public', 'auto', { tailscaleBinary: '/no-tailscale-installed' })
-  const response = await begin(route)
-  expect(response.status, await response.clone().text()).toBe(200)
-  expect(new URL((await response.json() as {url:string}).url).hostname).toBe('auto-phone.trycloudflare.com')
-})
-
-it.skipIf(process.platform === 'win32')('never exposes a private tailnet service through the auto Cloudflare fallback', async () => {
-  const route = await controlRoute(`  fs.writeFileSync(path.join(home, 'mutation'), 'yes'); process.exit(9)`,
-    5_000, "'{}'", false, 'tailnet', 'auto')
-  await writeFile(join(directory!, 'backend-state'), 'Stopped')
-  expect((await begin(route)).status).toBe(409)
-  await expect(readFile(join(directory!, 'mutation'), 'utf8')).rejects.toThrow()
 })
