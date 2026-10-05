@@ -547,6 +547,132 @@ it('opens a drawer Session row menu with a long press on the phone', () => {
   }
 })
 
+it('shows full git history details on a label hold without taking taps or row menus', () => {
+  vi.useFakeTimers()
+  const prototype = HTMLDialogElement.prototype
+  const show = Object.getOwnPropertyDescriptor(prototype, 'showModal')
+  const close = Object.getOwnPropertyDescriptor(prototype, 'close')
+  // jsdom has the element but no native top layer; browser checks cover the real modal.
+  Object.defineProperty(prototype, 'showModal', { configurable: true, value() {
+    this.setAttribute('open', '')
+    this.querySelector('button')?.focus()
+  } })
+  Object.defineProperty(prototype, 'close', { configurable: true, value() {
+    this.removeAttribute('open')
+    this.dispatchEvent(new Event('close'))
+  } })
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: true, addEventListener() {}, removeEventListener() {} }),
+  })
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<aside class="ui_layout__sidebarCol__h1">'
+    + '<div data-scroll-key="history" class="git_gitSectionBodyHistory"></div></aside>'
+  document.body.append(frame)
+  const disposers: (() => void)[] = []
+  const touch = (target: Element, type: string, x = 100, count = 1): Event => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    const points = Array.from({ length: count }, (_, identifier) => ({ identifier, clientX: x, clientY: 100 }))
+    Object.defineProperties(event, {
+      touches: { value: type === 'touchend' || type === 'touchcancel' ? [] : points },
+      changedTouches: { value: points },
+    })
+    target.dispatchEvent(event)
+    return event
+  }
+  const details = () => document.querySelector<HTMLDialogElement>('[data-remote-control-git-details]')
+  try {
+    apply(context(slots(), disposers))
+    // History can load after the phone patches are installed.
+    const row = document.createElement('div')
+    row.className = 'git_gitLogRow'
+    row.setAttribute('role', 'button')
+    row.tabIndex = 0
+    row.title = 'main origin/main dsh-remote-control-01\n作者 · 2026-10-06T12:00:00+08:00\n' + 'a'.repeat(40)
+    row.innerHTML = '<span class="git_gitLogSubject"></span><span class="git_gitLogRef">main</span>'
+      + '<span class="git_gitLogRef">origin/main</span><span class="git_gitLogRef"></span>'
+    const subject = row.firstElementChild!
+    subject.textContent = '完整提交说明 <img src=x onerror=alert(1)>'
+    const label = row.lastElementChild!
+    label.textContent = 'dsh-remote-control-01/' + 'very-long-'.repeat(20)
+    frame.querySelector('[data-scroll-key="history"]')!.append(row)
+    let clicks = 0
+    let menus = 0
+    row.addEventListener('click', () => { clicks++ })
+    row.addEventListener('contextmenu', () => { menus++ })
+    touch(label, 'touchstart')
+    vi.advanceTimersByTime(200)
+    expect(touch(label, 'touchend').defaultPrevented).toBe(false)
+    label.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(clicks).toBe(1)
+    expect(details()).toBeNull()
+    for (const type of ['move', 'cancel', 'multi', 'removed']) {
+      touch(label, 'touchstart')
+      if (type === 'move') touch(label, 'touchmove', 130)
+      if (type === 'cancel') touch(label, 'touchcancel')
+      if (type === 'multi') touch(label, 'touchmove', 100, 2)
+      if (type === 'removed') row.remove()
+      vi.advanceTimersByTime(600)
+      expect(details()).toBeNull()
+      touch(label, 'touchend')
+      frame.querySelector('[data-scroll-key="history"]')!.append(row)
+    }
+    touch(label, 'touchstart')
+    vi.advanceTimersByTime(500)
+    const dialog = details()!
+    expect(dialog).not.toBeNull()
+    expect(dialog.hasAttribute('open')).toBe(true)
+    expect(dialog.getAttribute('aria-label')).toBe('提交详情')
+    expect([...dialog.querySelectorAll('dd')].map(value => value.textContent)).toEqual([
+      subject.textContent, 'main\norigin/main\n' + label.textContent,
+      '作者 · 2026-10-06T12:00:00+08:00', 'a'.repeat(40),
+    ])
+    expect(dialog.querySelector('img')).toBeNull()
+    const menu = new Event('contextmenu', { bubbles: true, cancelable: true })
+    label.dispatchEvent(menu)
+    expect(menu.defaultPrevented).toBe(true)
+    expect(menus).toBe(0)
+    expect(document.querySelectorAll('[data-remote-control-git-details]')).toHaveLength(1)
+    expect(touch(label, 'touchend').defaultPrevented).toBe(true)
+    label.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    expect(clicks).toBe(1)
+    dialog.querySelector('button')!.click()
+    expect(details()).toBeNull()
+    expect(document.activeElement).toBe(row)
+    subject.dispatchEvent(new Event('contextmenu', { bubbles: true, cancelable: true }))
+    expect(menus).toBe(1)
+    touch(subject, 'touchstart')
+    vi.advanceTimersByTime(600)
+    expect(details()).toBeNull()
+    touch(subject, 'touchend')
+    touch(label, 'touchstart')
+    vi.advanceTimersByTime(500)
+    expect(details()).not.toBeNull()
+    for (const dispose of disposers.splice(0)) dispose()
+    expect(details()).toBeNull()
+    touch(label, 'touchstart')
+    vi.advanceTimersByTime(600)
+    expect(details()).toBeNull()
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+    if (show) Object.defineProperty(prototype, 'showModal', show)
+    else Reflect.deleteProperty(prototype, 'showModal')
+    if (close) Object.defineProperty(prototype, 'close', close)
+    else Reflect.deleteProperty(prototype, 'close')
+    vi.useRealTimers()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    })
+  }
+})
+
 // A phone frame has no room for a right track (the shell's computeColumns gives it 0), so the right
 // panel opens fullscreen over a frame that keeps `data-rightbar-collapsed`: open is the panel's own
 // `data-sidebar-right-open`, and a reverse swipe must close it all the same.

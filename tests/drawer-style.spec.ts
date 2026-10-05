@@ -267,6 +267,26 @@ it('keeps automation headings, actions and summaries on one line with long text 
   } finally { dispose(); page.remove() }
 })
 
+it('keeps git history compact and makes long detail text wrap inside the dialog', () => {
+  const host = document.createElement('style')
+  host.textContent = '.git_gitSectionBodyHistory{overflow-x:hidden}'
+    + '.git_gitLogRef{flex:0 1 auto;max-width:96px;text-overflow:ellipsis}'
+  const root = document.createElement('div')
+  root.innerHTML = '<div data-scroll-key="history" class="git_gitSectionBodyHistory">'
+    + '<span class="git_gitLogRef">dsh-remote-control-01</span></div>'
+    + '<dialog data-remote-control-git-details><h2>提交详情</h2><dl><dt>完整哈希</dt><dd>abcdef</dd></dl><button>关闭</button></dialog>'
+  document.head.append(host)
+  document.body.append(root)
+  const dispose = applyDrawerSelection()
+  try {
+    expect(getComputedStyle(root.firstElementChild!).overflowX).toBe('hidden')
+    expect(getComputedStyle(root.querySelector('.git_gitLogRef')!).maxWidth).toBe('96px')
+    expect(getComputedStyle(root.querySelector('dd')!).overflowWrap).toBe('anywhere')
+    expect(getComputedStyle(root.querySelector('dd')!).whiteSpace).toBe('pre-wrap')
+    expect(getComputedStyle(root.querySelector('dialog button')!).minHeight).toBe('44px')
+  } finally { dispose(); host.remove(); root.remove() }
+})
+
 it('stacks delegation and discussion controls with phone-sized touch targets', () => {
   const dispose = applyDrawerSelection()
   const phone = sheet()?.textContent ?? ''

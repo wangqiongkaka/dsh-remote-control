@@ -43,12 +43,29 @@ const TASKS = '[data-testid="task-manager-page"]'
 /** Harness-provider's two task modes share the proxied phone's client stylesheet. */
 const TASK_MODE = '.hp-delegate[data-hp-mode]'
 
+/** Keep Git label gestures scoped to the history list, away from worktree and stash rows. */
+export const GIT_HISTORY_REF = '[data-scroll-key="history"][class*="_gitSectionBodyHistory"] '
+  + '[class*="_gitLogRow"] [class*="_gitLogRef"]'
+
+const GIT_DETAILS = '[data-remote-control-git-details]'
+
 /**
  * The current session's fill, the resting row shape that keeps a tap a tap on a touch device,
  * the Workspace cards, and touch-sized rows at phone width.
  */
 // Standalone provider popups lack the host MenuSurface's opaque backing.
 const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg-layer-2) !important}'
+  + `${GIT_HISTORY_REF}{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}`
+  + `${GIT_DETAILS}{box-sizing:border-box;width:min(440px,calc(100vw - 32px));max-width:none;`
+  + 'max-height:calc(100dvh - 32px);overflow-y:auto;margin:auto;padding:20px;border-radius:16px;'
+  + 'border:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:14px/22px system-ui}'
+  + `${GIT_DETAILS}::backdrop{background:rgba(0,0,0,.5)}`
+  + `${GIT_DETAILS} h2{margin:0 0 16px;font-size:16px;line-height:24px}`
+  + `${GIT_DETAILS} dl{margin:0}`
+  + `${GIT_DETAILS} dt{font-size:13px;color:var(--dsw-alias-label-secondary)}`
+  + `${GIT_DETAILS} dd{margin:4px 0 16px;white-space:pre-wrap;overflow-wrap:anywhere}`
+  + `${GIT_DETAILS} button{width:100%;min-height:44px;border-radius:8px;font:inherit;`
+  + 'border:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:inherit}'
   + '[class*="_sessionRow"][aria-selected="true"]'
   + '{background:var(--dsw-specific-sidebar-nav-item-active) !important}'
   // The Agent card takes New Session's seat; a Workspace row's own New Session button stays.

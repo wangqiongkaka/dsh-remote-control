@@ -1,6 +1,6 @@
 /** Open and close the phone drawers with horizontal swipes. */
 
-import { DRAWER_SCROLL_ROOT } from './drawer-style.ts'
+import { DRAWER_SCROLL_ROOT, GIT_HISTORY_REF } from './drawer-style.ts'
 
 const MIN_SWIPE = 48
 const INTERACTIVE = 'button,a,input,textarea,select,[contenteditable], [role="dialog"], [data-composer-card]'
@@ -111,11 +111,54 @@ const HOLD_SLOP = 10
  * Long-press a drawer Session row to open its "…" menu (pin, rename, fork, archive). A touch screen
  * never shows the row's hover strip (see drawer-style), so this is the phone's way to those actions.
  * The row's trigger is the strip's first button; the lift that ends the press is kept from also
- * tapping the row open.
+ * tapping the row open. Git history labels use the same hold to reveal the full commit details;
+ * the rest of a history row keeps its own diff click and Git context menu.
  */
 export function followRowHolds(): () => void {
   let hold: { x: number; y: number; timer: ReturnType<typeof setTimeout> } | undefined
   let fired = false
+  let heldRow: HTMLElement | undefined
+  let dialog: HTMLDialogElement | undefined
+  const showDetails = (row: HTMLElement): void => {
+    if (dialog) return
+    const panel = document.createElement('dialog')
+    dialog = panel
+    panel.setAttribute('data-remote-control-git-details', '')
+    panel.setAttribute('aria-label', '提交详情')
+    panel.setAttribute('role', 'dialog')
+    const heading = document.createElement('h2')
+    heading.textContent = '提交详情'
+    const list = document.createElement('dl')
+    const [authorTime = '', hash = ''] = row.title.split('\n').slice(-2)
+    const fields = [
+      ['提交说明', row.querySelector('[class*="_gitLogSubject"]')?.textContent ?? ''],
+      ['分支／标签', [...row.querySelectorAll('[class*="_gitLogRef"]')].map(ref => ref.textContent).join('\n')],
+      ['作者／时间', authorTime],
+      ['完整哈希', hash],
+    ]
+    for (const [label, value] of fields) {
+      const term = document.createElement('dt')
+      const detail = document.createElement('dd')
+      term.textContent = label ?? ''
+      detail.textContent = value ?? ''
+      list.append(term, detail)
+    }
+    const close = document.createElement('button')
+    close.type = 'button'
+    close.textContent = '关闭'
+    close.onclick = () => { panel.close() }
+    panel.onclick = event => { if (event.target === panel) panel.close() }
+    panel.onclose = () => {
+      panel.remove()
+      if (dialog === panel) dialog = undefined
+      heldRow = undefined
+      if (!dialog && row.isConnected) row.focus({ preventScroll: true })
+    }
+    panel.append(heading, list, close)
+    document.body.append(panel)
+    row.focus({ preventScroll: true })
+    panel.showModal()
+  }
   const cancel = (): void => {
     if (hold !== undefined) clearTimeout(hold.timer)
     hold = undefined
@@ -123,43 +166,74 @@ export function followRowHolds(): () => void {
   const onStart = (event: TouchEvent): void => {
     cancel()
     fired = false
+    heldRow = undefined
     const touch = event.touches[0]
     if (event.touches.length !== 1 || touch === undefined || !(event.target instanceof Element)
       || event.target.closest('[class*="_rowActions"]')) return
     const trigger = event.target.closest(SESSION_ROW)?.querySelector<HTMLButtonElement>('[class*="_rowActions"] button')
-    if (!trigger) return
+    const row = event.target.closest(GIT_HISTORY_REF)?.closest<HTMLElement>('[class*="_gitLogRow"]')
+    if (!trigger && !row) return
     hold = { x: touch.clientX, y: touch.clientY, timer: setTimeout(() => {
       hold = undefined
+      if (!(row ?? trigger)?.isConnected) return
       fired = true
-      trigger.click()
+      if (row) {
+        heldRow = row
+        showDetails(row)
+      } else trigger?.click()
     }, HOLD) }
   }
   const onMove = (event: TouchEvent): void => {
     const touch = event.touches[0]
+    if (event.touches.length !== 1) { cancel(); return }
     if (hold === undefined || touch === undefined) return
     if (Math.hypot(touch.clientX - hold.x, touch.clientY - hold.y) > HOLD_SLOP) cancel()
   }
   const onEnd = (event: TouchEvent): void => {
     cancel()
-    if (fired) event.preventDefault()
+    if (fired) {
+      event.preventDefault()
+      if (heldRow) event.stopImmediatePropagation()
+    }
     fired = false
   }
   // Android answers a long press with the context menu as well.
   const onContextMenu = (event: Event): void => {
-    if (event.target instanceof Element && event.target.closest(SESSION_ROW)) event.preventDefault()
+    if (!(event.target instanceof Element)) return
+    const row = event.target.closest(GIT_HISTORY_REF)?.closest<HTMLElement>('[class*="_gitLogRow"]')
+    if (row) {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      cancel()
+      fired = true
+      heldRow = row
+      showDetails(row)
+    } else if (event.target.closest(SESSION_ROW)) event.preventDefault()
+  }
+  const onClick = (event: Event): void => {
+    if (event.target instanceof Node && heldRow?.contains(event.target)) {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+    heldRow = undefined
   }
   document.addEventListener('touchstart', onStart, { passive: true })
   document.addEventListener('touchmove', onMove, { passive: true })
-  document.addEventListener('touchend', onEnd, { passive: false })
+  document.addEventListener('touchend', onEnd, { capture: true, passive: false })
   document.addEventListener('touchcancel', cancel, { passive: true })
-  document.addEventListener('contextmenu', onContextMenu)
+  document.addEventListener('contextmenu', onContextMenu, true)
+  document.addEventListener('click', onClick, true)
   return () => {
     cancel()
     document.removeEventListener('touchstart', onStart)
     document.removeEventListener('touchmove', onMove)
-    document.removeEventListener('touchend', onEnd)
+    dialog?.close()
+    dialog?.remove()
+    dialog = undefined
+    document.removeEventListener('touchend', onEnd, true)
     document.removeEventListener('touchcancel', cancel)
-    document.removeEventListener('contextmenu', onContextMenu)
+    document.removeEventListener('contextmenu', onContextMenu, true)
+    document.removeEventListener('click', onClick, true)
   }
 }
 
