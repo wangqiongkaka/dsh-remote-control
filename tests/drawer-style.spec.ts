@@ -96,6 +96,27 @@ it('hides the sidebar New Session button in the drawer', () => {
   dispose()
 })
 
+it.each(['添加工作区', 'Add workspace'])('hides the drawer add-workspace entry (%s)', (label) => {
+  const root = document.createElement('div')
+  root.innerHTML = '<aside class="ui_layout__sidebarCol__h1"><header>'
+    + `<button aria-label="${label}">添加</button>`
+    + '<button aria-label="搜索会话">搜索</button><button aria-label="视图选项">视图</button></header>'
+    + '<div class="ui_workspace__projectRow__h1"><span class="ui_workspace__folder__h1">文件夹</span>'
+    + '<button aria-label="新建会话">新建会话</button></div></aside>'
+    + `<button aria-label="${label}">其他页面</button>`
+  document.body.append(root)
+  const dispose = applyDrawerSelection()
+  const add = root.querySelector('aside header button')!
+  try {
+    expect(getComputedStyle(add).display).toBe('none')
+    for (const control of root.querySelectorAll('button:not(aside header button:first-child),span')) {
+      expect(getComputedStyle(control).display).not.toBe('none')
+    }
+    dispose()
+    expect(getComputedStyle(add).display).not.toBe('none')
+  } finally { dispose(); root.remove() }
+})
+
 it('keeps project actions visible on touch so a session can be created', () => {
   const dispose = applyDrawerSelection()
   const css = sheet()?.textContent ?? ''
