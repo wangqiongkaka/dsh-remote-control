@@ -45,6 +45,20 @@ function isTextField(target: EventTarget | null): boolean {
     && (target.isContentEditable || target.matches('input, textarea, [contenteditable="true"]'))
 }
 
+/** Inline tool popups, plus native model cards portaled through their trigger's aria-controls. */
+function composerMenuContains(card: HTMLElement, target: Element): boolean {
+  if (card.contains(target) && target.closest('button[aria-haspopup]:not([class*="_add"]),'
+    + '[data-slot="conversation.input.permission"] button,[data-slot="conversation.input.plan"] button,'
+    + '[role="menu"],[role="dialog"],.hp-panel')) return true
+  // ponytail: native permissions expose no owner ID; use their open chevron until aria-controls is available.
+  if (card.querySelector('[data-slot="conversation.input.permission"] [class*="_chevronOpen"]') !== null
+    && target.closest('[data-menu-material][role="menu"][class*="_list"]') !== null) return true
+  return [...card.querySelectorAll('[aria-haspopup][aria-controls]')].some(trigger => {
+    const id = trigger.getAttribute('aria-controls')
+    return id !== null && document.getElementById(id)?.contains(target) === true
+  })
+}
+
 /**
  * Follow the phone keyboard on the root element, shrinking the shell to the visual viewport.
  * @returns a disposer that removes every write this made.
@@ -67,6 +81,7 @@ export function followKeyboard(): () => void {
   let blockEntryFocus = false
   let commandEditor: HTMLElement | null = null
   let commandInputMode: string | null = null
+  let menuFocus: { card: HTMLElement; editor: HTMLElement; field: HTMLElement } | undefined
   const restoreInputMode = (): void => {
     if (commandEditor === null) return
     if (commandInputMode === null) commandEditor.removeAttribute('inputmode')
@@ -85,6 +100,7 @@ export function followKeyboard(): () => void {
       if (body !== null) sessionObserver.observe(body, { attributes: true, attributeFilter: ['data-conversation-session'] })
     }
     sessionId = id
+    menuFocus = undefined
     blockEntryFocus = id !== null
     const active = document.activeElement
     if (blurFocused && active instanceof HTMLElement && active.matches('[data-composer-input]')
@@ -139,6 +155,20 @@ export function followKeyboard(): () => void {
     syncPoll()
   }
   const onFocusIn = (event: FocusEvent): void => {
+    if (menuFocus && (!menuFocus.editor.isConnected || menuFocus.editor.getAttribute('contenteditable') !== 'true')) menuFocus = undefined
+    if (menuFocus && shrunk && event.target instanceof HTMLElement
+      && !isTextField(event.target) && composerMenuContains(menuFocus.card, event.target)) {
+      // Native model menus focus buttons on open, drill and selection. Hand focus back in the
+      // same event; a menu search field is allowed to take over and keeps its own keyboard.
+      const field = menuFocus.field.isConnected ? menuFocus.field : menuFocus.editor
+      event.stopImmediatePropagation()
+      field.focus({ preventScroll: true })
+      return
+    }
+    if (menuFocus && event.target instanceof HTMLElement && isTextField(event.target)) {
+      if (composerMenuContains(menuFocus.card, event.target)) menuFocus.field = event.target
+      else if (event.target !== menuFocus.editor) menuFocus = undefined
+    }
     if (!isTextField(event.target)) return
     watchSession(false)
     if (blockEntryFocus && event.target instanceof HTMLElement
@@ -149,7 +179,12 @@ export function followKeyboard(): () => void {
     focused = true
     apply()
   }
-  const onFocusOut = (): void => {
+  const onFocusOut = (event: FocusEvent): void => {
+    if (menuFocus && event.target instanceof Element && composerMenuContains(menuFocus.card, event.target)
+      && (event.relatedTarget === menuFocus.editor || event.relatedTarget === menuFocus.field)) {
+      // The native model card closes on blur outside its subtree; our focus return is not a dismissal.
+      event.stopImmediatePropagation()
+    }
     focused = false
     // Keep watching while the shell is still shrunk: with no events coming, the poll is the only
     // thing that can notice the keyboard closing.
@@ -181,6 +216,7 @@ export function followKeyboard(): () => void {
     if (editor !== undefined && editor !== null) dismissCommitted(editor)
   }
   const onSubmitKey = (event: KeyboardEvent): void => {
+    if (event.key === 'Tab') menuFocus = undefined
     if (event.key === 'Tab' || (event.target instanceof Element
       && event.target.closest('[data-composer-card]') !== null)) blockEntryFocus = false
     if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.getModifierState('AltGraph')
@@ -192,6 +228,12 @@ export function followKeyboard(): () => void {
   const onPointerDown = (event: PointerEvent): void => {
     if (!(event.target instanceof Element)) return
     watchSession(false)
+    const active = document.activeElement
+    const card = active instanceof HTMLElement && active.matches('[data-composer-input][contenteditable="true"]')
+      ? active.closest<HTMLElement>('[data-composer-card]') : null
+    if (shrunk && card && active instanceof HTMLElement && composerMenuContains(card, event.target)) {
+      menuFocus = { card, editor: active, field: active }
+    } else if (menuFocus && (!shrunk || !composerMenuContains(menuFocus.card, event.target))) menuFocus = undefined
     const launcher = event.target.closest('button[aria-haspopup="listbox"][class*="_add"]')
     const editor = launcher instanceof HTMLButtonElement && !launcher.disabled
       ? launcher.closest('[data-composer-card]')?.querySelector<HTMLElement>('[data-composer-input]')
@@ -221,15 +263,21 @@ export function followKeyboard(): () => void {
       blockEntryFocus = false
     }
   }
+  const onMenuMouseDown = (event: MouseEvent): void => {
+    if (menuFocus && shrunk && document.activeElement === menuFocus.field
+      && event.target instanceof Element && composerMenuContains(menuFocus.card, event.target)
+      && event.target.closest('input,textarea,select,[contenteditable]') === null) event.preventDefault()
+  }
   watchSession(true)
   apply()
   viewport.addEventListener('resize', apply)
   viewport.addEventListener('scroll', apply)
   window.addEventListener('resize', apply)
   window.addEventListener('orientationchange', apply)
-  document.addEventListener('focusin', onFocusIn)
-  document.addEventListener('focusout', onFocusOut)
+  document.addEventListener('focusin', onFocusIn, true)
+  document.addEventListener('focusout', onFocusOut, true)
   document.addEventListener('pointerdown', onPointerDown, true)
+  document.addEventListener('mousedown', onMenuMouseDown, true)
   document.addEventListener('click', onSubmitClick, true)
   document.addEventListener('keydown', onSubmitKey, true)
   return () => {
@@ -239,9 +287,11 @@ export function followKeyboard(): () => void {
     viewport.removeEventListener('scroll', apply)
     window.removeEventListener('resize', apply)
     window.removeEventListener('orientationchange', apply)
-    document.removeEventListener('focusin', onFocusIn)
-    document.removeEventListener('focusout', onFocusOut)
+    menuFocus = undefined
+    document.removeEventListener('focusin', onFocusIn, true)
+    document.removeEventListener('focusout', onFocusOut, true)
     document.removeEventListener('pointerdown', onPointerDown, true)
+    document.removeEventListener('mousedown', onMenuMouseDown, true)
     document.removeEventListener('click', onSubmitClick, true)
     document.removeEventListener('keydown', onSubmitKey, true)
     sessionObserver.disconnect()

@@ -156,6 +156,173 @@ it('keeps an already-open keyboard and editor focus when the command launcher is
   }
 })
 
+it.each(['额度', '模型', '权限', 'Harness', '推理强度'])('keeps the open keyboard through %s menu clicks and picks', (label) => {
+  const viewport = visualViewport({ layout: 800, height: 800 })
+  const dispose = followKeyboard()
+  const { card, editor } = composer()
+  const anchor = document.createElement('div')
+  anchor.innerHTML = `<button aria-haspopup="menu"><span>${label}</span></button><div role="menu"><button role="menuitemradio">选择</button></div>`
+  card.append(anchor)
+  const trigger = anchor.querySelector('button')!
+  const pick = anchor.querySelector<HTMLButtonElement>('[role="menuitemradio"]')!
+  const clicked = vi.fn()
+  trigger.onclick = clicked
+  pick.onclick = clicked
+  const blur = vi.fn()
+  editor.addEventListener('blur', blur)
+  // Model picks and quota triggers use click handlers; emulate the browser's separate focus default.
+  const press = (target: HTMLElement): MouseEvent => {
+    target.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true }))
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    target.dispatchEvent(down)
+    if (!down.defaultPrevented) target.closest<HTMLButtonElement>('button')?.focus()
+    target.click()
+    return down
+  }
+  try {
+    editor.focus()
+    viewport.resize({ height: 480 })
+    expect(press(trigger.firstElementChild as HTMLElement).defaultPrevented).toBe(true)
+    expect(press(pick).defaultPrevented).toBe(true)
+    expect(clicked).toHaveBeenCalledTimes(2)
+    expect(document.activeElement).toBe(editor)
+    expect(editor.textContent).toBe('草稿')
+    expect(editor.hasAttribute('inputmode')).toBe(false)
+    expect(blur).not.toHaveBeenCalled()
+    // Inspecting plain quota panel content also keeps focus, without eating its events.
+    const panel = document.createElement('div')
+    panel.className = 'hp-panel'
+    panel.textContent = '剩余额度 95%'
+    anchor.append(panel)
+    expect(press(panel).defaultPrevented).toBe(true)
+    // A deliberate tap elsewhere keeps its normal dismissal behavior.
+    const outside = document.createElement('button')
+    card.append(outside)
+    expect(press(outside).defaultPrevented).toBe(false)
+    expect(document.activeElement).toBe(outside)
+  } finally { dispose(); card.remove() }
+})
+
+it('preserves typing through native model menu focus, while allowing model search and keyboard navigation', async () => {
+  const viewport = visualViewport({ layout: 800, height: 800 })
+  const dispose = followKeyboard()
+  const { card, editor } = composer()
+  const trigger = document.createElement('button')
+  trigger.setAttribute('aria-haspopup', 'menu')
+  trigger.setAttribute('aria-controls', 'native-model-menu')
+  card.append(trigger)
+  const menu = document.createElement('div')
+  menu.id = 'native-model-menu'
+  menu.setAttribute('role', 'menu')
+  menu.innerHTML = '<button role="menuitem">模型</button><input type="search" aria-label="搜索模型">'
+  document.body.append(menu)
+  const item = menu.querySelector('button')!
+  const search = menu.querySelector('input')!
+  const closed = vi.fn()
+  trigger.addEventListener('focusout', closed)
+  menu.addEventListener('focusout', event => {
+    if (event.relatedTarget !== trigger && !menu.contains(event.relatedTarget as Node)) closed()
+  })
+  try {
+    editor.focus()
+    viewport.resize({ height: 480 })
+    trigger.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true }))
+    trigger.focus() // The native model picker explicitly focuses its trigger on open.
+    expect(document.activeElement).toBe(editor)
+    expect(closed).not.toHaveBeenCalled()
+    const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    item.dispatchEvent(press)
+    expect(press.defaultPrevented).toBe(true)
+    item.focus() // A drilled pane focuses the checked option.
+    expect(document.activeElement).toBe(editor)
+    expect(closed).not.toHaveBeenCalled()
+    const searchPress = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    search.dispatchEvent(searchPress)
+    expect(searchPress.defaultPrevented).toBe(false)
+    search.focus()
+    expect(document.activeElement).toBe(search)
+    trigger.focus() // Selection hands focus to the trigger; keep the search keyboard open.
+    expect(document.activeElement).toBe(search)
+    expect(closed).not.toHaveBeenCalled()
+    menu.remove()
+    await Promise.resolve()
+    trigger.focus() // Returning from an unmounted search resumes the draft.
+    expect(document.activeElement).toBe(editor)
+    editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    trigger.focus()
+    expect(document.activeElement).toBe(trigger)
+  } finally { dispose(); menu.remove(); card.remove() }
+})
+
+it('retains focus through the native permission portal without claiming unrelated menus', () => {
+  const viewport = visualViewport({ layout: 800, height: 800 })
+  const dispose = followKeyboard()
+  const { card, editor } = composer()
+  const slot = document.createElement('div')
+  slot.setAttribute('data-slot', 'conversation.input.permission')
+  slot.innerHTML = '<span class="primitives_root"><button><span class="permission_chevron">权限</span></button></span>'
+  card.append(slot)
+  const trigger = slot.querySelector('button')!
+  const chevron = slot.querySelector('span.permission_chevron')!
+  const menu = document.createElement('div')
+  menu.className = 'primitives_list primitives_portal'
+  menu.setAttribute('role', 'menu')
+  menu.setAttribute('data-menu-material', 'translucent')
+  menu.innerHTML = '<button role="menuitem">自动批准</button>'
+  document.body.append(menu)
+  const pick = menu.querySelector('button')!
+  const press = (target: HTMLElement) => {
+    target.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true }))
+    const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    target.dispatchEvent(event)
+    return event
+  }
+  try {
+    editor.focus()
+    viewport.resize({ height: 480 })
+    expect(press(trigger).defaultPrevented).toBe(true)
+    chevron.className = 'permission_chevron permission_chevronOpen'
+    expect(press(pick).defaultPrevented).toBe(true)
+    pick.focus()
+    expect(document.activeElement).toBe(editor)
+    chevron.className = 'permission_chevron'
+    // A shared MenuSurface after the permission picker closes is no longer ours.
+    expect(press(pick).defaultPrevented).toBe(false)
+    pick.focus()
+    expect(document.activeElement).toBe(pick)
+  } finally { dispose(); menu.remove(); card.remove() }
+})
+
+it('leaves menu clicks alone without an open composer keyboard and restores them on disposal', () => {
+  const viewport = visualViewport({ layout: 800, height: 800 })
+  const dispose = followKeyboard()
+  const { card, editor } = composer()
+  const trigger = document.createElement('button')
+  trigger.setAttribute('aria-haspopup', 'menu')
+  card.append(trigger)
+  const down = () => {
+    trigger.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true }))
+    const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true })
+    trigger.dispatchEvent(event)
+    return event
+  }
+  try {
+    expect(down().defaultPrevented).toBe(false)
+    expect(document.activeElement).not.toBe(editor)
+    editor.focus()
+    expect(down().defaultPrevented).toBe(false)
+    viewport.resize({ height: 480 })
+    const other = document.createElement('textarea')
+    card.append(other)
+    other.focus()
+    expect(down().defaultPrevented).toBe(false)
+    editor.focus()
+    expect(down().defaultPrevented).toBe(true)
+    dispose()
+    expect(down().defaultPrevented).toBe(false)
+  } finally { dispose(); card.remove() }
+})
+
 it('picks a file in one menu press without reopening the suppressed keyboard', () => {
   visualViewport({ layout: 800, height: 800 })
   const dispose = followKeyboard()

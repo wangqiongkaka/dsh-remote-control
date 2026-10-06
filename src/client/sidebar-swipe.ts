@@ -241,11 +241,12 @@ export function followRowHolds(): () => void {
 export function followSidebarSwipes(openLeft: () => void): () => void {
   let start: {
     id: number; x: number; y: number; frame: Element; area: 'center' | 'left' | 'right'
-    room: { back: boolean; forward: boolean }
+    room: { back: boolean; forward: boolean }; at: number; moving: boolean
   } | undefined
+  const selecting = (): boolean => document.getSelection()?.isCollapsed === false
   const onStart = (event: TouchEvent): void => {
     start = undefined
-    if (event.touches.length !== 1 || !(event.target instanceof Element)) return
+    if (selecting() || event.touches.length !== 1 || !(event.target instanceof Element)) return
     const target = event.target
     const center = target.closest('[class*="_centerCol"]')
     const left = target.closest('[class*="_sidebarCol"]')
@@ -260,12 +261,22 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     const touch = event.touches[0]
     if (touch === undefined) return
     start = { id: touch.identifier, x: touch.clientX, y: touch.clientY, frame,
-      area: center ? 'center' : left ? 'left' : 'right', room: scrollRoom(target, area) }
+      area: center ? 'center' : left ? 'left' : 'right', room: scrollRoom(target, area), at: Date.now(), moving: false }
+  }
+  const onMove = (event: TouchEvent): void => {
+    if (selecting() || event.touches.length !== 1) { cancel(); return }
+    const touch = event.touches[0]
+    if (!start || start.moving || !touch || touch.identifier !== start.id) return
+    if (Math.hypot(touch.clientX - start.x, touch.clientY - start.y) <= HOLD_SLOP) return
+    // A stationary hold belongs to native text selection, even before its range is announced.
+    if (Date.now() - start.at >= HOLD) cancel()
+    else start.moving = true
   }
   const onEnd = (event: TouchEvent): void => {
     const from = start
     start = undefined
-    if (from === undefined || event.touches.length !== 0 || event.changedTouches.length !== 1) return
+    if (from === undefined || selecting() || (!from.moving && Date.now() - from.at >= HOLD)
+      || event.touches.length !== 0 || event.changedTouches.length !== 1) return
     const touch = event.changedTouches[0]
     if (touch === undefined) return
     if (touch.identifier !== from.id || !from.frame.isConnected) return
@@ -287,13 +298,20 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     }
   }
   const cancel = (): void => { start = undefined }
+  const onSelection = (): void => { if (selecting()) cancel() }
   document.addEventListener('touchstart', onStart, { passive: true })
+  document.addEventListener('touchmove', onMove, { passive: true })
   document.addEventListener('touchend', onEnd, { passive: false })
   document.addEventListener('touchcancel', cancel, { passive: true })
+  document.addEventListener('selectionchange', onSelection)
+  document.addEventListener('contextmenu', cancel, true)
   return () => {
     document.removeEventListener('touchstart', onStart)
+    document.removeEventListener('touchmove', onMove)
     document.removeEventListener('touchend', onEnd)
     document.removeEventListener('touchcancel', cancel)
+    document.removeEventListener('selectionchange', onSelection)
+    document.removeEventListener('contextmenu', cancel, true)
   }
 }
 

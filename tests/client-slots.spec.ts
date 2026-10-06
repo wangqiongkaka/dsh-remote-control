@@ -297,6 +297,105 @@ it('opens the left and right sidebars with one-finger swipes across the phone co
   }
 })
 
+it.each([[20, 140], [300, 180]])('keeps text selection drags out of sidebar swipes (%i → %i)', (from, to) => {
+  vi.useFakeTimers()
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.setAttribute('data-sidebar-collapsed', '')
+  frame.setAttribute('data-rightbar-collapsed', '')
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"></div>'
+    + '<main class="ui_layout__centerCol__h1"><button data-sidebar-right-expand>右侧栏</button>'
+    + '<div data-conversation-scroll>复制这段会话内容</div></main>'
+  document.body.append(frame)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const content = frame.querySelector('[data-conversation-scroll]')!
+  const selection = window.getSelection()!
+  const select = (): void => {
+    const range = document.createRange()
+    range.selectNodeContents(content)
+    selection.removeAllRanges()
+    selection.addRange(range)
+  }
+  const touch = (type: string, x: number): Event => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    const point = { identifier: 0, clientX: x, clientY: 100 }
+    Object.defineProperties(event, {
+      touches: { value: type === 'touchend' ? [] : [point] },
+      changedTouches: { value: [point] },
+    })
+    content.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+    return event
+  }
+  const toggle = vi.fn()
+  frame.querySelector('button')!.addEventListener('click', toggle)
+  const disposers: (() => void)[] = []
+  const ctx = context(slots(), disposers)
+  ctx.layout.toggleSidebar = toggle
+  try {
+    apply(ctx)
+    // Drag an existing selection, even if the browser clears it before the finger lifts.
+    select()
+    touch('touchstart', from!)
+    selection.removeAllRanges()
+    touch('touchend', to!)
+    expect(toggle).not.toHaveBeenCalled()
+
+    // A new selection may become visible only at the end of the touch.
+    touch('touchstart', from!)
+    select()
+    touch('touchend', to!)
+    expect(toggle).not.toHaveBeenCalled()
+    expect(selection.toString()).toBe('复制这段会话内容')
+    selection.removeAllRanges()
+
+    // Copy clears the range, but that same touch still belongs to text selection.
+    touch('touchstart', from!)
+    select()
+    document.dispatchEvent(new Event('selectionchange'))
+    selection.removeAllRanges()
+    touch('touchend', to!)
+    expect(toggle).not.toHaveBeenCalled()
+
+    touch('touchstart', from!)
+    content.dispatchEvent(new Event('contextmenu', { bubbles: true }))
+    touch('touchend', to!)
+    expect(toggle).not.toHaveBeenCalled()
+
+    // Native long-press selection may not announce its range until after touchend.
+    touch('touchstart', from!)
+    vi.advanceTimersByTime(600)
+    touch('touchmove', to!)
+    touch('touchend', to!)
+    expect(toggle).not.toHaveBeenCalled()
+
+    // A collapsed caret and a slow swipe that starts moving promptly still allow navigation.
+    select()
+    selection.collapseToStart()
+    touch('touchstart', from!)
+    touch('touchmove', from! + Math.sign(to! - from!) * 20)
+    vi.advanceTimersByTime(600)
+    touch('touchend', to!)
+    expect(toggle).toHaveBeenCalledTimes(1)
+  } finally {
+    for (const dispose of disposers) dispose()
+    selection.removeAllRanges()
+    proxy.remove()
+    frame.remove()
+    vi.useRealTimers()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})
+
 it('closes an open phone sidebar with a reverse swipe inside that sidebar', () => {
   const proxy = document.createElement('style')
   proxy.setAttribute('data-dsh-remote-control', '')
