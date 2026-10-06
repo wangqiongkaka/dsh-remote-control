@@ -85,6 +85,9 @@ export function followKeyboard(): () => void {
   let drag: { id: number; x: number; y: number; target: Element; boundary: Element; vertical?: boolean } | undefined
   const restoreInputMode = (): void => {
     if (commandEditor === null) return
+    // WebKit can raise the keyboard at the mode change, before an outside tap blurs the editor.
+    // Release suppressed focus first; a direct editor tap can then focus it normally again.
+    if (document.activeElement === commandEditor) commandEditor.blur()
     if (commandInputMode === null) commandEditor.removeAttribute('inputmode')
     else commandEditor.setAttribute('inputmode', commandInputMode)
     commandEditor = null
@@ -253,9 +256,6 @@ export function followKeyboard(): () => void {
         editor.blur()
       }
     } else if (event.target.closest('[data-trigger-menu]') === null) {
-      const previous = commandEditor
-      // A focused editor needs a new focus transition for a direct tap to reopen the keyboard.
-      if (event.target.closest('[data-composer-input]') === previous) previous?.blur()
       restoreInputMode()
     }
     // A menu pick keeps the launcher's inputmode until the editor is tapped: restoring it here

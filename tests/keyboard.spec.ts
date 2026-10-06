@@ -130,6 +130,54 @@ it('opens the command launcher without raising the keyboard and restores typing 
   }
 })
 
+it.each([null, 'text'])('closes an outside-tapped launcher before restoring inputmode %s without flashing the keyboard', (inputmode) => {
+  visualViewport({ layout: 800, height: 800 })
+  const dispose = followKeyboard()
+  const { card, editor, tool } = composer()
+  if (inputmode !== null) editor.setAttribute('inputmode', inputmode)
+  tool.setAttribute('aria-haspopup', 'listbox')
+  tool.addEventListener('click', () => { editor.focus() })
+  const menu = document.createElement('div')
+  menu.setAttribute('data-trigger-menu', '')
+  card.append(menu)
+  const outside = document.createElement('div')
+  outside.textContent = '对话内容'
+  document.body.append(outside)
+  const dismiss = (event: Event): void => {
+    if (event.target === outside) menu.remove()
+  }
+  document.addEventListener('pointerdown', dismiss, true)
+  const clicked = vi.fn()
+  outside.addEventListener('click', clicked)
+  try {
+    tool.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    tool.click()
+    expect(editor.getAttribute('inputmode')).toBe('none')
+    expect(document.activeElement).toBe(editor)
+    const blur = vi.spyOn(editor, 'blur')
+    const restore = inputmode === null ? vi.spyOn(editor, 'removeAttribute') : vi.spyOn(editor, 'setAttribute')
+    const press = new Event('pointerdown', { bubbles: true, cancelable: true })
+    outside.dispatchEvent(press)
+    outside.click()
+    // WebKit can open the keyboard at the attribute change, before pointer defaults blur it.
+    expect(blur).toHaveBeenCalledOnce()
+    expect(restore).toHaveBeenCalledOnce()
+    expect(blur.mock.invocationCallOrder[0]).toBeLessThan(restore.mock.invocationCallOrder[0]!)
+    expect(document.activeElement).not.toBe(editor)
+    expect(editor.getAttribute('inputmode')).toBe(inputmode)
+    expect(menu.isConnected).toBe(false)
+    expect(press.defaultPrevented).toBe(false)
+    expect(clicked).toHaveBeenCalledOnce()
+    expect(editor.textContent).toBe('草稿')
+    editor.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    editor.focus()
+    expect(document.activeElement).toBe(editor)
+  } finally {
+    document.removeEventListener('pointerdown', dismiss, true)
+    dispose(); card.remove(); outside.remove()
+  }
+})
+
 it('keeps an already-open keyboard and editor focus when the command launcher is tapped', () => {
   const viewport = visualViewport({ layout: 800, height: 800 })
   const dispose = followKeyboard()
