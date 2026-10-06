@@ -306,3 +306,27 @@ it.each(['directory', 'file'] as const)('hides all dot entries by default and to
   }
   expect(mount.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false)
 })
+
+it.each(['directory', 'file'] as const)('shows the full wrapping path and keeps editing separate from navigation (%s)', async (mode) => {
+  const path = '/Users/wangqiongkaka/AIProjetcs/项目  文件夹/very-long-directory-name/another-long-directory-name'
+  fetcher.mockResolvedValueOnce(Response.json({ ...listing, path }))
+  if (mode === 'directory') await directoryFlow()
+  else await openRemote()
+  const display = mount.querySelector<HTMLElement>('[role="note"][aria-label="files.path"]')!
+  expect(display).not.toBeNull()
+  expect(display.textContent).toBe(path)
+  expect(getComputedStyle(display).whiteSpace).toBe('pre-wrap')
+  expect(getComputedStyle(display).overflowWrap).toBe('anywhere')
+  const address = mount.querySelector<HTMLInputElement>('input[aria-label="files.path"]')!
+  const edited = path + '/child'
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(address, edited)
+    address.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(display.textContent).toBe(edited)
+  expect(fetcher).toHaveBeenCalledOnce()
+  fetcher.mockResolvedValueOnce(Response.json({ ...listing, path: edited }))
+  await act(async () => { mount.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+  expect(new URL(String(fetcher.mock.lastCall?.[0]), 'http://localhost').searchParams.get('path')).toBe(edited)
+  expect(display.textContent).toBe(edited)
+})

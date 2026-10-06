@@ -165,6 +165,8 @@ function FileBrowser({ path: initialPath = '', pickFile, directory, t }: {
   }, [path, query, offset, retry, showHidden])
   const navigate = (target: string): void => { setPath(target); setAddress(target); setQuery(''); setOffset(0) }
   return <fieldset disabled={directory?.busy} style={{ display: 'grid', gap: 12, minWidth: 0, margin: 0, padding: 0, border: 0 }}>
+    {address && <div role="note" aria-label={t('files.path')}
+      style={{ minWidth: 0, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', userSelect: 'text' }}>{address}</div>}
     <form onSubmit={event => { event.preventDefault(); navigate(address) }} style={{ display: 'flex', gap: 8 }}>
       <Input aria-label={t('files.path')} value={address} onChange={event => { setAddress(event.target.value) }} style={{ minWidth: 0, flex: 1 }} />
       <Button type="submit" variant="outline">{t('files.go')}</Button>
