@@ -94,7 +94,10 @@ it('wires the file-source picker and renamed copy without a separate command', (
     apply(ctx)
     expect(register).not.toHaveBeenCalled()
     expect(dictionaries).toHaveBeenCalledWith('remote-control', expect.objectContaining({
-      zh: expect.objectContaining({ 'files.title': '远端文件', 'files.local': '手机文件', 'files.sourceTitle': '文件' }),
+      zh: expect.objectContaining({
+        'files.title': '远端文件', 'files.local': '手机文件', 'files.sourceTitle': '文件',
+        'files.sourceDescription': '上传手机文件，或引用远端路径。',
+      }),
       en: expect.objectContaining({ 'files.title': 'Remote files' }),
     }))
     expect(core.entries('shell.overlay').map(entry => entry.options.id)).toContain('remote-control.files')

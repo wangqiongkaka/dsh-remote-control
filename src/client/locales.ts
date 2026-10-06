@@ -5,7 +5,7 @@ export const NS = 'remote-control'
 /** Chinese UI copy for pairing and tunnel control. */
 export const zh = {
   'files.sourceTitle': '文件',
-  'files.sourceDescription': '选择手机文件作为附件，或添加远端文件的路径引用。',
+  'files.sourceDescription': '上传手机文件，或引用远端路径。',
   'files.local': '手机文件',
   'files.title': '远端文件',
   'files.description': '选择远端文件，将路径添加到当前消息。',
