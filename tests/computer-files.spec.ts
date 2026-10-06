@@ -56,19 +56,24 @@ it('filters before paging so files beyond the first page remain selectable', asy
   expect(filtered.entries.map(entry => entry.name)).toEqual(['file-204'])
 })
 
-it('hides dot directories before paging, including directory symlinks, without blocking direct navigation', async () => {
+it('hides dot files and directories before paging, including symlinks, without blocking direct navigation', async () => {
   directory = await mkdtemp(join(tmpdir(), 'computer-files-'))
   await Promise.all(Array.from({ length: 201 }, (_, index) => mkdir(join(directory!, `.folder-${index}`))))
   await mkdir(join(directory, 'project'))
   await writeFile(join(directory, '.notes'), '')
   if (process.platform !== 'win32') await symlink(join(directory, 'project'), join(directory, '.linked'))
-  const hidden = await (await computerFiles(request(directory, { showHiddenDirectories: 'false' }))).json() as ComputerDirectory
-  expect(hidden.entries.map(entry => entry.name)).toEqual(['project', '.notes'])
+  const hidden = await (await computerFiles(request(directory, { showHidden: 'false' }))).json() as ComputerDirectory
+  expect(hidden.entries.map(entry => entry.name)).toEqual(['project'])
   expect(hidden.next).toBeNull()
-  const shown = await (await computerFiles(request(directory, { showHiddenDirectories: 'true' }))).json() as ComputerDirectory
+  const shown = await (await computerFiles(request(directory, { showHidden: 'true' }))).json() as ComputerDirectory
   expect(shown.entries).toHaveLength(200)
   expect(shown.next).toBe(200)
-  const inside = await (await computerFiles(request(join(directory, '.folder-0'), { showHiddenDirectories: 'false' }))).json() as ComputerDirectory
+  const second = await (await computerFiles(request(directory, { showHidden: 'true', offset: '200' }))).json() as ComputerDirectory
+  expect(second.entries.some(entry => entry.name === '.notes')).toBe(true)
+  const filtered = await (await computerFiles(request(directory, { showHidden: 'false', query: '.notes' }))).json() as ComputerDirectory
+  expect(filtered.entries).toEqual([])
+  expect(filtered.next).toBeNull()
+  const inside = await (await computerFiles(request(join(directory, '.folder-0'), { showHidden: 'false' }))).json() as ComputerDirectory
   expect(inside.path).toBe(join(directory, '.folder-0'))
   expect(inside.entries).toEqual([])
 })

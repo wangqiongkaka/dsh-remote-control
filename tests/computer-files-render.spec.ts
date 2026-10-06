@@ -264,34 +264,45 @@ it('blocks directory actions during workspace adoption without relaunching reads
   expect(fetcher).toHaveBeenCalledTimes(reads)
 })
 
-it('hides dot directories by default and toggles them without losing the directory or keeping a stale page', async () => {
+it.each(['directory', 'file'] as const)('hides all dot entries by default and toggles them without losing the directory or keeping a stale page (%s)', async (mode) => {
   const hidden = { name: '.cache', path: '/workspace/.cache', directory: true, mention: '@/workspace/.cache' }
+  const hiddenFile = { name: '.env', path: '/workspace/.env', directory: false, mention: '@/workspace/.env' }
   fetcher.mockImplementation(async url => {
     const params = new URL(String(url), 'http://localhost').searchParams
     return Response.json({ ...listing, next: 200,
-      entries: [...listing.entries, ...params.get('showHiddenDirectories') === 'true' ? [hidden] : []] })
+      entries: [...listing.entries, ...(params.get('showHidden') === 'true' ? [hidden, hiddenFile] : [])] })
   })
-  const owner = await directoryFlow()
+  const owner = mode === 'directory' ? await directoryFlow() : undefined
+  if (mode === 'file') await openRemote()
   const toggle = mount.querySelector<HTMLInputElement>('input[type="checkbox"]')!
   expect(toggle).not.toBeNull()
   expect(toggle.checked).toBe(false)
-  expect(String(fetcher.mock.lastCall?.[0])).toContain('showHiddenDirectories=false')
+  expect(toggle.parentElement?.textContent).toBe('files.showHidden')
+  expect(String(fetcher.mock.lastCall?.[0])).toContain('showHidden=false')
   expect(button('▸ .cache/')).toBeUndefined()
+  expect(button('.env')).toBeUndefined()
   await click('files.next')
   expect(String(fetcher.mock.lastCall?.[0])).toContain('offset=200')
   await act(async () => { toggle.click() })
   expect(toggle.checked).toBe(true)
-  expect(String(fetcher.mock.lastCall?.[0])).toContain('showHiddenDirectories=true')
+  expect(String(fetcher.mock.lastCall?.[0])).toContain('showHidden=true')
   expect(String(fetcher.mock.lastCall?.[0])).toContain('offset=0')
   expect(button('▸ .cache/')).toBeDefined()
+  expect(button('.env').disabled).toBe(mode === 'directory')
   await click('▸ folder/')
   expect(String(fetcher.mock.lastCall?.[0])).toContain('path=%2Fworkspace%2Ffolder')
-  expect(String(fetcher.mock.lastCall?.[0])).toContain('showHiddenDirectories=true')
+  expect(String(fetcher.mock.lastCall?.[0])).toContain('showHidden=true')
   await act(async () => { toggle.click() })
   expect(String(fetcher.mock.lastCall?.[0])).toContain('path=%2Fworkspace%2Ffolder')
   expect(button('▸ .cache/')).toBeUndefined()
-  expect(owner.onPicked).not.toHaveBeenCalled()
-  await directoryFlow({ ...owner, open: false })
-  await directoryFlow(owner)
+  expect(button('.env')).toBeUndefined()
+  if (owner) {
+    expect(owner.onPicked).not.toHaveBeenCalled()
+    await directoryFlow({ ...owner, open: false })
+    await directoryFlow(owner)
+  } else {
+    await click('close')
+    await openRemote()
+  }
   expect(mount.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false)
 })
