@@ -75,22 +75,28 @@ it('activates the mobile sidebar control in the single leading slot', () => {
   }
 })
 
-it('wires the separate computer-file command and overlay through plugin activation', () => {
+it('wires the file-source picker and renamed copy without a separate command', () => {
   const core = slots()
   const disposers: (() => void)[] = []
   const ctx = context(core, disposers)
   const register = vi.fn(() => () => {})
+  const dictionaries = vi.fn(() => () => {})
   const services: Record<string, unknown> = {
-    commandUi: { register, candidates: async () => [] }, sessions: {}, conversation: {},
+    commandUi: { register }, sessions: {},
+    conversation: { input: { pickFiles: () => {}, canPickFiles: () => true } },
   }
   Object.assign(ctx, {
     inject: (_names: string[], run: (scope: Context) => void) => { run(ctx) },
     get: (name: string) => services[name],
   })
-  Object.assign(ctx.locale, { bind: () => (key: string) => key })
+  Object.assign(ctx.locale, { bind: () => (key: string) => key, register: dictionaries })
   try {
     apply(ctx)
-    expect(register).toHaveBeenCalledWith(expect.objectContaining({ name: 'computer-file', ui: { kind: 'action', run: expect.any(Function) } }))
+    expect(register).not.toHaveBeenCalled()
+    expect(dictionaries).toHaveBeenCalledWith('remote-control', expect.objectContaining({
+      zh: expect.objectContaining({ 'files.title': '远端文件', 'files.local': '手机文件', 'files.sourceTitle': '文件' }),
+      en: expect.objectContaining({ 'files.title': 'Remote files' }),
+    }))
     expect(core.entries('shell.overlay').map(entry => entry.options.id)).toContain('remote-control.files')
   } finally { for (const dispose of disposers) dispose() }
 })
