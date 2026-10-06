@@ -40,6 +40,8 @@ export default [
       'client/agent-board': 'src/client/agent-board.ts',
       'client/AgentBoard': 'src/client/AgentBoard.tsx',
       'client/RemoteControlAction': 'src/client/RemoteControlAction.tsx',
+      'client/ComputerFiles': 'src/client/ComputerFiles.tsx',
+      'remote-files': 'src/remote-files.ts',
       'phone-document': 'src/phone-document.ts',
     },
     outDir: 'dist', format: 'esm', platform: 'node', clean: false,

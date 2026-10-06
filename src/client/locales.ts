@@ -4,6 +4,20 @@ export const NS = 'remote-control'
 
 /** Chinese UI copy for pairing and tunnel control. */
 export const zh = {
+  'files.title': '电脑文件',
+  'files.description': '选择远端电脑上的文件，将路径添加到当前消息。',
+  'files.path': '电脑目录路径',
+  'files.go': '前往',
+  'files.up': '上级目录',
+  'files.home': '主目录',
+  'files.workspace': '工作区',
+  'files.search': '筛选当前目录文件',
+  'files.loading': '正在读取电脑目录…',
+  'files.empty': '没有匹配的文件或文件夹',
+  'files.unsupported': '文件名含有无法引用的字符',
+  'files.changed': '草稿或会话已变化，请关闭后重新选择文件。',
+  'files.previous': '上一页',
+  'files.next': '下一页',
   title: '移动端远程控制',
   waiting: '等待手机连接',
   connected: '手机已连接',
@@ -50,6 +64,20 @@ export type RemoteControlKey = keyof typeof zh
 
 /** English UI copy for pairing and tunnel control. */
 export const en: Record<RemoteControlKey, string> = {
+  'files.title': 'Computer files',
+  'files.description': 'Choose a file on the remote computer to add its path to this message.',
+  'files.path': 'Computer directory path',
+  'files.go': 'Go',
+  'files.up': 'Parent',
+  'files.home': 'Home',
+  'files.workspace': 'Workspace',
+  'files.search': 'Filter this directory',
+  'files.loading': 'Reading computer directory…',
+  'files.empty': 'No matching files or folders',
+  'files.unsupported': 'The filename contains unsupported reference characters',
+  'files.changed': 'The draft or session changed. Close and choose the file again.',
+  'files.previous': 'Previous',
+  'files.next': 'Next',
   title: 'Mobile remote control',
   waiting: 'Waiting for phone connection',
   connected: 'Phone connected',

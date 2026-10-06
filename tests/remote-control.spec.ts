@@ -65,12 +65,21 @@ else if (args[0] === 'funnel') {
 } else process.exit(1)
 `)
   await chmod(binary, 0o700)
+  let filesRoute: ConnectionFetchRoute | undefined
   backend = createServer((req, res) => {
     if (req.url === '/?token=launch') {
       res.writeHead(303, { location: '/', 'set-cookie': 'dsh-session=signed; Path=/; HttpOnly' }).end()
       return
     }
     if (req.headers.cookie !== 'dsh-session=signed') { res.writeHead(401).end(); return }
+    if (req.url?.startsWith('/api/remote-control/files')) {
+      if (!filesRoute) { res.writeHead(404).end(); return }
+      void Promise.resolve(filesRoute.fetch(new Request('http://localhost' + req.url)))
+        .then(async response => {
+          res.writeHead(response.status, Object.fromEntries(response.headers)).end(await response.text())
+        }, () => { res.writeHead(500).end() })
+      return
+    }
     if (req.url === '/') {
       const html = '<head></head><main>DSH Web</main>'
       if (compressedHtml || (req.headers['accept-encoding'] ?? '').includes('gzip')) {
@@ -114,7 +123,11 @@ else if (args[0] === 'funnel') {
   const ctx = {
     connection: {
       authenticatedUrl: (url: string) => url + '?token=launch',
-      fetch: { register(value: ConnectionFetchRoute) { route = value; return async () => {} } },
+      fetch: { register(value: ConnectionFetchRoute) {
+        if (value.path === '/api/remote-control/files') filesRoute = value
+        else route = value
+        return async () => {}
+      } },
     },
     webServer: { port: dshPort },
     workspaceRegistry: { get: (id: string) => id.startsWith('workspace-') ? { workspaceId: id } : undefined },
@@ -205,6 +218,8 @@ else if (args[0] === 'funnel') {
       outgoing.end()
     })
   expect((await request('/api/echo')).status).toBe(401)
+  expect(filesRoute?.methods).toEqual(['GET'])
+  expect((await request('/api/remote-control/files')).status).toBe(401)
   expect((await upgrade({})).status).toBe(401)
   expect((await request('//other.invalid/?pair=x')).status).toBe(403)
   expect((await request('/?pair=wrong')).status).toBe(401)
@@ -227,6 +242,11 @@ else if (args[0] === 'funnel') {
 
   // Before the desktop polls a new QR, the paired browser can reopen the code it just scanned.
   expect((await request('/api/echo', { cookie: cookie ?? '' })).status).toBe(200)
+  const filesPath = '/api/remote-control/files?' + new URLSearchParams({ path: directory })
+  const files = await request(filesPath, { cookie: cookie ?? '' })
+  expect(files.status).toBe(200)
+  expect((await files.json() as { entries: { name: string }[] }).entries.some(file => file.name === 'tailscale')).toBe(true)
+  expect((await request(filesPath, { cookie: cookie ?? '', 'sec-fetch-site': 'cross-site' })).status).toBe(403)
   const repeat = await request('/' + new URL(url).search, { cookie: cookie ?? '', 'sec-fetch-site': 'cross-site' })
   expect(repeat.status).toBe(303)
   expect(repeat.headers.get('location')).toBe('/')

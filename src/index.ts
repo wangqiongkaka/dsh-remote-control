@@ -18,6 +18,7 @@ import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { phoneDocument, remoteErrorDocument } from './phone-document.ts'
+import { computerFiles } from './remote-files.ts'
 
 export const name = 'dsh-remote-control'
 export const inject = ['connection', 'webServer', 'workspaceRegistry']
@@ -608,6 +609,9 @@ export function apply(ctx: Context, config: Config): void {
       throw error
     }
   }
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: '/api/remote-control/files', methods: ['GET'], requestBody: 'buffered', fetch: computerFiles,
+  }), 'remote-control: computer directory route')
   ctx.effect(() => ctx.connection.fetch.register({
     path: '/api/remote-control', methods: ['GET', 'POST'], requestBody: 'buffered',
     fetch: async (request) => {
