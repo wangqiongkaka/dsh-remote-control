@@ -463,6 +463,91 @@ it('shrinks the shell to the visual viewport while a keyboard is up', () => {
   dispose()
 })
 
+it('contains keyboard drag at the composer edge while keeping text and messages scrollable', () => {
+  const viewport = visualViewport({ layout: 800, height: 800 })
+  const dispose = followKeyboard()
+  const { card, editor } = composer()
+  const body = document.createElement('div')
+  body.setAttribute('data-conversation-content', '')
+  const messages = document.createElement('div')
+  messages.setAttribute('data-conversation-scroll', '')
+  messages.style.overflowY = 'auto'
+  const textScroll = document.createElement('div')
+  textScroll.style.overflowY = 'auto'
+  textScroll.append(editor)
+  card.prepend(textScroll)
+  // The pinned composer remains a DOM descendant of the transcript scrollport.
+  const seat = document.createElement('div')
+  seat.setAttribute('data-composer-seat', '')
+  seat.append(card)
+  messages.append(seat)
+  body.append(messages)
+  document.body.append(body)
+  Object.defineProperties(messages, { scrollHeight: { value: 900 }, clientHeight: { value: 400 } })
+  Object.defineProperties(textScroll, { scrollHeight: { value: 500 }, clientHeight: { value: 100 } })
+  const touch = (target: Element, type: string, y: number, x = 160, count = 1): Event => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'touches', {
+      value: type === 'touchend' ? [] : Array.from({ length: count }, (_, id) => ({ identifier: id, clientX: x, clientY: y })),
+    })
+    target.dispatchEvent(event)
+    return event
+  }
+  const drag = (target: Element, from: number, to: number): Event => {
+    touch(target, 'touchstart', from)
+    const result = touch(target, 'touchmove', to)
+    touch(target, 'touchend', to)
+    return result
+  }
+  try {
+    editor.focus()
+    viewport.resize({ height: 450 })
+    expect(drag(card, 190, 90).defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(editor)
+
+    // A long draft and the message list keep native scrolling within their own bounds.
+    touch(editor, 'touchstart', 190)
+    expect(touch(editor, 'touchmove', 90).defaultPrevented).toBe(false)
+    textScroll.scrollTop = 400
+    expect(touch(editor, 'touchmove', 89).defaultPrevented).toBe(true)
+    touch(editor, 'touchend', 89)
+    expect(drag(editor, 190, 90).defaultPrevented).toBe(true)
+    expect(drag(editor, 90, 190).defaultPrevented).toBe(false)
+    // Moving a text selection remains the editor's gesture.
+    const range = document.createRange()
+    range.setStart(editor.firstChild!, 0)
+    range.setEnd(editor.firstChild!, 1)
+    document.getSelection()?.removeAllRanges()
+    document.getSelection()?.addRange(range)
+    expect(document.getSelection()?.isCollapsed).toBe(false)
+    expect(editor.contains(document.getSelection()?.anchorNode ?? null)).toBe(true)
+    expect(drag(editor, 190, 90).defaultPrevented).toBe(false)
+    document.getSelection()?.removeAllRanges()
+    expect(drag(messages, 190, 90).defaultPrevented).toBe(false)
+    messages.scrollTop = 500
+    expect(drag(messages, 190, 90).defaultPrevented).toBe(true)
+
+    touch(card, 'touchstart', 190)
+    expect(touch(card, 'touchmove', 180, 260).defaultPrevented).toBe(false)
+    expect(touch(card, 'touchmove', 80, 260).defaultPrevented).toBe(false)
+    touch(card, 'touchend', 180)
+    touch(card, 'touchstart', 190)
+    expect(touch(card, 'touchmove', 90).defaultPrevented).toBe(true)
+    touch(card, 'touchmove', 90, 180)
+    expect(touch(card, 'touchmove', 89, 180).defaultPrevented).toBe(true)
+    touch(card, 'touchcancel', 89)
+    expect(touch(card, 'touchmove', 80).defaultPrevented).toBe(false)
+    touch(card, 'touchstart', 190, 160, 2)
+    expect(touch(card, 'touchmove', 90, 160, 2).defaultPrevented).toBe(false)
+    touch(card, 'touchend', 90)
+    viewport.resize({ height: 800 })
+    expect(drag(card, 190, 90).defaultPrevented).toBe(false)
+    viewport.resize({ height: 450 })
+    dispose()
+    expect(drag(card, 190, 90).defaultPrevented).toBe(false)
+  } finally { dispose(); body.remove(); document.getSelection()?.removeAllRanges() }
+})
+
 // WeChat and its kin shrink `innerHeight` along with the visual viewport while the layout viewport
 // — the box the shell's `height: 100%` resolves against — stays full height. Measuring the keyboard
 // against `innerHeight` read this as no keyboard at all, so the composer stayed under it.

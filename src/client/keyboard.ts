@@ -82,6 +82,7 @@ export function followKeyboard(): () => void {
   let commandEditor: HTMLElement | null = null
   let commandInputMode: string | null = null
   let menuFocus: { card: HTMLElement; editor: HTMLElement; field: HTMLElement } | undefined
+  let drag: { id: number; x: number; y: number; target: Element; boundary: Element; vertical?: boolean } | undefined
   const restoreInputMode = (): void => {
     if (commandEditor === null) return
     if (commandInputMode === null) commandEditor.removeAttribute('inputmode')
@@ -268,6 +269,42 @@ export function followKeyboard(): () => void {
       && event.target instanceof Element && composerMenuContains(menuFocus.card, event.target)
       && event.target.closest('input,textarea,select,[contenteditable]') === null) event.preventDefault()
   }
+  const clearDrag = (): void => { drag = undefined }
+  const onTouchStart = (event: TouchEvent): void => {
+    clearDrag()
+    if (!shrunk || event.touches.length !== 1 || !(event.target instanceof Element)) return
+    const body = event.target.closest('[data-conversation-content]')
+    const touch = event.touches[0]
+    if (!body || !touch) return
+    drag = { id: touch.identifier, x: touch.clientX, y: touch.clientY, target: event.target,
+      boundary: event.target.closest('[data-composer-card]') ?? body }
+  }
+  const onTouchMove = (event: TouchEvent): void => {
+    if (!drag) return
+    if (!shrunk || event.touches.length !== 1 || !drag.target.isConnected) { clearDrag(); return }
+    const touch = event.touches[0]
+    if (!touch || touch.identifier !== drag.id || !event.cancelable) return
+    const dx = touch.clientX - drag.x
+    const dy = touch.clientY - drag.y
+    if (drag.vertical === undefined) {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 6) return
+      drag.vertical = Math.abs(dy) > Math.abs(dx)
+    }
+    drag.x = touch.clientX
+    drag.y = touch.clientY
+    if (!drag.vertical || dy === 0) return
+    const selection = window.getSelection()
+    if (selection?.isCollapsed === false
+      && drag.target.closest('[data-composer-input]')?.contains(selection.anchorNode)) return
+    // Keep native scrolling inside the draft or messages, but never chain a drag from the
+    // input card into the transcript or page: WebKit can pan the keyboard's viewport there.
+    for (let element: Element | null = drag.target; element && element !== drag.boundary; element = element.parentElement) {
+      if (element.scrollHeight > element.clientHeight
+        && /^(auto|scroll)$/u.test(getComputedStyle(element).overflowY)
+        && (dy > 0 ? element.scrollTop > 0 : element.scrollTop + element.clientHeight < element.scrollHeight - 1)) return
+    }
+    event.preventDefault()
+  }
   watchSession(true)
   apply()
   viewport.addEventListener('resize', apply)
@@ -280,6 +317,10 @@ export function followKeyboard(): () => void {
   document.addEventListener('mousedown', onMenuMouseDown, true)
   document.addEventListener('click', onSubmitClick, true)
   document.addEventListener('keydown', onSubmitKey, true)
+  document.addEventListener('touchstart', onTouchStart, { passive: true })
+  document.addEventListener('touchmove', onTouchMove, { passive: false })
+  document.addEventListener('touchend', clearDrag, { passive: true })
+  document.addEventListener('touchcancel', clearDrag, { passive: true })
   return () => {
     if (poll !== undefined) clearInterval(poll)
     if (dismissTimer !== undefined) clearTimeout(dismissTimer)
@@ -294,6 +335,11 @@ export function followKeyboard(): () => void {
     document.removeEventListener('mousedown', onMenuMouseDown, true)
     document.removeEventListener('click', onSubmitClick, true)
     document.removeEventListener('keydown', onSubmitKey, true)
+    document.removeEventListener('touchstart', onTouchStart)
+    document.removeEventListener('touchmove', onTouchMove)
+    document.removeEventListener('touchend', clearDrag)
+    document.removeEventListener('touchcancel', clearDrag)
+    clearDrag()
     sessionObserver.disconnect()
     restoreInputMode()
     root.removeAttribute(KEYBOARD_ATTRIBUTE)
