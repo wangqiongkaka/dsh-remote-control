@@ -56,6 +56,23 @@ it('filters before paging so files beyond the first page remain selectable', asy
   expect(filtered.entries.map(entry => entry.name)).toEqual(['file-204'])
 })
 
+it('hides dot directories before paging, including directory symlinks, without blocking direct navigation', async () => {
+  directory = await mkdtemp(join(tmpdir(), 'computer-files-'))
+  await Promise.all(Array.from({ length: 201 }, (_, index) => mkdir(join(directory!, `.folder-${index}`))))
+  await mkdir(join(directory, 'project'))
+  await writeFile(join(directory, '.notes'), '')
+  if (process.platform !== 'win32') await symlink(join(directory, 'project'), join(directory, '.linked'))
+  const hidden = await (await computerFiles(request(directory, { showHiddenDirectories: 'false' }))).json() as ComputerDirectory
+  expect(hidden.entries.map(entry => entry.name)).toEqual(['project', '.notes'])
+  expect(hidden.next).toBeNull()
+  const shown = await (await computerFiles(request(directory, { showHiddenDirectories: 'true' }))).json() as ComputerDirectory
+  expect(shown.entries).toHaveLength(200)
+  expect(shown.next).toBe(200)
+  const inside = await (await computerFiles(request(join(directory, '.folder-0'), { showHiddenDirectories: 'false' }))).json() as ComputerDirectory
+  expect(inside.path).toBe(join(directory, '.folder-0'))
+  expect(inside.entries).toEqual([])
+})
+
 it('rejects invalid inputs and reports unreadable or missing directories without falling back', async () => {
   expect((await computerFiles(request('relative'))).status).toBe(400)
   expect((await computerFiles(request(tmpdir(), { offset: '-1' }))).status).toBe(400)

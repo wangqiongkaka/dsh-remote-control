@@ -23,6 +23,7 @@ export async function computerFiles(request: Request): Promise<Response> {
   const path = url.searchParams.get('path') ?? homedir()
   const offset = Number(url.searchParams.get('offset') ?? '0')
   const query = (url.searchParams.get('query') ?? '').toLocaleLowerCase()
+  const showHiddenDirectories = url.searchParams.get('showHiddenDirectories') !== 'false'
   if (!isAbsolute(path) || path.includes('\0') || !Number.isSafeInteger(offset) || offset < 0) {
     return new Response('Invalid path or offset', { status: 400 })
   }
@@ -48,6 +49,7 @@ export async function computerFiles(request: Request): Promise<Response> {
           : /\s/u.test(mentionPath) ? `@"${mentionPath}"` : `@${mentionPath}`
         return { name: child.name, path, directory, mention }
       }))).filter((entry): entry is ComputerFile => entry !== null)
+      .filter(entry => showHiddenDirectories || !entry.directory || !entry.name.startsWith('.'))
       .sort((a, b) => Number(b.directory) - Number(a.directory) || a.name.localeCompare(b.name))
     request.signal.throwIfAborted()
     return Response.json({ path: target, parent: dirname(target), home: homedir(),

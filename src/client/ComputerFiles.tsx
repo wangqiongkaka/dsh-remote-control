@@ -145,11 +145,14 @@ function FileBrowser({ path: initialPath = '', pickFile, directory, t }: {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(true)
   const [retry, setRetry] = useState(0)
+  const [showHiddenDirectories, setShowHiddenDirectories] = useState(false)
+  const choosingDirectory = directory !== undefined
   const picked = useRef(false)
   useEffect(() => {
     const controller = new AbortController()
     setBusy(true); setError(''); setListing(undefined)
     const params = new URLSearchParams({ offset: String(offset), query })
+    if (choosingDirectory) params.set('showHiddenDirectories', String(showHiddenDirectories))
     if (path !== '') params.set('path', path)
     void fetch('/api/remote-control/files?' + params, { signal: controller.signal, cache: 'no-store' })
       .then(async response => {
@@ -161,7 +164,7 @@ function FileBrowser({ path: initialPath = '', pickFile, directory, t }: {
         if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason))
       }).finally(() => { if (!controller.signal.aborted) setBusy(false) })
     return () => { controller.abort() }
-  }, [path, query, offset, retry])
+  }, [path, query, offset, retry, choosingDirectory, showHiddenDirectories])
   const navigate = (target: string): void => { setPath(target); setAddress(target); setQuery(''); setOffset(0) }
   return <fieldset disabled={directory?.busy} style={{ display: 'grid', gap: 12, minWidth: 0, margin: 0, padding: 0, border: 0 }}>
     <form onSubmit={event => { event.preventDefault(); navigate(address) }} style={{ display: 'flex', gap: 8 }}>
@@ -175,6 +178,11 @@ function FileBrowser({ path: initialPath = '', pickFile, directory, t }: {
     </div>
     <Input aria-label={t('files.search')} placeholder={t('files.search')} value={query}
       onChange={event => { setQuery(event.target.value); setOffset(0) }} />
+    {directory && <label style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 44 }}>
+      <input type="checkbox" checked={showHiddenDirectories} onChange={event => {
+        setShowHiddenDirectories(event.target.checked); setOffset(0)
+      }} />{t('files.showHiddenDirectories')}
+    </label>}
     {busy && <div role="status">{t('files.loading')}</div>}
     {error && <div role="alert">{error} <Button variant="outline" onClick={() => { setRetry(retry + 1) }}>{t('retry')}</Button></div>}
     <div style={{ maxHeight: '45dvh', overflowY: 'auto', display: 'grid', gap: 4 }}>

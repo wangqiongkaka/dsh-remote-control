@@ -263,3 +263,35 @@ it('blocks directory actions during workspace adoption without relaunching reads
   expect(owner.onPicked).not.toHaveBeenCalled()
   expect(fetcher).toHaveBeenCalledTimes(reads)
 })
+
+it('hides dot directories by default and toggles them without losing the directory or keeping a stale page', async () => {
+  const hidden = { name: '.cache', path: '/workspace/.cache', directory: true, mention: '@/workspace/.cache' }
+  fetcher.mockImplementation(async url => {
+    const params = new URL(String(url), 'http://localhost').searchParams
+    return Response.json({ ...listing, next: 200,
+      entries: [...listing.entries, ...params.get('showHiddenDirectories') === 'true' ? [hidden] : []] })
+  })
+  const owner = await directoryFlow()
+  const toggle = mount.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+  expect(toggle).not.toBeNull()
+  expect(toggle.checked).toBe(false)
+  expect(String(fetcher.mock.lastCall?.[0])).toContain('showHiddenDirectories=false')
+  expect(button('▸ .cache/')).toBeUndefined()
+  await click('files.next')
+  expect(String(fetcher.mock.lastCall?.[0])).toContain('offset=200')
+  await act(async () => { toggle.click() })
+  expect(toggle.checked).toBe(true)
+  expect(String(fetcher.mock.lastCall?.[0])).toContain('showHiddenDirectories=true')
+  expect(String(fetcher.mock.lastCall?.[0])).toContain('offset=0')
+  expect(button('▸ .cache/')).toBeDefined()
+  await click('▸ folder/')
+  expect(String(fetcher.mock.lastCall?.[0])).toContain('path=%2Fworkspace%2Ffolder')
+  expect(String(fetcher.mock.lastCall?.[0])).toContain('showHiddenDirectories=true')
+  await act(async () => { toggle.click() })
+  expect(String(fetcher.mock.lastCall?.[0])).toContain('path=%2Fworkspace%2Ffolder')
+  expect(button('▸ .cache/')).toBeUndefined()
+  expect(owner.onPicked).not.toHaveBeenCalled()
+  await directoryFlow({ ...owner, open: false })
+  await directoryFlow(owner)
+  expect(mount.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false)
+})
