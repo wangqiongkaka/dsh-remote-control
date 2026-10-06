@@ -81,7 +81,7 @@ it('wires the separate computer-file command and overlay through plugin activati
   const ctx = context(core, disposers)
   const register = vi.fn(() => () => {})
   const services: Record<string, unknown> = {
-    commandUi: { register }, sessions: {}, conversation: {},
+    commandUi: { register, candidates: async () => [] }, sessions: {}, conversation: {},
   }
   Object.assign(ctx, {
     inject: (_names: string[], run: (scope: Context) => void) => { run(ctx) },

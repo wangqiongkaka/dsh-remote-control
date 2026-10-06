@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
-import { Button, IconPaperclipOutlineRegular, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconPaperclipOutlineRegular, Input, Modal, rankByName } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { IConversation, InputActions, SessionInput } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -21,6 +21,7 @@ interface Picker {
 
 /** The host input shell exposes the same provide-channel actions consumed by its composer. */
 type ComposerInput = SessionInput & { readonly actions: InputActions }
+type MenuRow = { readonly name: string; readonly label?: string; readonly section?: string; readonly icon?: typeof IconPaperclipOutlineRegular }
 
 export function registerComputerFiles(ctx: Context): void {
   ctx.inject(['commandUi', 'sessions', 'conversation'], (scope) => {
@@ -42,17 +43,18 @@ export function registerComputerFiles(ctx: Context): void {
       register(contribution: { name: string; label(): string; icon: typeof IconPaperclipOutlineRegular;
         available(session: { sessionId: SessionId }): boolean;
         ui: { kind: 'action'; run(session: { sessionId: SessionId }): void } }): () => void
+      candidates(session: { sessionId: SessionId }, request: { query: string; signal?: AbortSignal; position: string }): Promise<readonly MenuRow[]>
     }
     const sessions = scope.get('sessions') as unknown as {
       scope(id: SessionId): Context | undefined
       list: { getSnapshot(): { byId: Readonly<Record<string, { cwd: string; origin: string }>> } }
     }
     const conversation = scope.get('conversation') as IConversation
-    scope.effect(() => commands.register({
+    const contribution = {
       name: 'computer-file', label: () => scope.locale.bind(NS)('files.title'), icon: IconPaperclipOutlineRegular,
-      available: ({ sessionId }) => proxiedFrame() && sessions.scope(sessionId) !== undefined
+      available: ({ sessionId }: { sessionId: SessionId }) => proxiedFrame() && sessions.scope(sessionId) !== undefined
         && sessions.list.getSnapshot().byId[sessionId]?.origin !== 'subagent',
-      ui: { kind: 'action', run: ({ sessionId }) => {
+      ui: { kind: 'action' as const, run: ({ sessionId }: { sessionId: SessionId }) => {
         const actx = sessions.scope(sessionId)
         if (actx === undefined) return
         const input = conversation.input.for(actx) as ComposerInput
@@ -66,7 +68,50 @@ export function registerComputerFiles(ctx: Context): void {
         }
         update(current)
       } },
-    }), 'remote-control: computer files')
+    }
+    scope.effect(() => commands.register(contribution), 'remote-control: computer files')
+    scope.effect(() => {
+      let active = true
+      let installed: typeof commands.candidates | undefined
+      const restorers: (() => void)[] = []
+      const prepare = (): void => {
+        if (Object.getOwnPropertyDescriptor(commands, 'candidates')?.value === installed && installed) return
+        const descriptor = Object.getOwnPropertyDescriptor(commands, 'candidates')
+        const previous = commands.candidates.bind(commands)
+        // Harness filters contributions; restore our row only where its file action is available.
+        // The host has no public menu-placement API, so use the same candidate seam as Harness.
+        const candidates: typeof commands.candidates = async (session, request) => {
+          const rows = await previous(session, request)
+          if (!active || !contribution.available(session)) return rows
+          const menu = request.query === '' ? rows : await previous(session, { ...request, query: '' })
+          const file = menu.find(row => row.name === 'file')
+          if (!active || !file || request.signal?.aborted) return rows
+          const row: MenuRow = { name: contribution.name, label: contribution.label(), icon: contribution.icon,
+            ...(request.query === '' && file.section !== undefined ? { section: file.section } : {}) }
+          const others = rows.filter(item => item.name !== contribution.name)
+          if (request.query !== '') return rankByName([...others, row], request.query)
+          const index = others.findIndex(item => item.name === 'file') + 1
+          return [...others.slice(0, index), row, ...others.slice(index)]
+        }
+        commands.candidates = installed = candidates
+        restorers.push(() => {
+          if (Object.getOwnPropertyDescriptor(commands, 'candidates')?.value !== candidates) return
+          if (descriptor) Object.defineProperty(commands, 'candidates', descriptor)
+          else Reflect.deleteProperty(commands, 'candidates')
+        })
+      }
+      // Reapply after another plugin loads/reloads, before a composer gesture opens its menu.
+      const onInput = (event: Event): void => {
+        if (proxiedFrame() && event.target instanceof Element && event.target.closest('[data-composer-card]')) prepare()
+      }
+      prepare()
+      for (const name of ['pointerdown', 'keydown', 'input']) document.addEventListener(name, onInput, true)
+      return () => {
+        active = false
+        for (const name of ['pointerdown', 'keydown', 'input']) document.removeEventListener(name, onInput, true)
+        for (const restore of restorers.reverse()) restore()
+      }
+    }, 'remote-control: computer file menu placement')
     scope.effect(() => () => { update(null) }, 'remote-control: close computer files')
   })
 }

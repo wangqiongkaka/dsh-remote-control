@@ -2,11 +2,12 @@
 import { createElement, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
-import type { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ComputerFiles, registerComputerFiles } from '../dist/client/ComputerFiles.js'
 
-vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', async importOriginal => ({
+  rankByName: (await importOriginal<typeof import('@deepseek-ai/dsh-client-ui-primitives')>()).rankByName,
   Modal: ({ children, onClose }: { children: ReactNode; onClose(): void }) => createElement('div', { role: 'dialog' },
     createElement('button', { onClick: onClose }, 'close'), children),
   Button: (props: object) => createElement('button', props),
@@ -18,7 +19,10 @@ let mount: HTMLElement
 let root: Root
 let disposers: (() => void)[]
 let scope: Context | undefined
-let action: { available(session: { sessionId: string }): boolean; ui: { run(session: { sessionId: string }): void } }
+let action: { name: string; label(): string; available(session: { sessionId: string }): boolean; ui: { run(session: { sessionId: string }): void } }
+type Row = { name: string; label?: string; section?: string }
+type Request = { query: string; position: string }
+let commands: { register(value: typeof action): () => void; candidates(session: { sessionId: string }, request: Request): Promise<readonly Row[]> }
 const pick = vi.fn(() => true)
 const focus = vi.fn()
 const fetcher = vi.fn<typeof fetch>()
@@ -36,10 +40,24 @@ beforeEach(() => {
   mount = document.createElement('div'); document.body.append(mount); root = createRoot(mount)
   const proxy = document.createElement('style'); proxy.setAttribute('data-dsh-remote-control', ''); document.head.append(proxy)
   scope = {} as Context
+  // Reproduce the Harness filter after the host synthesizes registered contributions.
+  // The screenshot's Codex menu keeps only these names and discards computer-file.
+  const kept = new Set(['file', 'link', 'goal', 'plan', 'compact', 'clear'])
+  commands = {
+    register: value => { action = value; return () => {} },
+    candidates: async (session, request) => [
+      { name: 'file', section: '添加' }, { name: 'link', section: '添加' },
+      { name: 'goal', section: '添加' }, { name: 'compact', section: '指令' },
+      ...(action.available(session) ? [{ name: action.name, label: action.label(), section: '指令' }] : []),
+    ].filter(row => kept.has(row.name) && (row.name.includes(request.query) || row.label?.includes(request.query))),
+  }
+  const serviceContext = new Context()
+  Object.assign(new (class extends Service {})(serviceContext, 'commandUi'), commands)
+  commands = serviceContext.get('commandUi') as unknown as typeof commands
   const services: Record<string, unknown> = {
     sessions: { scope: () => scope, list: { getSnapshot: () => ({ byId: { s1: { cwd: '/workspace', origin: 'user' } } }) } },
     conversation: { input: { for: () => ({ actions: { captureInsertion: () => selection }, insertReference: pick, focus }) } },
-    commandUi: { register: (value: typeof action) => { action = value; return () => {} } },
+    commandUi: commands,
   }
   const ctx = {
     inject: (_names: string[], run: (context: unknown) => void) => run(ctx),
@@ -52,6 +70,64 @@ beforeEach(() => {
       } },
   }
   registerComputerFiles(ctx as unknown as Context)
+})
+
+it('keeps computer files immediately after phone files in a filtered Harness menu and on search', async () => {
+  const session = { sessionId: 's1' }
+  const request = { query: '', position: 'leading' }
+  const rows = await commands.candidates(session, request)
+  expect(rows.map(row => row.name)).toEqual(['file', 'computer-file', 'link', 'goal', 'compact'])
+  expect(rows[1]).toMatchObject({ label: 'files.title', section: '添加' })
+  expect((await commands.candidates(session, { ...request, query: 'computer' })).map(row => row.name)).toEqual(['computer-file'])
+  expect(await commands.candidates(session, { ...request, query: 'missing' })).toEqual([])
+  await act(async () => { action.ui.run(session) })
+  expect(mount.querySelector('[role="dialog"]')).not.toBeNull()
+  await click('close')
+  document.querySelector('style[data-dsh-remote-control]')!.remove()
+  expect((await commands.candidates(session, request)).map(row => row.name)).toEqual(['file', 'link', 'goal', 'compact'])
+})
+
+it('survives a later Harness filter and restores its method on disposal without duplicate file entries', async () => {
+  const session = { sessionId: 's1' }
+  const request = { query: '', position: 'leading' }
+  const previous = commands.candidates.bind(commands)
+  const harness = async (session: { sessionId: string }, request: Request) =>
+    (await previous(session, request)).filter(row => row.name !== 'computer-file')
+  commands.candidates = harness
+  const card = document.createElement('div')
+  card.setAttribute('data-composer-card', '')
+  const launcher = document.createElement('button')
+  card.append(launcher); document.body.append(card)
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      launcher.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+      const rows = await commands.candidates(session, request)
+      expect(rows.map(row => row.name)).toEqual(['file', 'computer-file', 'link', 'goal', 'compact'])
+    }
+    act(() => { for (const dispose of disposers.splice(0)) dispose() })
+    expect(Object.getOwnPropertyDescriptor(commands, 'candidates')?.value).toBe(harness)
+    expect((await commands.candidates(session, request)).some(row => row.name === 'computer-file')).toBe(false)
+    launcher.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    expect(Object.getOwnPropertyDescriptor(commands, 'candidates')?.value).toBe(harness)
+  } finally { card.remove() }
+})
+
+it('preserves an empty command menu and deduplicates an unfiltered host contribution', async () => {
+  const card = document.createElement('div')
+  card.setAttribute('data-composer-card', '')
+  document.body.append(card)
+  const session = { sessionId: 's1' }, request = { query: '', position: 'leading' }
+  try {
+    commands.candidates = async () => []
+    card.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }))
+    expect(await commands.candidates(session, request)).toEqual([])
+    commands.candidates = async () => [
+      { name: 'file', section: 'Add' }, { name: 'compact', section: 'Commands' },
+      { name: 'computer-file', section: 'Commands' },
+    ]
+    card.dispatchEvent(new Event('input', { bubbles: true }))
+    expect((await commands.candidates(session, request)).map(row => row.name)).toEqual(['file', 'computer-file', 'compact'])
+  } finally { card.remove() }
 })
 afterEach(() => {
   act(() => { for (const dispose of disposers) dispose(); root.unmount() })
