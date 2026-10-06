@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { SlotCore } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { expect, it, vi } from 'vitest'
 import { apply } from '../dist/client/index.js'
 
@@ -23,22 +24,42 @@ function slots(): SlotCore {
       'shell.overlay': { kind: 'list', scope: 'root' },
       'settings.general.item': { kind: 'list', scope: 'root' },
       'settings.section': { kind: 'list', scope: 'root' },
+      'main': { kind: 'keyed', scope: 'root' },
     },
   }, (() => null) as never)
   return core
 }
 
 function context(core: SlotCore, disposers: (() => void)[] = []): Context {
+  let activePanelId: MainPanelId | null = null
+  const listeners = new Set<() => void>()
   return {
     effect: (register: () => () => void) => { disposers.push(register()) },
     locale: { register: () => () => {} },
     slots: {
       register: core.register.bind(core),
-      inject: (_name: string, register: () => () => void) => register(),
+      inject: (_name: string, register: () => () => void) => {
+        const dispose = register()
+        disposers.push(dispose)
+        return dispose
+      },
       entries: core.entries.bind(core),
       subscribe: core.subscribe.bind(core),
     },
-    layout: { toggleSidebar: () => {} },
+    layout: {
+      toggleSidebar: () => {},
+      panelInfo: {
+        getSnapshot: () => ({ activePanelId }),
+        subscribe: (listener: () => void) => {
+          listeners.add(listener)
+          return () => { listeners.delete(listener) }
+        },
+      },
+      selectPanel: (id: MainPanelId | null) => {
+        activePanelId = id
+        for (const listener of listeners) listener()
+      },
+    },
   } as unknown as Context
 }
 
@@ -297,6 +318,56 @@ it('opens the left and right sidebars with one-finger swipes across the phone co
   }
 })
 
+it.each(['left', 'center'])('ignores WeChat exit coordinates when leaving %s', (area) => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.toggleAttribute('data-sidebar-collapsed', area === 'center')
+  frame.setAttribute('data-rightbar-collapsed', '')
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div data-left>左栏</div></div>'
+    + '<main class="ui_layout__centerCol__h1"><div data-conversation-scroll>会话</div>'
+    + '<button data-sidebar-right-expand>右栏</button></main>'
+  document.body.append(frame)
+  Object.defineProperty(window, 'matchMedia', { configurable: true,
+    value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }) })
+  const target = frame.querySelector(area === 'left' ? '[data-left]' : '[data-conversation-scroll]')!
+  const disposers: (() => void)[] = []
+  const ctx = context(slots(), disposers)
+  const navigate = vi.fn()
+  ctx.layout.toggleSidebar = navigate
+  frame.querySelector('button')!.addEventListener('click', navigate)
+  const touch = (type: string, x: number, y: number): void => {
+    const event = new Event(type, { bubbles: true })
+    const point = { identifier: 0, clientX: x, clientY: y }
+    Object.defineProperties(event, { touches: { value: type === 'touchend' ? [] : [point] },
+      changedTouches: { value: [point] } })
+    target.dispatchEvent(event)
+  }
+  try {
+    apply(ctx)
+    // Actual phone trace: swiping right to exit moves the WebView, flipping its local coordinates.
+    const points = area === 'left' ? [[12, 394], [29.33, 404.67], [35, 407.33], [-286.33, 462.33]]
+      : [[13, 267.67], [27, 273.33], [47.33, 278.67], [54.67, 280.67], [-281.67, 313]]
+    touch('touchstart', points[0]![0]!, points[0]![1]!)
+    for (const [x, y] of points.slice(1)) touch('touchmove', x!, y!)
+    touch('touchend', points.at(-1)![0]!, points.at(-1)![1]!)
+    expect(navigate).not.toHaveBeenCalled()
+    // A fresh, normal left swipe still closes the drawer or opens the right panel.
+    touch('touchstart', 300, 300)
+    touch('touchmove', 240, 300)
+    touch('touchend', 180, 300)
+    expect(navigate).toHaveBeenCalledTimes(1)
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+    Object.defineProperty(window, 'matchMedia', { configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }) })
+  }
+})
+
 it.each([[20, 140], [300, 180]])('keeps text selection drags out of sidebar swipes (%i → %i)', (from, to) => {
   vi.useFakeTimers()
   const proxy = document.createElement('style')
@@ -458,114 +529,203 @@ it('closes an open phone sidebar with a reverse swipe inside that sidebar', () =
   }
 })
 
-// The right panel's expanded state persists per Session, so a phone page reloaded from the
-// background reopens on it: coming back lands on the left drawer instead, until the first touch.
-// A return within a minute (a lock, the notification shade) keeps the page as it was left.
-it('lands the phone on the left drawer on load and on a return from a minute or more away', async () => {
+// Session identity and right-panel tabs are restored by the host; this plugin remembers only
+// which area and global main panel were visible, without pulling a returning user off that page.
+it.each([
+  ['left', null], ['center', null], ['right', null],
+  ['center', 'plugins'], ['center', 'schedules'], ['center', 'custom-tasks'],
+] as const)('restores the phone page after leaving %s / %s', async (area, panelId) => {
+  const key = 'dsh-remote-control.last-page.v1'
+  localStorage.removeItem(key)
+  document.documentElement.removeAttribute('data-remote-control-landed')
   const proxy = document.createElement('style')
   proxy.setAttribute('data-dsh-remote-control', '')
   document.head.append(proxy)
   const frame = document.createElement('div')
   frame.className = 'ui_layout__frame__h1'
   frame.setAttribute('data-sidebar-collapsed', '')
-  frame.setAttribute('data-rightbar-collapsed', '')
-  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"></div><main class="ui_layout__centerCol__h1"></main>'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"></div>'
+    + '<main class="ui_layout__centerCol__h1"><div data-conversation-session="A"></div>'
+    + '<button data-sidebar-right-expand>打开右侧栏</button></main>'
     + '<div data-rightbar-col><div data-sidebar-right-panel="fullscreen" data-sidebar-right-open>'
     + '<button data-sidebar-right-toggle>收起</button></div></div>'
   document.body.append(frame)
   const panel = frame.querySelector('[data-sidebar-right-panel]')!
   panel.querySelector('button')!.addEventListener('click', () => { panel.removeAttribute('data-sidebar-right-open') })
+  frame.querySelector('[data-sidebar-right-expand]')!.addEventListener('click', () => {
+    panel.setAttribute('data-sidebar-right-open', '')
+    frame.setAttribute('data-sidebar-collapsed', '')
+  })
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
     value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }),
   })
   let visibility = 'visible'
   Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility })
-  // The earlier phone tests share this document: start from a page that has not landed yet.
-  document.documentElement.removeAttribute('data-remote-control-landed')
   let now = 1_000_000
   const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
-  const tick = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0) })
+  const tick = (): Promise<void> => new Promise(resolve => { setTimeout(resolve, 0) })
   const disposers: (() => void)[] = []
-  const ctx = context(slots(), disposers)
+  const core = slots()
+  let offMain = panelId === null ? undefined
+    : core.register({ name: 'main', key: panelId }, (() => null) as never)
+  const ctx = context(core, disposers)
   let toggles = 0
-  // The shell renders a toggle later, as React does.
   ctx.layout.toggleSidebar = () => {
     toggles++
     setTimeout(() => { frame.toggleAttribute('data-sidebar-collapsed') }, 0)
   }
   const drawerOpen = (): boolean => !frame.hasAttribute('data-sidebar-collapsed')
   const rightOpen = (): boolean => panel.hasAttribute('data-sidebar-right-open')
+  const touch = (): void => {
+    const event = new Event('touchstart', { bubbles: true })
+    const point = { identifier: 0, clientX: 100, clientY: 100 }
+    Object.defineProperties(event, { touches: { value: [point] }, changedTouches: { value: [point] } })
+    document.body.dispatchEvent(event)
+  }
+  const expectPage = (): void => {
+    expect(drawerOpen()).toBe(area === 'left')
+    expect(rightOpen()).toBe(area === 'right')
+    expect(ctx.layout.panelInfo.getSnapshot().activePanelId).toBe(panelId)
+    expect(frame.querySelector('[data-conversation-session]')?.getAttribute('data-conversation-session')).toBe('A')
+  }
   try {
     apply(ctx)
     await tick()
     await tick()
+    expect(drawerOpen()).toBe(true) // No saved page: preserve the first visit's drawer landing.
     expect(rightOpen()).toBe(false)
-    expect(drawerOpen()).toBe(true)
-    expect(toggles).toBe(1)
+    touch()
+    ctx.layout.selectPanel(panelId as MainPanelId | null)
+    frame.toggleAttribute('data-sidebar-collapsed', area !== 'left')
+    panel.toggleAttribute('data-sidebar-right-open', area === 'right')
+    await tick()
+    expect(JSON.parse(localStorage.getItem(key) ?? 'null')).toEqual({ area, panelId })
 
-    // The Session's saved right panel shows up late and its opening folds the drawer.
-    panel.setAttribute('data-sidebar-right-open', '')
+    // WeChat's floating WebView can reset the live layout while the page is hidden.
+    const before = toggles
+    visibility = 'hidden'
+    document.dispatchEvent(new Event('visibilitychange'))
     frame.setAttribute('data-sidebar-collapsed', '')
+    panel.removeAttribute('data-sidebar-right-open')
+    ctx.layout.selectPanel(null)
+    await tick()
+    expect(JSON.parse(localStorage.getItem(key) ?? 'null')).toEqual({ area, panelId })
+    now += 60_000
+    visibility = 'visible'
+    document.dispatchEvent(new Event('visibilitychange'))
     await tick()
     await tick()
-    expect(rightOpen()).toBe(false)
-    expect(drawerOpen()).toBe(true)
-    expect(toggles).toBe(2)
+    expectPage()
+    if (area !== 'left') expect(toggles).toBe(before)
 
-    // After the first touch the page is the user's.
-    const touch = new Event('touchstart', { bubbles: true })
-    const point = { identifier: 0, clientX: 100, clientY: 100 }
-    Object.defineProperties(touch, { touches: { value: [point] }, changedTouches: { value: [point] } })
-    document.body.dispatchEvent(touch)
+    // Back/forward caching can send pagehide/pageshow without a visibility change.
+    touch()
+    window.dispatchEvent(new Event('pagehide'))
     frame.setAttribute('data-sidebar-collapsed', '')
-    panel.setAttribute('data-sidebar-right-open', '')
+    panel.removeAttribute('data-sidebar-right-open')
+    ctx.layout.selectPanel(null)
     await tick()
-    expect(drawerOpen()).toBe(false)
-    expect(rightOpen()).toBe(true)
+    expect(JSON.parse(localStorage.getItem(key) ?? 'null')).toEqual({ area, panelId })
+    window.dispatchEvent(new Event('pageshow'))
+    await tick()
+    await tick()
+    expectPage()
 
-    const away = async (ms: number, leaving?: () => void): Promise<void> => {
-      visibility = 'hidden'
-      document.dispatchEvent(new Event('visibilitychange'))
-      await tick()
-      leaving?.()
-      now += ms
-      visibility = 'visible'
-      document.dispatchEvent(new Event('visibilitychange'))
+    // A full document reload starts with the host's default layout and a restored Session A.
+    for (const dispose of disposers.splice(0)) dispose()
+    offMain?.()
+    document.documentElement.removeAttribute('data-remote-control-landed')
+    ctx.layout.selectPanel(null)
+    frame.setAttribute('data-sidebar-collapsed', '')
+    panel.toggleAttribute('data-sidebar-right-open', area !== 'right')
+    apply(ctx)
+    await tick()
+    await tick()
+    if (panelId !== null) {
+      expect(ctx.layout.panelInfo.getSnapshot().activePanelId).toBeNull()
+      expect(JSON.parse(localStorage.getItem(key) ?? 'null')).toEqual({ area, panelId })
+      offMain = core.register({ name: 'main', key: panelId }, (() => null) as never)
       await tick()
       await tick()
     }
-    await away(59_999)
+    expectPage()
+
+    // Late native right-panel restoration must not replace the saved area.
+    panel.toggleAttribute('data-sidebar-right-open', area !== 'right')
+    frame.setAttribute('data-sidebar-collapsed', '')
+    await tick()
+    await tick()
+    expectPage()
+
+    // A user's first interaction stops startup restoration; HMR must not apply it again.
+    touch()
+    ctx.layout.selectPanel(null)
+    frame.setAttribute('data-sidebar-collapsed', '')
+    panel.removeAttribute('data-sidebar-right-open')
+    await tick()
+    for (const dispose of disposers.splice(0)) dispose()
+    apply(ctx)
+    await tick()
+    await tick()
     expect(drawerOpen()).toBe(false)
-    expect(rightOpen()).toBe(true)
-    expect(toggles).toBe(2)
-    await away(60_000)
     expect(rightOpen()).toBe(false)
-    expect(drawerOpen()).toBe(true)
-    expect(toggles).toBe(3)
-
-    await away(60_000, () => {
-      for (const dispose of disposers.splice(0)) dispose()
-      frame.setAttribute('data-sidebar-collapsed', '')
-    })
-    expect(drawerOpen()).toBe(false)
-
-    // A rebuilt bundle makes the shell apply the plugin again on a page that stays open: that is
-    // no page load, so the Session on screen keeps its place.
-    const again = context(slots(), disposers)
-    again.layout.toggleSidebar = ctx.layout.toggleSidebar
-    apply(again)
-    await tick()
-    await tick()
-    expect(drawerOpen()).toBe(false)
-    expect(toggles).toBe(3)
   } finally {
     for (const dispose of disposers) dispose()
+    offMain?.()
+    localStorage.removeItem(key)
     proxy.remove()
     frame.remove()
     Reflect.deleteProperty(document, 'visibilityState')
     document.documentElement.removeAttribute('data-remote-control-landed')
     clock.mockRestore()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})
+
+it.each(['invalid JSON', 'invalid area', 'missing panel', 'blocked storage'])('handles %s during phone page restoration', (value) => {
+  vi.useFakeTimers()
+  const key = 'dsh-remote-control.last-page.v1'
+  localStorage.setItem(key, value === 'missing panel' ? JSON.stringify({ area: 'center', panelId: 'removed' })
+    : value === 'invalid area' ? JSON.stringify({ area: 'diagonal', panelId: null }) : 'not-json')
+  document.documentElement.removeAttribute('data-remote-control-landed')
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.setAttribute('data-sidebar-collapsed', '')
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"></div><main class="ui_layout__centerCol__h1"></main>'
+  document.body.append(frame)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const disposers: (() => void)[] = []
+  const ctx = context(slots(), disposers)
+  ctx.layout.toggleSidebar = () => { frame.toggleAttribute('data-sidebar-collapsed') }
+  try {
+    if (value === 'blocked storage') {
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked') })
+    }
+    expect(() => { apply(ctx) }).not.toThrow()
+    vi.advanceTimersByTime(10_000)
+    expect(ctx.layout.panelInfo.getSnapshot().activePanelId).toBeNull()
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(value === 'missing panel')
+    if (value === 'missing panel') expect(JSON.parse(localStorage.getItem(key) ?? 'null'))
+      .toEqual({ area: 'center', panelId: null })
+  } finally {
+    for (const dispose of disposers) dispose()
+    vi.restoreAllMocks()
+    localStorage.removeItem(key)
+    frame.remove()
+    proxy.remove()
+    document.documentElement.removeAttribute('data-remote-control-landed')
+    vi.useRealTimers()
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),

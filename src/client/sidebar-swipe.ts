@@ -1,6 +1,8 @@
 /** Open and close the phone drawers with horizontal swipes. */
 
 import { DRAWER_SCROLL_ROOT, GIT_HISTORY_REF } from './drawer-style.ts'
+import type { Context } from '@deepseek-ai/cordis'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 
 const MIN_SWIPE = 48
 const INTERACTIVE = 'button,a,input,textarea,select,[contenteditable], [role="dialog"], [data-composer-card]'
@@ -35,71 +37,131 @@ function scrollRoom(target: Element, area: Element): { back: boolean; forward: b
 
 const FRAME = '[class*="_frame"]:has([class*="_sidebarCol"])'
 const RIGHT_TOGGLE = '[data-sidebar-right-panel][data-sidebar-right-open] [data-sidebar-right-toggle]'
-/** How long a landing keeps up with the shell restoring its panels, unless a touch ends it first. */
+/** Allow the shell's asynchronous Session and panel restoration to settle before recording. */
 const LANDING = 10_000
-/** A return sooner than this (a lock, the notification shade) keeps the page as it was left. */
-const AWAY = 60_000
-/** Marks a document that has had its load's landing; it outlives the plugin's own module. */
+/** A live document must not reapply its saved page when only the plugin reloads. */
 const LANDED = 'data-remote-control-landed'
+const LAST_PAGE = 'dsh-remote-control.last-page.v1'
+type LastPage = { area: 'left' | 'center' | 'right'; panelId: string | null }
+
+function savedPage(): LastPage {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(LAST_PAGE) ?? 'null')
+    if (typeof value === 'object' && value !== null && 'area' in value && 'panelId' in value
+      && (value.area === 'left' || value.area === 'center' || value.area === 'right')
+      && (value.panelId === null || typeof value.panelId === 'string')) {
+      return { area: value.area, panelId: value.panelId }
+    }
+  } catch { /* Storage may be disabled or its old record malformed. */ }
+  return { area: 'left', panelId: null }
+}
 
 /**
- * Land on the left drawer whenever the phone page loads or comes back from a while away. The right
- * panel's expanded state persists per Session, so a page the phone reloaded from the background
- * would otherwise reopen on it, and its opening folds the drawer: until the user's first touch,
- * every render that shows the right panel is answered by closing it and reopening the drawer.
- * The shell applies this plugin again on a page that stays open (a rebuilt bundle is swapped in
- * with a fresh module), which is no page load: only a document's first call lands on its own.
+ * Restore the phone's last visible area and global main panel. The host already remembers the
+ * current Session and its right-panel tabs; keep those identities in their existing stores.
+ * New documents and returning WebViews restore until the first user interaction or the startup
+ * deadline. Hidden layout changes must not replace the last page the user actually saw.
  */
-export function landOnDrawer(openLeft: () => void): () => void {
-  let observer: MutationObserver | undefined
+export function followLastPage(ctx: Context): () => void {
+  let wanted = savedPage()
+  let restoring = !document.documentElement.hasAttribute(LANDED)
+  let hidden = document.visibilityState !== 'visible'
+  document.documentElement.setAttribute(LANDED, '')
+  let lastSaved: string | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   let first: ReturnType<typeof setTimeout> | undefined
-  // toggleSidebar flips the shell's state and renders later: ask once until the drawer shows open.
-  let asked = false
-  const settle = (): void => {
+  let askedLeft = false
+  let askedRight = false
+  const save = (): void => {
+    if (restoring || hidden) return
     const frame = document.querySelector(FRAME)
-    if (frame === null) return
-    frame.querySelector<HTMLButtonElement>(RIGHT_TOGGLE)?.click()
-    if (!frame.hasAttribute('data-sidebar-collapsed')) asked = false
-    else if (!asked) {
-      asked = true
-      openLeft()
+    if (!frame) return
+    const panelId = ctx.layout.panelInfo.getSnapshot().activePanelId
+    const area = !frame.hasAttribute('data-sidebar-collapsed') ? 'left'
+      : panelId === null && frame.querySelector(RIGHT_TOGGLE) ? 'right' : 'center'
+    const encoded = JSON.stringify({ area, panelId })
+    if (encoded === lastSaved) return
+    try { localStorage.setItem(LAST_PAGE, encoded); lastSaved = encoded } catch { /* Storage may be disabled. */ }
+  }
+  const update = (): void => {
+    if (hidden) return
+    if (!restoring) { save(); return }
+    const frame = document.querySelector(FRAME)
+    if (!frame) return
+    if (ctx.layout.panelInfo.getSnapshot().activePanelId !== wanted.panelId) {
+      const entry = ctx.slots.entries('main').find(entry => entry.options.key === wanted.panelId)
+      // A main page may register after this plugin. Never select an unregistered key.
+      if (wanted.panelId === null || entry) ctx.layout.selectPanel(wanted.panelId === null
+        ? null : entry!.options.key as MainPanelId)
+    }
+    const right = frame.querySelector<HTMLButtonElement>(RIGHT_TOGGLE)
+    const wantRight = wanted.area === 'right' && wanted.panelId === null
+    if ((right !== null) === wantRight) askedRight = false
+    else if (!askedRight) {
+      const control = wantRight ? frame.querySelector<HTMLButtonElement>('[data-sidebar-right-expand]') : right
+      if (control) { askedRight = true; control.click() }
+    }
+    const wantLeft = wanted.area === 'left'
+    if ((!frame.hasAttribute('data-sidebar-collapsed')) === wantLeft) askedLeft = false
+    else if (!askedLeft) {
+      askedLeft = true
+      ctx.layout.toggleSidebar()
     }
   }
-  const stop = (): void => {
-    observer?.disconnect()
-    observer = undefined
+  const stopListening = (): void => {
     clearTimeout(timer)
     clearTimeout(first)
     document.removeEventListener('touchstart', stop, true)
+    document.removeEventListener('pointerdown', stop, true)
+    document.removeEventListener('keydown', stop, true)
   }
-  const land = (): void => {
-    stop()
-    asked = false
-    observer = new MutationObserver(settle)
-    observer.observe(document.body, {
-      subtree: true, childList: true, attributes: true,
-      attributeFilter: ['data-sidebar-collapsed', 'data-sidebar-right-open'],
-    })
+  const stop = (): void => {
+    stopListening()
+    restoring = false
+    save()
+  }
+  const listen = (): void => {
     document.addEventListener('touchstart', stop, { capture: true, passive: true })
+    document.addEventListener('pointerdown', stop, { capture: true, passive: true })
+    document.addEventListener('keydown', stop, true)
+    // ponytail: retry late shell restoration for ten seconds; use a readiness signal if startup outgrows it.
     timer = setTimeout(stop, LANDING)
-    // The shell may not have rendered yet, or be mid-render: look once it has had its turn.
-    first = setTimeout(settle, 0)
   }
-  // Wall-clock time: timers and performance.now() may stand still while the page is in the background.
-  let left: number | undefined
-  const onVisible = (): void => {
-    if (document.visibilityState !== 'visible') left = Date.now()
-    else if (left !== undefined && Date.now() - left >= AWAY) land()
+  const hide = (): void => {
+    save()
+    hidden = true
+    stopListening()
   }
+  const show = (): void => {
+    if (!hidden) return
+    hidden = false
+    wanted = savedPage()
+    restoring = true
+    askedLeft = askedRight = false
+    listen()
+    first = setTimeout(update, 0)
+  }
+  const onVisible = (): void => { if (document.visibilityState === 'visible') show(); else hide() }
+  const observer = new MutationObserver(update)
+  observer.observe(document.body, {
+    subtree: true, childList: true, attributes: true,
+    attributeFilter: ['data-sidebar-collapsed', 'data-sidebar-right-open'],
+  })
+  const offPanels = ctx.layout.panelInfo.subscribe(update)
+  const offEntries = ctx.slots.subscribe('main', update)
+  if (restoring && !hidden) listen()
+  first = setTimeout(update, 0)
   document.addEventListener('visibilitychange', onVisible)
-  if (!document.documentElement.hasAttribute(LANDED)) {
-    document.documentElement.setAttribute(LANDED, '')
-    land()
-  }
+  window.addEventListener('pagehide', hide)
+  window.addEventListener('pageshow', show)
   return () => {
-    stop()
+    stopListening()
+    observer.disconnect()
+    offPanels()
+    offEntries()
     document.removeEventListener('visibilitychange', onVisible)
+    window.removeEventListener('pagehide', hide)
+    window.removeEventListener('pageshow', show)
   }
 }
 
@@ -266,7 +328,10 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
   const onMove = (event: TouchEvent): void => {
     if (selecting() || event.touches.length !== 1) { cancel(); return }
     const touch = event.touches[0]
-    if (!start || start.moving || !touch || touch.identifier !== start.id) return
+    if (!start || !touch || touch.identifier !== start.id) return
+    // Native WebView exit gestures can move its coordinate origin outside the viewport.
+    if (touch.clientX < 0 || touch.clientX > window.innerWidth) { cancel(); return }
+    if (start.moving) return
     if (Math.hypot(touch.clientX - start.x, touch.clientY - start.y) <= HOLD_SLOP) return
     // A stationary hold belongs to native text selection, even before its range is announced.
     if (Date.now() - start.at >= HOLD) cancel()
@@ -279,7 +344,8 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
       || event.touches.length !== 0 || event.changedTouches.length !== 1) return
     const touch = event.changedTouches[0]
     if (touch === undefined) return
-    if (touch.identifier !== from.id || !from.frame.isConnected) return
+    if (touch.identifier !== from.id || !from.frame.isConnected
+      || touch.clientX < 0 || touch.clientX > window.innerWidth) return
     const dx = touch.clientX - from.x
     const dy = touch.clientY - from.y
     if (Math.abs(dx) < MIN_SWIPE || Math.abs(dx) < Math.abs(dy) * 1.5) return
@@ -305,6 +371,9 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
   document.addEventListener('touchcancel', cancel, { passive: true })
   document.addEventListener('selectionchange', onSelection)
   document.addEventListener('contextmenu', cancel, true)
+  document.addEventListener('visibilitychange', cancel)
+  window.addEventListener('pagehide', cancel)
+  window.addEventListener('blur', cancel)
   return () => {
     document.removeEventListener('touchstart', onStart)
     document.removeEventListener('touchmove', onMove)
@@ -312,6 +381,9 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     document.removeEventListener('touchcancel', cancel)
     document.removeEventListener('selectionchange', onSelection)
     document.removeEventListener('contextmenu', cancel, true)
+    document.removeEventListener('visibilitychange', cancel)
+    window.removeEventListener('pagehide', cancel)
+    window.removeEventListener('blur', cancel)
   }
 }
 
