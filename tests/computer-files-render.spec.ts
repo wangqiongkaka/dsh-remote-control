@@ -4,7 +4,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { ComputerFiles, registerComputerFiles } from '../dist/client/ComputerFiles.js'
+import { ComputerFiles, ComputerDirectoryFlow, registerComputerFiles } from '../dist/client/ComputerFiles.js'
+import type { DirectoryFlowOwnerProps } from '@deepseek-ai/dsh-client-ui-workspace/client'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Modal: ({ children, onClose, title }: { children: ReactNode; onClose(): void; title: string }) => createElement('div', { role: 'dialog', 'aria-label': title },
@@ -193,4 +194,72 @@ it('ignores a late directory result after returning to the workspace', async () 
   expect(oldSignal?.aborted).toBe(true)
   expect(button('current.txt')).toBeDefined()
   expect(button('stale.txt')).toBeUndefined()
+})
+
+async function directoryFlow(overrides: Partial<DirectoryFlowOwnerProps> = {}): Promise<DirectoryFlowOwnerProps> {
+  const owner = { open: true, busy: false, onPicked: vi.fn(), onCancel: vi.fn(), onError: vi.fn(), ...overrides }
+  await act(async () => { root.render(createElement(ComputerDirectoryFlow, { ...owner, t: (key: string) => key })) })
+  return owner
+}
+
+it('adds the browsed remote directory through the workspace owner, with files unavailable', async () => {
+  const owner = await directoryFlow()
+  expect(new URL(String(fetcher.mock.calls[0]?.[0]), 'http://localhost').searchParams.has('path')).toBe(false)
+  expect(button('notes.txt').disabled).toBe(true)
+  expect(button('files.workspace')).toBeUndefined()
+  expect(owner.onPicked).not.toHaveBeenCalled()
+  fetcher.mockResolvedValueOnce(Response.json({ ...listing, path: '/workspace/folder', entries: [] }))
+  await click('▸ folder/')
+  await click('files.selectDirectory')
+  await click('files.selectDirectory')
+  expect(owner.onPicked).toHaveBeenCalledExactlyOnceWith('/workspace/folder')
+  expect(pick).not.toHaveBeenCalled()
+  expect(nativePicker).not.toHaveBeenCalled()
+})
+
+it('does not select an unvalidated typed path or failed directory, and allows retry', async () => {
+  const owner = await directoryFlow()
+  const address = mount.querySelector<HTMLInputElement>('input[aria-label="files.path"]')!
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(address, '/missing')
+    address.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(button('files.selectDirectory').disabled).toBe(true)
+  fetcher.mockResolvedValueOnce(new Response('目录不存在', { status: 404 }))
+  await act(async () => { mount.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+  expect(String(fetcher.mock.lastCall?.[0])).toContain('path=%2Fmissing')
+  expect(mount.querySelector('[role="alert"]')?.textContent).toContain('目录不存在')
+  expect(button('files.selectDirectory').disabled).toBe(true)
+  expect(owner.onPicked).not.toHaveBeenCalled()
+  fetcher.mockResolvedValueOnce(Response.json({ ...listing, path: '/missing' }))
+  await click('retry')
+  await click('files.selectDirectory')
+  expect(owner.onPicked).toHaveBeenCalledExactlyOnceWith('/missing')
+})
+
+it('cancels remote directory selection without adoption and aborts withdrawn reads', async () => {
+  const owner = await directoryFlow()
+  await click('close')
+  expect(owner.onCancel).toHaveBeenCalledOnce()
+  expect(owner.onPicked).not.toHaveBeenCalled()
+  await directoryFlow({ ...owner, open: false })
+  fetcher.mockImplementationOnce(() => new Promise(() => {}))
+  await directoryFlow(owner)
+  const signal = fetcher.mock.lastCall?.[1]?.signal
+  await directoryFlow({ ...owner, open: false })
+  expect(signal?.aborted).toBe(true)
+  expect(mount.querySelector('[role="dialog"]')).toBeNull()
+  expect(owner.onPicked).not.toHaveBeenCalled()
+})
+
+it('blocks directory actions during workspace adoption without relaunching reads', async () => {
+  const owner = await directoryFlow()
+  const reads = fetcher.mock.calls.length
+  await directoryFlow({ ...owner, busy: true })
+  expect(button('files.selectDirectory').disabled).toBe(true)
+  expect(mount.querySelector('fieldset')?.disabled).toBe(true)
+  await click('close')
+  expect(owner.onCancel).not.toHaveBeenCalled()
+  expect(owner.onPicked).not.toHaveBeenCalled()
+  expect(fetcher).toHaveBeenCalledTimes(reads)
 })

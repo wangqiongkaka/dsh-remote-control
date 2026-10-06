@@ -17,7 +17,7 @@ import { compactChatDefaults } from './chat-defaults.ts'
 import { hideModelsSettings } from './settings-models.ts'
 import { followVerticalPulls, followSidebarSwipes, followRowHolds, followStripPulls, followLastPage } from './sidebar-swipe.ts'
 import { en, NS, zh, type RemoteControlKey } from './locales.ts'
-import { registerComputerFiles } from './ComputerFiles.tsx'
+import { registerComputerDirectories, registerComputerFiles } from './ComputerFiles.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -46,6 +46,7 @@ async function command(action: 'start' | 'stop' | 'refresh', workspaceId?: strin
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'remote-control: dictionaries')
   registerComputerFiles(ctx)
+  registerComputerDirectories(ctx)
   ctx.effect(() => {
     const closeLauncher = (event: MouseEvent): void => {
       if (!(event.target instanceof Element)) return

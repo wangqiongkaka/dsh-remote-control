@@ -70,7 +70,6 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + '{background:var(--dsw-specific-sidebar-nav-item-active) !important}'
   // The Agent card takes New Session's seat; a Workspace row's own New Session button stays.
   + '[class*="_sidebarCol"] button[class*="_newSession"]{display:none !important}'
-  + '[class*="_sidebarCol"] button:is([aria-label="添加工作区"],[aria-label="Add workspace"]){display:none !important}'
   // One scrollport lets the Agent card leave room for projects instead of squeezing their list.
   + `${DRAWER_SCROLL_ROOT}{overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:none;scrollbar-width:thin;`
   + 'scrollbar-gutter:stable;padding-top:0 !important;padding-bottom:0 !important;'

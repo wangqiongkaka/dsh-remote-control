@@ -22,6 +22,8 @@ function slots(): SlotCore {
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
       'sidebar.footer.action': { kind: 'list', scope: 'root' },
       'shell.overlay': { kind: 'list', scope: 'root' },
+      'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' },
+      'conversation.hero.workspace.directoryFlow': { kind: 'single', scope: 'root' },
       'settings.general.item': { kind: 'list', scope: 'root' },
       'settings.section': { kind: 'list', scope: 'root' },
       'main': { kind: 'keyed', scope: 'root' },
@@ -72,6 +74,32 @@ it('activates the mobile sidebar control in the single leading slot', () => {
     expect(core.entries('conversation.header.leading')).toHaveLength(1)
   } finally {
     for (const dispose of disposers) dispose()
+  }
+})
+
+it.each([false, true])('uses remote directory flows only on proxy pages (%s)', (proxyPage) => {
+  const core = slots()
+  const disposers: (() => void)[] = []
+  const native = () => null
+  const names = ['sidebar.workspaces.directoryFlow', 'conversation.hero.workspace.directoryFlow'] as const
+  for (const name of names) core.register({ name }, native)
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  if (proxyPage) document.head.append(proxy)
+  try {
+    apply(context(core, disposers))
+    for (const name of names) {
+      expect(core.entries(name)[0]?.component === native).toBe(!proxyPage)
+      if (proxyPage) {
+        expect(core.entries(name)[0]?.options).toMatchObject({ priority: -10 })
+        expect(core.entries(name)[0]?.locale).toBe('remote-control')
+      }
+    }
+    for (const dispose of disposers.splice(0)) dispose()
+    for (const name of names) expect(core.entries(name)[0]?.component).toBe(native)
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
   }
 })
 
