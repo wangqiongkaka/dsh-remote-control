@@ -92,13 +92,13 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${HEADER_BUTTON}{width:40px;height:40px;min-width:40px;min-height:40px;box-sizing:border-box;`
   + 'flex:none;margin:0;padding:0;display:inline-flex;align-items:center;justify-content:center}'
   + `${HEADER_BUTTON} svg{width:18px;height:18px;flex:none}`
-  + `${DRAWER_HEADER} > [class*="_panelList"]{grid-column:2;grid-row:1;position:sticky;top:0;z-index:4;`
+  + `${DRAWER_HEADER} > [class*="_panelList"]{grid-column:3;grid-row:1;position:sticky;top:0;z-index:4;`
   + 'display:flex;flex-direction:row;align-items:center;align-self:start;gap:8px;height:66px;box-sizing:border-box;'
   + 'padding:14px 0 12px;margin:0;background:var(--dsw-specific-sidebar-fill)}'
   + `${DRAWER_HEADER} > [class*="_panelList"] [class*="_panelTitle"]{display:none}`
   // Flatten only the settings wrappers so the native trigger shares the sticky header.
   + `${DRAWER_HEADER} > [class*="_footArea"],${DRAWER_HEADER} > [class*="_footArea"] > [class*="_settingsArea"]{display:contents}`
-  + `${DRAWER_HEADER} [class*="_settingsArea"] [class*="_triggerRow"]{grid-column:3;grid-row:1;position:sticky;top:0;z-index:4;`
+  + `${DRAWER_HEADER} [class*="_settingsArea"] [class*="_triggerRow"]{grid-column:2;grid-row:1;position:sticky;top:0;z-index:4;`
   + 'display:flex;align-items:center;align-self:start;gap:8px;width:auto;height:66px;box-sizing:border-box;'
   + 'padding:14px 0 12px;margin:0;background:var(--dsw-specific-sidebar-fill)}'
   + `${DRAWER_HEADER} [class*="_triggerLabel"]{display:none}`

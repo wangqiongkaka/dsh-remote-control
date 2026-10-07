@@ -196,7 +196,7 @@ it('scrolls the whole drawer while the brand and settings stay pinned', () => {
   } finally { dispose(); frame.remove() }
 })
 
-it('places panel shortcuts beside the sidebar toggle with equal button sizes and spacing', () => {
+it('places settings before panel shortcuts beside the sidebar toggle with equal button sizes and spacing', () => {
   const frame = document.createElement('div')
   frame.className = 'ui_layout__frame__h1'
   frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
@@ -232,10 +232,10 @@ it('places panel shortcuts beside the sidebar toggle with equal button sizes and
     expect(headerShadow).toContain('calc(-1 * var(--dsh-sidebar-inline-padding,12px)) 0 0 var(--dsw-specific-sidebar-fill)')
     expect(style('.ui_sidebar__brand__h1').gridColumn).toBe('1')
     expect(style('.ui_sidebar__toggle__h1').gridColumn).toBe('4')
-    expect(style('.ui_sidebar__panelList__h1').gridColumn).toBe('2')
+    expect(style('.ui_sidebar__panelList__h1').gridColumn).toBe('3')
     expect(style('.ui_sidebar__footArea__h1').display).toBe('contents')
     expect(style('.ui_sidebar__settingsArea__h1').display).toBe('contents')
-    expect(style('.settings__triggerRow__h1').gridColumn).toBe('3')
+    expect(style('.settings__triggerRow__h1').gridColumn).toBe('2')
     expect(style('.settings__triggerRow__h1').width).toBe('auto')
     expect(style('.settings__triggerLabel__h1').display).toBe('none')
     expect(style('[data-connection-indicator]').display).not.toBe('none')
@@ -261,7 +261,7 @@ it('places panel shortcuts beside the sidebar toggle with equal button sizes and
     frame.setAttribute('data-sidebar-collapsed', '')
     expect(style('.ui_sidebar__root__h1').display).not.toBe('grid')
     expect(style('.ui_sidebar__panelTitle__h1').display).not.toBe('none')
-    expect(style('.settings__triggerRow__h1').gridColumn).not.toBe('3')
+    expect(style('.settings__triggerRow__h1').gridColumn).not.toBe('2')
     expect(style('.settings__triggerLabel__h1').display).not.toBe('none')
     frame.removeAttribute('data-sidebar-collapsed')
     dispose()
