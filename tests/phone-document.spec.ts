@@ -117,6 +117,18 @@ it('hides the composer on phone views that float it over their own content', () 
     + '[data-conversation-scroll]:has([data-conversation-composer-overlay]) > [data-composer-seat]{display:none !important}')
 })
 
+// The trajectory ledger paints its own surface, a shade off the page's: the frame's bottom inset
+// takes that surface while the ledger is all the screen shows, and returns to the page's under an
+// open drawer or right panel.
+it('paints the bottom safe area in the trajectory surface while only the ledger shows', () => {
+  const out = phoneDocument('<head></head>')
+  const safe = out.slice(out.indexOf('@media (max-width: 1023px){'), out.indexOf('</style>'))
+  expect(safe).toContain('[class*="_frame"]:has([class*="_sidebarCol"])'
+    + '[data-sidebar-collapsed][data-rightbar-collapsed]:not([data-rightbar-fullscreen])'
+    + ':has([data-conversation-composer-overlay]){background-image:linear-gradient(to top,'
+    + 'var(--dsw-alias-bg-layer-1) var(--dsh-remote-bottom-clearance),transparent 0) !important}')
+})
+
 it('clips the phone toolbar backgrounds to the composer’s rounded bottom corners', () => {
   const out = phoneDocument('<head></head>')
   expect(out).toContain('[data-composer-card] > [class*="_row"]{flex-wrap:nowrap !important;gap:4px !important;'

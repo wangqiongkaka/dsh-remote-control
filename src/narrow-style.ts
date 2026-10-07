@@ -34,6 +34,11 @@ export const PHONE_SAFE_AREA_STYLE = 'html{--dsh-remote-bottom-clearance:max(8px
   + `${FRAME}{box-sizing:border-box;height:var(--dsh-remote-keyboard-height,100dvh) !important;`
   + 'padding-top:var(--dsh-remote-top-clearance) !important;padding-bottom:var(--dsh-remote-bottom-clearance) !important;'
   + 'padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}'
+  // The trajectory ledger paints its own surface rather than the page's: while it is all the screen
+  // shows, the frame's bottom inset takes that surface too. An open drawer or right panel ends on
+  // the same inset in the page's surface, so the inset stays the page's under those.
+  + `${FRAME}[data-sidebar-collapsed][data-rightbar-collapsed]:not([data-rightbar-fullscreen]):has([data-conversation-composer-overlay]){`
+  + 'background-image:linear-gradient(to top,var(--dsw-alias-bg-layer-1) var(--dsh-remote-bottom-clearance),transparent 0) !important}'
   + `html[data-dsh-remote-keyboard] ${FRAME}{margin-top:var(--dsh-remote-keyboard-shift,0px) !important}`
   + `${FRAME} [data-sidebar-right-panel="fullscreen"]{width:calc(100vw - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px)) !important}`
   + `${DRAWER},[data-remote-control-scrim]{box-sizing:border-box;top:calc(var(--dsh-remote-keyboard-shift,0px) + var(--dsh-remote-top-clearance)) !important;`
