@@ -36,7 +36,7 @@ export const PHONE_SAFE_AREA_STYLE = 'html{--dsh-remote-bottom-clearance:max(8px
   + 'padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}'
   + `html[data-dsh-remote-keyboard] ${FRAME}{margin-top:var(--dsh-remote-keyboard-shift,0px) !important}`
   + `${FRAME} [data-sidebar-right-panel="fullscreen"]{width:calc(100vw - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px)) !important}`
-  + `${DRAWER}{box-sizing:border-box;top:calc(var(--dsh-remote-keyboard-shift,0px) + var(--dsh-remote-top-clearance)) !important;`
+  + `${DRAWER},[data-remote-control-scrim]{box-sizing:border-box;top:calc(var(--dsh-remote-keyboard-shift,0px) + var(--dsh-remote-top-clearance)) !important;`
   + 'bottom:auto !important;height:calc(var(--dsh-remote-keyboard-height,100dvh) - var(--dsh-remote-top-clearance) - var(--dsh-remote-bottom-clearance)) !important;'
   + 'padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}'
   + '[class*="_root"]:not([class*="_hero"]):has(> [data-composer-card]):has(> [class*="_dock"]){padding-bottom:0 !important}'
