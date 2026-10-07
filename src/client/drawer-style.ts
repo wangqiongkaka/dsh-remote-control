@@ -55,6 +55,8 @@ const GIT_DETAILS = '[data-remote-control-git-details]'
  */
 // Standalone provider popups lack the host MenuSurface's opaque backing.
 const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg-layer-2) !important}'
+  // Five 34px file rows; the Git panel keeps its native scrolling and all entries.
+  + '[data-scroll-key="changes"][class*="_gitSectionBodyChanges"]{max-height:170px !important;overflow-y:auto}'
   + `${GIT_HISTORY_REF}{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}`
   + `${GIT_DETAILS}{box-sizing:border-box;width:min(440px,calc(100vw - 32px));max-width:none;`
   + 'max-height:calc(100dvh - 32px);overflow-y:auto;margin:auto;padding:20px;border-radius:16px;'

@@ -285,6 +285,41 @@ it('keeps automation headings, actions and summaries on one line with long text 
   } finally { dispose(); page.remove() }
 })
 
+it.each([0, 3, 5, 6, 11])('limits Git changes to five visible rows without removing files (count: %s)', (count) => {
+  const host = document.createElement('style')
+  host.textContent = '.git_gitSectionBody{max-height:160px;overflow-y:auto;overflow-x:hidden}'
+    + '.git_gitSectionBodyChanges{max-height:320px}'
+    + '.git_gitSectionBodyHistory{max-height:none}'
+    + '.git_gitRow{min-height:34px}'
+  document.head.append(host)
+  const root = document.createElement('div')
+  root.innerHTML = '<div data-scroll-key="changes" class="git_gitSectionBody git_gitSectionBodyChanges">'
+    + '<div class="git_gitScrollClip"><div class="git_gitScrollContent">'
+    + Array.from({ length: count }, (_, i) => `<div class="git_gitRow"><input type="checkbox"><button>文件${i}</button></div>`).join('')
+    + '</div></div></div>'
+    + '<div data-scroll-key="stash" class="git_gitSectionBody"></div>'
+    + '<div data-scroll-key="history" class="git_gitSectionBody git_gitSectionBodyHistory"></div>'
+  document.body.append(root)
+  const changes = root.firstElementChild!
+  const dispose = applyDrawerSelection()
+  try {
+    expect(getComputedStyle(changes).maxHeight).toBe('170px')
+    expect(getComputedStyle(changes).overflowY).toBe('auto')
+    expect(changes.querySelectorAll('.git_gitRow')).toHaveLength(count)
+    for (const row of changes.querySelectorAll('.git_gitRow')) {
+      expect(getComputedStyle(row).minHeight).toBe('34px')
+      expect(getComputedStyle(row).display).not.toBe('none')
+    }
+    const lastCheck = changes.querySelector<HTMLInputElement>('.git_gitRow:last-child input')
+    lastCheck?.click()
+    if (lastCheck) expect(lastCheck.checked).toBe(true)
+    expect(getComputedStyle(root.querySelector('[data-scroll-key="stash"]')!).maxHeight).toBe('160px')
+    expect(getComputedStyle(root.querySelector('[data-scroll-key="history"]')!).maxHeight).toBe('none')
+    dispose()
+    expect(getComputedStyle(changes).maxHeight).toBe('320px')
+  } finally { dispose(); host.remove(); root.remove() }
+})
+
 it('keeps git history compact and makes long detail text wrap inside the dialog', () => {
   const host = document.createElement('style')
   host.textContent = '.git_gitSectionBodyHistory{overflow-x:hidden}'
