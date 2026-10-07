@@ -206,7 +206,13 @@ it('places panel shortcuts beside the sidebar toggle with equal button sizes and
     + '<nav class="ui_sidebar__panelList__h1" aria-label="导航">'
     + '<button class="ui_sidebar__panelRow__h1" aria-label="插件"><span class="ui_sidebar__panelGlyph__h1"><svg width="16" height="16"></svg></span><span class="ui_sidebar__panelTitle__h1">插件</span></button>'
     + '<button class="ui_sidebar__panelRow__h1" aria-label="自动化任务"><span class="ui_sidebar__panelGlyph__h1"><svg width="20" height="20"></svg></span><span class="ui_sidebar__panelTitle__h1">自动化任务</span></button></nav>'
-    + '<div class="ui_sidebar__regionArea__h1">项目</div><div class="ui_sidebar__footArea__h1">设置</div>'
+    + '<div class="ui_sidebar__regionArea__h1">项目</div><div class="ui_sidebar__footArea__h1">'
+    + '<div class="ui_sidebar__footerActions__h1"></div><div class="ui_sidebar__settingsArea__h1">'
+    + '<div data-slot="sidebar.settings" style="display:contents"><div class="settings__triggerRow__h1">'
+    + '<div data-slot="settings.launcher" style="display:contents"><button class="settings__trigger__h1" aria-label="设置" aria-haspopup="dialog">'
+    + '<div data-slot="settings.trigger" style="display:contents"><svg width="16" height="16"></svg>'
+    + '<span class="settings__triggerLabel__h1">设置</span></div></button></div>'
+    + '<span data-connection-indicator>连接状态</span></div></div></div></div>'
     + '</div></div>'
   document.body.append(frame)
   const dispose = applyDrawerSelection()
@@ -220,11 +226,17 @@ it('places panel shortcuts beside the sidebar toggle with equal button sizes and
     // One painted header spans every column, including the gaps between its controls.
     expect(style('.ui_sidebar__logoRow__h1').gridColumn).toBe('1 / -1')
     expect(style('.ui_sidebar__brand__h1').gridColumn).toBe('1')
-    expect(style('.ui_sidebar__toggle__h1').gridColumn).toBe('3')
+    expect(style('.ui_sidebar__toggle__h1').gridColumn).toBe('4')
     expect(style('.ui_sidebar__panelList__h1').gridColumn).toBe('2')
-    // The project track must grow with its content so sticky Settings stays at the scrollport's foot.
+    expect(style('.ui_sidebar__footArea__h1').display).toBe('contents')
+    expect(style('.ui_sidebar__settingsArea__h1').display).toBe('contents')
+    expect(style('.settings__triggerRow__h1').gridColumn).toBe('3')
+    expect(style('.settings__triggerRow__h1').width).toBe('auto')
+    expect(style('.settings__triggerLabel__h1').display).toBe('none')
+    expect(style('[data-connection-indicator]').display).not.toBe('none')
+    // The project track grows with its content while the settings control shares the header.
     expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('auto')
-    for (const selector of ['.ui_sidebar__logoRow__h1', '.ui_sidebar__panelList__h1']) {
+    for (const selector of ['.ui_sidebar__logoRow__h1', '.ui_sidebar__panelList__h1', '.settings__triggerRow__h1']) {
       expect(style(selector).gridRow).toBe('1')
       expect(style(selector).position).toBe('sticky')
       expect(style(selector).top).toBe('0px')
@@ -240,10 +252,16 @@ it('places panel shortcuts beside the sidebar toggle with equal button sizes and
       expect(getComputedStyle(button.querySelector('svg')!).height).toBe('18px')
       button.click()
     }
-    expect(picked).toEqual(['收起侧边栏', '插件', '自动化任务'])
+    expect(picked).toEqual(['收起侧边栏', '插件', '自动化任务', '设置'])
     frame.setAttribute('data-sidebar-collapsed', '')
     expect(style('.ui_sidebar__root__h1').display).not.toBe('grid')
     expect(style('.ui_sidebar__panelTitle__h1').display).not.toBe('none')
+    expect(style('.settings__triggerRow__h1').gridColumn).not.toBe('3')
+    expect(style('.settings__triggerLabel__h1').display).not.toBe('none')
+    frame.removeAttribute('data-sidebar-collapsed')
+    dispose()
+    expect(style('.ui_sidebar__footArea__h1').display).not.toBe('contents')
+    expect(style('.settings__triggerRow__h1').gridRow).not.toBe('1')
   } finally { dispose(); frame.remove() }
 })
 
