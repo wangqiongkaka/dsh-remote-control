@@ -72,6 +72,8 @@ export function followKeyboard(): () => void {
   let shrunk = false
   /** The previous run's verdict: revealing the field belongs to the keyboard opening, not every tick. */
   let wasShrunk = false
+  /** A native file picker is open: no keyboard is read until a text field takes focus again. */
+  let released = false
   /** The tallest area the phone has reported while no keyboard was up; a keyboard only lowers it. */
   let resting = 0
   let poll: ReturnType<typeof setInterval> | undefined
@@ -138,7 +140,7 @@ export function followKeyboard(): () => void {
     // the tallest either has ever reported with no keyboard up.
     const visible = Math.min(root.clientHeight, viewport.height)
     resting = Math.max(resting, root.clientHeight, viewport.height)
-    shrunk = viewport.scale <= MAX_SCALE && resting - visible >= KEYBOARD_MIN_INSET
+    shrunk = !released && viewport.scale <= MAX_SCALE && resting - visible >= KEYBOARD_MIN_INSET
     if (!shrunk) {
       root.removeAttribute(KEYBOARD_ATTRIBUTE)
       root.style.removeProperty(KEYBOARD_HEIGHT_VARIABLE)
@@ -181,6 +183,7 @@ export function followKeyboard(): () => void {
       return
     }
     focused = true
+    released = false
     apply()
   }
   const onFocusOut = (event: FocusEvent): void => {
@@ -193,6 +196,21 @@ export function followKeyboard(): () => void {
     // Keep watching while the shell is still shrunk: with no events coming, the poll is the only
     // thing that can notice the keyboard closing.
     syncPoll()
+  }
+  /**
+   * iOS hides the keyboard under its file sheet while the editor keeps focus and the viewport keeps
+   * reporting the keyboard, so the shell stayed shrunk and panned behind the sheet. Close the
+   * keyboard for real as the picker opens (the host clicks its resident input from a menu pick) and
+   * rest the shell without waiting for a viewport that will not report it. Whether a keyboard was
+   * read yet does not matter: a field left focused can still have one reported under the sheet.
+   */
+  const onFilePicker = (event: MouseEvent): void => {
+    if (!(event.target instanceof HTMLInputElement) || event.target.type !== 'file') return
+    released = true
+    const active = document.activeElement
+    if (active instanceof HTMLElement && isTextField(active)) active.blur()
+    window.scrollTo(0, 0)
+    apply()
   }
   /** Let the host handle the gesture, then dismiss only a committed or processing submission. */
   const dismissCommitted = (editor: HTMLElement): void => {
@@ -327,6 +345,7 @@ export function followKeyboard(): () => void {
   document.addEventListener('pointerdown', onPointerDown, true)
   document.addEventListener('mousedown', onMenuMouseDown, true)
   document.addEventListener('click', onSubmitClick, true)
+  document.addEventListener('click', onFilePicker, true)
   document.addEventListener('keydown', onSubmitKey, true)
   document.addEventListener('touchstart', onTouchStart, { passive: true })
   document.addEventListener('touchmove', onTouchMove, { passive: false })
@@ -345,6 +364,7 @@ export function followKeyboard(): () => void {
     document.removeEventListener('pointerdown', onPointerDown, true)
     document.removeEventListener('mousedown', onMenuMouseDown, true)
     document.removeEventListener('click', onSubmitClick, true)
+    document.removeEventListener('click', onFilePicker, true)
     document.removeEventListener('keydown', onSubmitKey, true)
     document.removeEventListener('touchstart', onTouchStart)
     document.removeEventListener('touchmove', onTouchMove)

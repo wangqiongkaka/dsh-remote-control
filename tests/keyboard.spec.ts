@@ -373,6 +373,7 @@ it('leaves menu clicks alone without an open composer keyboard and restores them
 
 it('picks a file in one menu press without reopening the suppressed keyboard', () => {
   visualViewport({ layout: 800, height: 800 })
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   const dispose = followKeyboard()
   const { card, editor, tool } = composer()
   tool.setAttribute('aria-haspopup', 'listbox')
@@ -403,9 +404,87 @@ it('picks a file in one menu press without reopening the suppressed keyboard', (
     item.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
     expect(openPicker).toHaveBeenCalledTimes(1)
     expect(menu.isConnected).toBe(false)
+    // The picker takes focus off the editor, and its suppression still holds until the next tap.
+    expect(document.activeElement).not.toBe(editor)
+    expect(editor.getAttribute('inputmode')).toBe('none')
     // Typing resumes normally after the picker: the direct editor tap releases suppression.
     editor.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     expect(editor.hasAttribute('inputmode')).toBe(false)
+  } finally {
+    dispose()
+    card.remove()
+  }
+})
+
+// iOS hides the keyboard under its file sheet while the editor keeps focus and the viewport keeps
+// reporting the keyboard: the shell stayed shrunk and panned behind the sheet, the header off-screen
+// and half the page empty under the composer.
+it('rests the shell and closes the keyboard when a native file picker opens', () => {
+  const viewport = visualViewport({ layout: 800, height: 800 })
+  const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+  const dispose = followKeyboard()
+  const { card, editor } = composer()
+  const file = document.createElement('input')
+  file.type = 'file'
+  file.hidden = true
+  card.append(file)
+  const root = document.documentElement
+  try {
+    editor.focus()
+    viewport.resize({ height: 480 })
+    expect(root.hasAttribute(KEYBOARD_ATTRIBUTE)).toBe(true)
+
+    file.click()
+    expect(document.activeElement).not.toBe(editor)
+    expect(root.hasAttribute(KEYBOARD_ATTRIBUTE)).toBe(false)
+    expect(root.style.getPropertyValue(KEYBOARD_HEIGHT_VARIABLE)).toBe('')
+    expect(root.style.getPropertyValue(KEYBOARD_SHIFT_VARIABLE)).toBe('')
+    expect(scrollTo).toHaveBeenCalledWith(0, 0)
+    // A stale reading while the sheet is up is not a keyboard: no field holds focus.
+    viewport.resize({ height: 480 })
+    expect(root.hasAttribute(KEYBOARD_ATTRIBUTE)).toBe(false)
+
+    // Typing again follows the keyboard as before.
+    editor.focus()
+    expect(root.hasAttribute(KEYBOARD_ATTRIBUTE)).toBe(true)
+  } finally {
+    dispose()
+    card.remove()
+  }
+})
+
+// The launcher path focuses the editor with its keyboard suppressed: a keyboard reported only once
+// the sheet is up must not shrink the shell either.
+it('reads no keyboard under a file picker opened before one was up', () => {
+  const viewport = visualViewport({ layout: 800, height: 800 })
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+  const dispose = followKeyboard()
+  const { card, editor } = composer()
+  const file = document.createElement('input')
+  file.type = 'file'
+  card.append(file)
+  try {
+    editor.focus()
+    file.click()
+    expect(document.activeElement).not.toBe(editor)
+    viewport.resize({ height: 480 })
+    expect(document.documentElement.hasAttribute(KEYBOARD_ATTRIBUTE)).toBe(false)
+  } finally {
+    dispose()
+    card.remove()
+  }
+})
+
+it('leaves the keyboard alone on clicks that open no file picker', () => {
+  const viewport = visualViewport({ layout: 800, height: 800 })
+  const dispose = followKeyboard()
+  const { card, editor, tool } = composer()
+  try {
+    editor.focus()
+    viewport.resize({ height: 480 })
+    tool.click()
+    expect(document.activeElement).toBe(editor)
+    expect(document.documentElement.hasAttribute(KEYBOARD_ATTRIBUTE)).toBe(true)
   } finally {
     dispose()
     card.remove()
