@@ -9,6 +9,23 @@ function sheet(): HTMLStyleElement | null {
 
 afterEach(() => { sheet()?.remove() })
 
+it('bounds the drawer scrim above the same safe area as the phone sidebar', () => {
+  const dispose = applyDrawerSelection()
+  try {
+    const shared = Array.from(sheet()!.sheet!.cssRules).find(rule => rule instanceof CSSMediaRule
+      && rule.conditionText === '(max-width: 1023px)') as CSSMediaRule
+    const scrim = Array.from(shared.cssRules).find(rule => rule instanceof CSSStyleRule
+      && rule.selectorText.split(',').includes('[data-remote-control-scrim]')) as CSSStyleRule | undefined
+    // An unbounded black scrim darkens the home-indicator band that the drawer leaves exposed.
+    expect(scrim).toBeDefined()
+    expect(scrim?.style.getPropertyValue('height')).toContain('- var(--dsh-remote-bottom-clearance)')
+    expect(scrim?.style.getPropertyValue('height')).toContain('var(--dsh-remote-keyboard-height,100dvh)')
+    expect(scrim?.style.getPropertyValue('top')).toContain('var(--dsh-remote-keyboard-shift,0px)')
+    expect(scrim?.style.getPropertyValue('bottom')).toBe('auto')
+    expect(scrim?.style.getPropertyPriority('bottom')).toBe('important')
+  } finally { dispose() }
+})
+
 it('updates every page edge and the viewport on an older proxied phone document', () => {
   const viewport = document.createElement('meta')
   viewport.name = 'viewport'; viewport.content = 'width=device-width, initial-scale=1'
