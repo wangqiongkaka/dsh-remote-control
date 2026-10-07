@@ -8,8 +8,9 @@ import { ComputerFiles, ComputerDirectoryFlow, registerComputerFiles } from '../
 import type { DirectoryFlowOwnerProps } from '@deepseek-ai/dsh-client-ui-workspace/client'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
-  Modal: ({ children, onClose, title }: { children: ReactNode; onClose(): void; title: string }) => createElement('div', { role: 'dialog', 'aria-label': title },
-    createElement('button', { onClick: onClose }, 'close'), children),
+  Modal: ({ children, onClose, title, description }: { children: ReactNode; onClose(): void; title: string; description?: string }) => createElement('div', { role: 'dialog', 'aria-label': title },
+    createElement('h2', null, title), createElement('button', { onClick: onClose }, 'close'),
+    description && createElement('p', null, description), children),
   Button: (props: object) => createElement('button', props),
   Input: (props: object) => createElement('input', props),
 }))
@@ -35,6 +36,8 @@ async function openRemote(): Promise<void> {
   const dialog = mount.querySelector('[role="dialog"]')
   await click('files.title')
   expect(mount.querySelector('[role="dialog"]')).toBe(dialog)
+  expect(dialog?.getAttribute('aria-label')).toBe('files.title')
+  expect(dialog?.querySelector('p')?.textContent).toBe('files.description')
 }
 
 beforeEach(() => {
@@ -76,7 +79,11 @@ afterEach(() => {
 
 it('chooses a file source inside the existing file action without an extra command or premature reads', async () => {
   await act(async () => { inputHub.pickFiles('s1') })
-  expect(mount.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('files.sourceTitle')
+  const dialog = mount.querySelector('[role="dialog"]')!
+  expect(dialog.getAttribute('aria-label')).toBe('files.sourceDescription')
+  expect(dialog.querySelector('h2')?.textContent).toBe('files.sourceDescription')
+  expect(dialog.textContent).not.toContain('files.sourceTitle')
+  expect(dialog.querySelector('p')).toBeNull()
   expect(button('files.local')).toBeDefined()
   expect(button('files.title')).toBeDefined()
   expect(register).not.toHaveBeenCalled()
@@ -101,7 +108,7 @@ it('opens the original phone picker only after choosing phone files and refuses 
   expect(mount.querySelector('[role="alert"]')?.textContent).toContain('files.changed')
   await click('files.title')
   expect(fetcher).not.toHaveBeenCalled()
-  expect(mount.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('files.sourceTitle')
+  expect(mount.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('files.sourceDescription')
 })
 
 it('restores the host picker on disposal and keeps local pages and disabled file intake unchanged', async () => {

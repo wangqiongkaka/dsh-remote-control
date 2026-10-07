@@ -194,7 +194,7 @@ it('wires the file-source picker and renamed copy without a separate command', (
     expect(register).not.toHaveBeenCalled()
     expect(dictionaries).toHaveBeenCalledWith('remote-control', expect.objectContaining({
       zh: expect.objectContaining({
-        'files.title': '远端文件', 'files.local': '手机文件', 'files.sourceTitle': '文件',
+        'files.title': '远端文件', 'files.local': '手机文件',
         'files.sourceDescription': '上传手机文件，或引用远端路径。',
       }),
       en: expect.objectContaining({ 'files.title': 'Remote files' }),
@@ -330,6 +330,7 @@ it('patches the drawer only on a narrow frame that came through the proxy', () =
     try {
       expect(sheet()).not.toBeNull()
       expect(sheet()?.textContent).toContain('.hp-delegate[data-hp-mode]{display:grid;')
+      expect(sheet()?.textContent).toContain('[data-composer-card] ~ [class*="_dock"]{order:-1;')
     } finally { phone() }
     expect(sheet()).toBeNull()
 

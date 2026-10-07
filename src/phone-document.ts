@@ -4,7 +4,7 @@ import { NARROW_SCREEN_STYLE } from './narrow-style.ts'
 
 /** Viewport meta for documents that ship none, with the soft-keyboard hint Chromium honors. */
 export const VIEWPORT_META = '<meta name="viewport" content="width=device-width, initial-scale=1, '
-  + 'interactive-widget=resizes-content">'
+  + 'interactive-widget=resizes-content, viewport-fit=cover">'
 
 /** A standalone phone page: pairing failures cannot load the authenticated shell's assets. */
 export function remoteErrorDocument(reason: string): string {
@@ -12,7 +12,8 @@ export function remoteErrorDocument(reason: string): string {
   return '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">' + VIEWPORT_META
     + '<title>无法打开远程页面</title><style>'
     + ':root{color-scheme:light dark;font:14px/22px system-ui,sans-serif;color:CanvasText;background:Canvas}'
-    + 'body{margin:0;padding:16px;min-height:100svh;box-sizing:border-box;display:grid;place-items:center}'
+    + 'body{margin:0;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) '
+    + 'max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));min-height:100svh;box-sizing:border-box;display:grid;place-items:center}'
     + 'main{box-sizing:border-box;width:min(100%,440px);padding:24px;border:1px solid GrayText;border-radius:16px}'
     + 'h1{font-size:20px;line-height:28px;margin:0 0 16px}p{margin:0;overflow-wrap:anywhere}'
     + 'p+p{margin-top:12px;color:GrayText}</style></head><body><main>'
@@ -21,6 +22,12 @@ export function remoteErrorDocument(reason: string): string {
 }
 
 const VIEWPORT_TAG = /<meta[^>]*name=["']viewport["'][^>]*>/iu
+
+/** Preserve explicit host choices while enabling native safe-area and keyboard reporting. */
+export function phoneViewport(content: string): string {
+  return content + (/interactive-widget/iu.test(content) ? '' : ', interactive-widget=resizes-content')
+    + (/viewport-fit/iu.test(content) ? '' : ', viewport-fit=cover')
+}
 
 /**
  * Ask the soft keyboard to shrink the layout viewport instead of covering it. Chromium only
@@ -31,11 +38,11 @@ const VIEWPORT_TAG = /<meta[^>]*name=["']viewport["'][^>]*>/iu
  */
 export function keyboardViewport(body: string): string {
   const tag = VIEWPORT_TAG.exec(body)
-  if (tag === null || /interactive-widget/iu.test(tag[0])) return body
+  if (tag === null) return body
   const content = /content=["']([^"']*)["']/iu.exec(tag[0])
   if (content === null) return body
   const rewritten = tag[0].slice(0, content.index)
-    + `content="${content[1]}, interactive-widget=resizes-content"`
+    + `content="${phoneViewport(content[1]!)}"`
     + tag[0].slice(content.index + content[0].length)
   return body.slice(0, tag.index) + rewritten + body.slice(tag.index + tag[0].length)
 }

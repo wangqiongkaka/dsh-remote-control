@@ -22,6 +22,9 @@
  * styling); this module only owns the sheet.
  */
 
+import { PHONE_SAFE_AREA_STYLE } from '../narrow-style.ts'
+import { phoneViewport } from '../phone-document.ts'
+
 /** Attribute on the injected sheet; the proxy's layers use their own attribute names. */
 export const DRAWER_STYLE_ATTRIBUTE = 'data-dsh-remote-control-drawer-selection'
 
@@ -148,7 +151,12 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${CARD} > [class*="_projectRow"] [class*="_title"]{font-weight:600}`
   // At phone width the drawer is the whole screen: rows grow to thumb size, and so does the logo
   // row's collapse control, which is the drawer's only way back there.
+  + '@media (max-width: 1023px){' + PHONE_SAFE_AREA_STYLE + '}'
   + '@media (max-width: 720px){'
+  // Client reloads do not replace the proxy HTML; keep live composer layout in this sheet.
+  // Installed hosts lack data-composer-dock; the card's dock sibling exists in both versions.
+  + '[data-composer-card] ~ [class*="_dock"]{order:-1;padding-top:0 !important;padding-bottom:4px}'
+  + '[data-composer-card] ~ [class*="_dock"]:empty{display:none}'
   // The phone drawer's outer edge already reserves the shared home-indicator inset.
   + `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]{padding-bottom:0}`
   // Task modes share one phone layout. A bounded dock leaves room for the draft and transcript
@@ -184,6 +192,10 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
  * @returns a disposer that removes the sheet.
  */
 export function applyDrawerSelection(): () => void {
+  const viewportMeta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]')
+  const originalViewport = viewportMeta?.getAttribute('content')
+  const fittedViewport = originalViewport == null ? undefined : phoneViewport(originalViewport)
+  if (viewportMeta && fittedViewport !== undefined) viewportMeta.content = fittedViewport
   const style = document.createElement('style')
   style.setAttribute(DRAWER_STYLE_ATTRIBUTE, '')
   style.textContent = DRAWER_SELECTION_STYLE
@@ -214,6 +226,7 @@ export function applyDrawerSelection(): () => void {
   viewport?.addEventListener('scroll', schedule)
   position()
   return () => {
+    if (viewportMeta && originalViewport != null && viewportMeta.content === fittedViewport) viewportMeta.content = originalViewport
     observer.disconnect()
     cancelAnimationFrame(frame)
     document.removeEventListener('scroll', schedule, true)

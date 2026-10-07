@@ -9,6 +9,58 @@ function sheet(): HTMLStyleElement | null {
 
 afterEach(() => { sheet()?.remove() })
 
+it('updates every page edge and the viewport on an older proxied phone document', () => {
+  const viewport = document.createElement('meta')
+  viewport.name = 'viewport'; viewport.content = 'width=device-width, initial-scale=1'
+  document.head.append(viewport)
+  const dispose = applyDrawerSelection()
+  try {
+    expect(viewport.content).toContain('viewport-fit=cover')
+    const css = sheet()!.textContent!
+    expect(css).toContain('--dsh-remote-bottom-clearance:max(8px,env(safe-area-inset-bottom,0px))')
+    expect(css).toContain('padding-bottom:var(--dsh-remote-bottom-clearance) !important')
+    expect(css).toContain('bottom:var(--dsh-remote-bottom-clearance) !important')
+    expect(css).toContain('body > [role="presentation"]:has(> [role="dialog"])')
+    expect(css).toContain('[data-sidebar-right-panel="fullscreen"]{width:calc(100vw - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px)) !important}')
+    expect(css).toContain('html[data-dsh-remote-keyboard]{--dsh-remote-bottom-clearance:4px}')
+    const shared = css.slice(css.indexOf('@media (max-width: 1023px){'), css.indexOf('@media (max-width: 720px){'))
+    expect(shared).toContain('margin-top:var(--dsh-remote-keyboard-shift,0px) !important')
+    dispose()
+    expect(viewport.content).toBe('width=device-width, initial-scale=1')
+  } finally { dispose(); viewport.remove() }
+})
+
+it.each([true, false])('moves statistics above the input after a client reload (dock marker: %s)', marked => {
+  // HMR replaces the client plugin, not the phone's already parsed proxy HTML.
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  proxy.textContent = '.host_root{display:flex;flex-direction:column}.host_dock{order:0;padding-top:4px}'
+  const root = document.createElement('div')
+  root.className = 'host_root'
+  // The installed desktop host predates data-composer-dock; both versions use the dock class.
+  root.innerHTML = `<div data-composer-card>草稿</div><div class="host_dock" ${marked ? 'data-composer-dock' : ''}>`
+    + '<button>性能</button><button>总量</button></div>'
+  document.head.append(proxy)
+  document.body.append(root)
+  const dispose = applyDrawerSelection()
+  const dock = root.querySelector<HTMLElement>('.host_dock')!
+  const card = root.querySelector<HTMLElement>('[data-composer-card]')!
+  // jsdom does not apply media queries: activate just the client sheet's phone rules.
+  const phoneRules = sheet()!.sheet!.cssRules
+  for (const rule of Array.from(phoneRules)) {
+    if (rule instanceof CSSMediaRule && rule.conditionText === '(max-width: 720px)') {
+      sheet()!.append(document.createTextNode(Array.from(rule.cssRules).map(value => value.cssText).join('')))
+    }
+  }
+  try {
+    expect(Number(getComputedStyle(dock).order)).toBeLessThan(Number(getComputedStyle(card).order || 0))
+    expect(getComputedStyle(dock).paddingTop).toBe('0px')
+    expect(dock.querySelectorAll('button')).toHaveLength(2)
+    dispose()
+    expect(getComputedStyle(dock).order).toBe('0')
+  } finally { dispose(); root.remove(); proxy.remove() }
+})
+
 it.each([
   ['light', 'rgb(255, 255, 255)', 'rgba(248, 249, 250, 0.58)'],
   ['dark', 'rgb(44, 44, 46)', 'rgba(67, 69, 74, 0.45)'],

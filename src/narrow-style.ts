@@ -25,15 +25,34 @@ const CHAT_SCROLL = `${FRAME} [data-phase="active"] > [data-conversation-content
  */
 const COMPOSER_ROW = '[data-composer-card] > [class*="_row"]:has(> [class*="_tools"]:not([hidden]))'
 
+const MODAL = 'body > [role="presentation"]:has(> [role="dialog"])'
+
+/** Fresh proxy documents and client reloads share one safe visible band for every page. */
+export const PHONE_SAFE_AREA_STYLE = 'html{--dsh-remote-bottom-clearance:max(8px,env(safe-area-inset-bottom,0px));'
+  + '--dsh-remote-top-clearance:env(safe-area-inset-top,0px)}'
+  + 'html[data-dsh-remote-keyboard]{--dsh-remote-bottom-clearance:4px}'
+  + `${FRAME}{box-sizing:border-box;height:var(--dsh-remote-keyboard-height,100dvh) !important;`
+  + 'padding-top:var(--dsh-remote-top-clearance) !important;padding-bottom:var(--dsh-remote-bottom-clearance) !important;'
+  + 'padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}'
+  + `html[data-dsh-remote-keyboard] ${FRAME}{margin-top:var(--dsh-remote-keyboard-shift,0px) !important}`
+  + `${FRAME} [data-sidebar-right-panel="fullscreen"]{width:calc(100vw - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px)) !important}`
+  + `${DRAWER}{box-sizing:border-box;top:calc(var(--dsh-remote-keyboard-shift,0px) + var(--dsh-remote-top-clearance)) !important;`
+  + 'bottom:auto !important;height:calc(var(--dsh-remote-keyboard-height,100dvh) - var(--dsh-remote-top-clearance) - var(--dsh-remote-bottom-clearance)) !important;'
+  + 'padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}'
+  + '[class*="_root"]:not([class*="_hero"]):has(> [data-composer-card]):has(> [class*="_dock"]){padding-bottom:0 !important}'
+  + `${MODAL}{box-sizing:border-box;top:var(--dsh-remote-keyboard-shift,0px) !important;bottom:var(--dsh-remote-bottom-clearance) !important;`
+  + 'height:calc(var(--dsh-remote-keyboard-height,100dvh) - var(--dsh-remote-bottom-clearance)) !important;'
+  + 'padding-top:max(24px,var(--dsh-remote-top-clearance)) !important;'
+  + 'padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))}'
+  + `${MODAL} > [role="dialog"]{max-height:100%}`
+  + `${MODAL} > [role="dialog"] > [class*="_content"]{min-height:0;overflow-y:auto}`
+
 /** The DSH shell has no narrow-screen layout, so the proxy lends phones a small patch layer. */
 export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '@media (max-width: 720px){'
   // Only the conversation scrollport moves. At its ends, stop a pull from panning the page and
   // carrying the composer and its context meter with the whole shell.
   + 'html,body{overflow:hidden;overscroll-behavior-y:none}'
-  // One page-edge inset for the conversation and right panel; the fixed drawer shares it below.
-  + 'html{--dsh-remote-bottom-clearance:max(8px,env(safe-area-inset-bottom,0px))}'
-  + `${FRAME}{box-sizing:border-box;padding-bottom:var(--dsh-remote-bottom-clearance) !important}`
   // The page and browser theme-color share the safe-area surface in both palettes.
   + 'body{--dsw-alias-bg-base:var(--dsw-specific-sidebar-fill) !important;background:var(--dsw-alias-bg-base) !important}'
   // iOS zooms the whole page when a focused field is under 16px.
@@ -124,11 +143,6 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '[class*="hp-menu"]{max-height:min(360px,calc(100dvh - 180px)) !important}'
   + '[class*="hp-panel"]{max-height:calc(100dvh - 180px) !important;overflow-y:auto}'
   + '[class*="_portal"]{max-height:calc(100dvh - 24px) !important}'
-  // Statistics keep their existing components and interactions, above the input card.
-  + '[data-composer-dock]{order:-1;padding-top:0 !important;padding-bottom:4px}'
-  + '[data-composer-dock]:empty{display:none}'
-  // The frame owns the home-indicator clearance; do not count it again inside the composer.
-  + '[class*="_root"]:not([class*="_hero"]):has(> [data-composer-card]):has(> [class*="_dock"]){padding-bottom:0 !important}'
   // Pin the active chat composer to the non-scrolling body and reserve its measured height in
   // the transcript, so scrolling messages never moves the input card or hides the last message.
   // The room is a trailing spacer rather than the scroller's bottom padding: WebKit leaves that
@@ -150,8 +164,6 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // the clearance the phone's bottom edge needed now belongs to the keyboard, and every overlay
   // card is bounded by the space actually visible above it. The shift is the pan the browser
   // applied to reveal the focused field, which the shell follows to stay inside the visible band.
-  + `[data-dsh-remote-keyboard] ${FRAME}{height:var(--dsh-remote-keyboard-height,100%) !important;margin-top:var(--dsh-remote-keyboard-shift,0px) !important}`
-  + 'html[data-dsh-remote-keyboard]{--dsh-remote-bottom-clearance:4px}'
   + '[data-dsh-remote-keyboard] [class*="hp-menu"],[data-dsh-remote-keyboard] [class*="hp-panel"],'
   + '[data-dsh-remote-keyboard] [class*="_portal"]{max-height:calc(var(--dsh-remote-keyboard-height,100dvh) - 140px) !important}'
   // Settings has a fixed desktop nav; stack it above the content on phones.
@@ -184,7 +196,8 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // and the keyboard (visual-viewport height) bounds it the same way it bounds the shell.
   + '[data-shortcut-modal="settings"]{padding-bottom:env(safe-area-inset-bottom)}'
   + '[data-dsh-remote-keyboard] [data-shortcut-modal="settings"]{height:calc(var(--dsh-remote-keyboard-height,100dvh) - 16px) !important}'
-  + '}</style>'
+  + '}'
+  + '@media (max-width: 1023px){' + PHONE_SAFE_AREA_STYLE + '}</style>'
   // The shell keeps a 56px icon rail whenever it is not a desktop window (AppFrame's collapsedWidth),
   // which a phone cannot spare: the closed sidebar takes no track at all, and the header control in
   // `conversation.header.leading` opens it. The rule stays off frames that give the right panel a

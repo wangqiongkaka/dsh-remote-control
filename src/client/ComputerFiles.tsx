@@ -112,8 +112,8 @@ export function ComputerFiles({ picker, t }: PropsLocale<typeof NS> & InjectFace
 function FileDialog({ selection, t }: { selection: Selection; t: PropsLocale<typeof NS>['t'] }): React.JSX.Element {
   const [remote, setRemote] = useState(false)
   const [error, setError] = useState('')
-  return <Modal open onClose={selection.close} title={t(remote ? 'files.title' : 'files.sourceTitle')} closeLabel={t('close')}
-    description={t(remote ? 'files.description' : 'files.sourceDescription')}>
+  return <Modal open onClose={selection.close} title={t(remote ? 'files.title' : 'files.sourceDescription')} closeLabel={t('close')}
+    description={remote ? t('files.description') : ''}>
     {remote ? <FileBrowser path={selection.path} pickFile={file => {
       if (!selection.pick(file)) return false
       selection.close()
