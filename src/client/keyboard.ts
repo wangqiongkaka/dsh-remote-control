@@ -72,7 +72,7 @@ export function followKeyboard(): () => void {
   let shrunk = false
   /** The previous run's verdict: revealing the field belongs to the keyboard opening, not every tick. */
   let wasShrunk = false
-  /** A native file picker is open: no keyboard is read until a text field takes focus again. */
+  /** A native file picker is open: no keyboard is read until it closes. */
   let released = false
   /** The tallest area the phone has reported while no keyboard was up; a keyboard only lowers it. */
   let resting = 0
@@ -183,7 +183,6 @@ export function followKeyboard(): () => void {
       return
     }
     focused = true
-    released = false
     apply()
   }
   const onFocusOut = (event: FocusEvent): void => {
@@ -203,6 +202,9 @@ export function followKeyboard(): () => void {
    * keyboard for real as the picker opens (the host clicks its resident input from a menu pick) and
    * rest the shell without waiting for a viewport that will not report it. Whether a keyboard was
    * read yet does not matter: a field left focused can still have one reported under the sheet.
+   * The picker's own change or cancel ends this, and so does the next touch — nothing reaches the
+   * page while the sheet is up, and older WebKit sends no cancel. Focus does not: a host handing
+   * it back to the editor under the sheet would read the stale viewport as a keyboard again.
    */
   const onFilePicker = (event: MouseEvent): void => {
     if (!(event.target instanceof HTMLInputElement) || event.target.type !== 'file') return
@@ -212,6 +214,7 @@ export function followKeyboard(): () => void {
     window.scrollTo(0, 0)
     apply()
   }
+  const onPickerClosed = (): void => { released = false }
   /** Let the host handle the gesture, then dismiss only a committed or processing submission. */
   const dismissCommitted = (editor: HTMLElement): void => {
     const card = editor.closest('[data-composer-card]')
@@ -259,6 +262,7 @@ export function followKeyboard(): () => void {
     if (editor instanceof HTMLElement && !editor.hasAttribute('data-composer-composing')) dismissCommitted(editor)
   }
   const onPointerDown = (event: PointerEvent): void => {
+    released = false
     if (!(event.target instanceof Element)) return
     watchSession(false)
     const active = document.activeElement
@@ -346,6 +350,8 @@ export function followKeyboard(): () => void {
   document.addEventListener('mousedown', onMenuMouseDown, true)
   document.addEventListener('click', onSubmitClick, true)
   document.addEventListener('click', onFilePicker, true)
+  document.addEventListener('change', onPickerClosed, true)
+  document.addEventListener('cancel', onPickerClosed, true)
   document.addEventListener('keydown', onSubmitKey, true)
   document.addEventListener('touchstart', onTouchStart, { passive: true })
   document.addEventListener('touchmove', onTouchMove, { passive: false })
@@ -365,6 +371,8 @@ export function followKeyboard(): () => void {
     document.removeEventListener('mousedown', onMenuMouseDown, true)
     document.removeEventListener('click', onSubmitClick, true)
     document.removeEventListener('click', onFilePicker, true)
+    document.removeEventListener('change', onPickerClosed, true)
+    document.removeEventListener('cancel', onPickerClosed, true)
     document.removeEventListener('keydown', onSubmitKey, true)
     document.removeEventListener('touchstart', onTouchStart)
     document.removeEventListener('touchmove', onTouchMove)
