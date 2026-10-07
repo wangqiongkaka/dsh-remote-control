@@ -160,6 +160,10 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // The shell's sticky jump-to-latest control rides the scroller's bottom edge, which the pinned
   // composer covers: lift it by the composer's measured height plus an 8px gap.
   + `${CHAT_SCROLL} [class*="_toBottomSlot"]{bottom:calc(var(--dsh-composer-height,0px) + 8px) !important}`
+  // A view that floats the composer over its own content (the trajectory ledger) is one a phone
+  // only reads, and the card would cover a third of it: the seat goes, and the view's bottom
+  // clearance follows the seat's measured height down to zero.
+  + `${FRAME} [data-conversation-scroll]:has([data-conversation-composer-overlay]) > [data-composer-seat]{display:none !important}`
   // Keyboard up (the client patch publishes the visual viewport height): the shell shrinks to it,
   // the clearance the phone's bottom edge needed now belongs to the keyboard, and every overlay
   // card is bounded by the space actually visible above it. The shift is the pan the browser

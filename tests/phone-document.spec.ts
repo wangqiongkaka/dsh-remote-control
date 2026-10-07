@@ -108,6 +108,15 @@ it('keeps the jump-to-latest control just above the pinned composer', () => {
   expect(out).toContain(`}${chat} [class*="_toBottomSlot"]{bottom:calc(var(--dsh-composer-height,0px) + 8px) !important}`)
 })
 
+// The trajectory view floats the composer over its ledger, covering a third of a phone screen that
+// only reads there: the seat goes, and the ledger's clearance follows its measured height to zero.
+it('hides the composer on phone views that float it over their own content', () => {
+  const out = phoneDocument('<head></head>')
+  const phone = out.slice(out.indexOf('@media (max-width: 720px){'), out.indexOf('@media (max-width: 1023px){'))
+  expect(phone).toContain('[class*="_frame"]:has([class*="_sidebarCol"]) '
+    + '[data-conversation-scroll]:has([data-conversation-composer-overlay]) > [data-composer-seat]{display:none !important}')
+})
+
 it('clips the phone toolbar backgrounds to the composer’s rounded bottom corners', () => {
   const out = phoneDocument('<head></head>')
   expect(out).toContain('[data-composer-card] > [class*="_row"]{flex-wrap:nowrap !important;gap:4px !important;'
