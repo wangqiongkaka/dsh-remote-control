@@ -31,6 +31,9 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // Only the conversation scrollport moves. At its ends, stop a pull from panning the page and
   // carrying the composer and its context meter with the whole shell.
   + 'html,body{overflow:hidden;overscroll-behavior-y:none}'
+  // One page-edge inset for the conversation and right panel; the fixed drawer shares it below.
+  + 'html{--dsh-remote-bottom-clearance:max(8px,env(safe-area-inset-bottom,0px))}'
+  + `${FRAME}{box-sizing:border-box;padding-bottom:var(--dsh-remote-bottom-clearance) !important}`
   // The page and browser theme-color share the safe-area surface in both palettes.
   + 'body{--dsw-alias-bg-base:var(--dsw-specific-sidebar-fill) !important;background:var(--dsw-alias-bg-base) !important}'
   // iOS zooms the whole page when a focused field is under 16px.
@@ -121,8 +124,11 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '[class*="hp-menu"]{max-height:min(360px,calc(100dvh - 180px)) !important}'
   + '[class*="hp-panel"]{max-height:calc(100dvh - 180px) !important;overflow-y:auto}'
   + '[class*="_portal"]{max-height:calc(100dvh - 24px) !important}'
-  // A compact status-dock foot, retaining the phone's own home-indicator clearance.
-  + '[class*="_root"]:not([class*="_hero"]):has(> [data-composer-card]):has(> [class*="_dock"]){padding-bottom:max(8px,env(safe-area-inset-bottom)) !important}'
+  // Statistics keep their existing components and interactions, above the input card.
+  + '[data-composer-dock]{order:-1;padding-top:0 !important;padding-bottom:4px}'
+  + '[data-composer-dock]:empty{display:none}'
+  // The frame owns the home-indicator clearance; do not count it again inside the composer.
+  + '[class*="_root"]:not([class*="_hero"]):has(> [data-composer-card]):has(> [class*="_dock"]){padding-bottom:0 !important}'
   // Pin the active chat composer to the non-scrolling body and reserve its measured height in
   // the transcript, so scrolling messages never moves the input card or hides the last message.
   // The room is a trailing spacer rather than the scroller's bottom padding: WebKit leaves that
@@ -145,7 +151,7 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // card is bounded by the space actually visible above it. The shift is the pan the browser
   // applied to reveal the focused field, which the shell follows to stay inside the visible band.
   + `[data-dsh-remote-keyboard] ${FRAME}{height:var(--dsh-remote-keyboard-height,100%) !important;margin-top:var(--dsh-remote-keyboard-shift,0px) !important}`
-  + '[data-dsh-remote-keyboard] [class*="_root"]:not([class*="_hero"]):has(> [data-composer-card]):has(> [class*="_dock"]){padding-bottom:4px !important}'
+  + 'html[data-dsh-remote-keyboard]{--dsh-remote-bottom-clearance:4px}'
   + '[data-dsh-remote-keyboard] [class*="hp-menu"],[data-dsh-remote-keyboard] [class*="hp-panel"],'
   + '[data-dsh-remote-keyboard] [class*="_portal"]{max-height:calc(var(--dsh-remote-keyboard-height,100dvh) - 140px) !important}'
   // Settings has a fixed desktop nav; stack it above the content on phones.
@@ -214,8 +220,8 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // and the collapse control in the sidebar's own logo row is the way back. The shell sizes the
   // sidebar content inline at the column's track width, which the full column overrides.
   + '@media (max-width: 720px){'
-  + `${DRAWER}{width:100vw}`
-  // Its 6px foot would park Settings on the screen's bottom edge: take the chat's bottom clearance.
+  + `${DRAWER}{width:100vw;bottom:var(--dsh-remote-bottom-clearance)}`
+  // The drawer ends above the same page-edge inset, so its content needs no extra safe-area pad.
   + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"] [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important;`
-  + 'padding-bottom:max(32px,env(safe-area-inset-bottom)) !important}'
+  + 'padding-bottom:0 !important}'
   + '}</style>'

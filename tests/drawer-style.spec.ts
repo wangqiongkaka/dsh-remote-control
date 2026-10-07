@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from 'vitest'
-import { applyDrawerSelection, DRAWER_STYLE_ATTRIBUTE } from '../dist/client/drawer-style.js'
+import { applyDrawerSelection, DRAWER_SCROLL_ROOT, DRAWER_STYLE_ATTRIBUTE } from '../dist/client/drawer-style.js'
 
 /** The injected sheet, or undefined while none is mounted. */
 function sheet(): HTMLStyleElement | null {
@@ -189,6 +189,10 @@ it('scrolls the whole drawer while the brand and settings stay pinned', () => {
     expect(style('.ui_sidebar__logoRow__h1').top).toBe('0px')
     expect(style('.ui_sidebar__footArea__h1').position).toBe('sticky')
     expect(style('.ui_sidebar__footArea__h1').bottom).toBe('0px')
+    // The page edge owns the home-indicator inset, not this inner sticky footer.
+    expect(document.querySelector(`[${DRAWER_STYLE_ATTRIBUTE}]`)!.textContent).toContain(
+      `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]{padding-bottom:0}`,
+    )
     expect(style('.ui_sidebar__regionArea__h1').overflow).toBe('visible')
     expect(style('.ui_workspace__list__h1').overflowY).toBe('visible')
     expect(style('.rc-agents-list').overflow).toBe('visible')
