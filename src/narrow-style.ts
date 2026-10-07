@@ -31,6 +31,8 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // Only the conversation scrollport moves. At its ends, stop a pull from panning the page and
   // carrying the composer and its context meter with the whole shell.
   + 'html,body{overflow:hidden;overscroll-behavior-y:none}'
+  // The page and browser theme-color share the safe-area surface in both palettes.
+  + 'body{--dsw-alias-bg-base:var(--dsw-specific-sidebar-fill) !important;background:var(--dsw-alias-bg-base) !important}'
   // iOS zooms the whole page when a focused field is under 16px.
   + 'input,textarea,select,[contenteditable="true"]{font-size:16px !important}'
   // The session utilities are desktop actions; keep the separate sidebar corner control.
@@ -119,8 +121,8 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '[class*="hp-menu"]{max-height:min(360px,calc(100dvh - 180px)) !important}'
   + '[class*="hp-panel"]{max-height:calc(100dvh - 180px) !important;overflow-y:auto}'
   + '[class*="_portal"]{max-height:calc(100dvh - 24px) !important}'
-  // Bottom clearance for the status dock, plus the phone's own safe area.
-  + '[class*="_root"]:not([class*="_hero"]):has(> [data-composer-card]):has(> [class*="_dock"]){padding-bottom:max(32px,env(safe-area-inset-bottom)) !important}'
+  // A compact status-dock foot, retaining the phone's own home-indicator clearance.
+  + '[class*="_root"]:not([class*="_hero"]):has(> [data-composer-card]):has(> [class*="_dock"]){padding-bottom:max(8px,env(safe-area-inset-bottom)) !important}'
   // Pin the active chat composer to the non-scrolling body and reserve its measured height in
   // the transcript, so scrolling messages never moves the input card or hides the last message.
   // The room is a trailing spacer rather than the scroller's bottom padding: WebKit leaves that

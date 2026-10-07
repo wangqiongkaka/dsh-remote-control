@@ -80,6 +80,10 @@ pnpm dsh plugin --profile web add file:/Users/wangqiongkaka/AIProjetcs/dsh-plugi
 
 已有 profile 的显式 `access: tailnet` 会覆盖插件的默认值，需要改为 `public` 并重新开启远程控制。配置中其他端口的 Serve/Funnel 服务会保留。
 
+手机会话输入框和历史消息编辑框中，输入法的「换行」键只换行，不发送；发送使用界面的发送按钮，外接键盘仍可用 Ctrl/Cmd+Enter 发送，中文选词保持原有行为。
+
+手机点击 `clear` 清理上下文时，输入框上方显示等待动画和「正在清理上下文…」，清理请求成功或失败时停止；新的原生会话仍在下一次发送消息时创建。
+
 ## 公网访问排查
 
 手机显示「网络出错，无法显示该页面」且一直打不开时，先在电脑上运行 `tailscale funnel status`，确认所选端口的映射仍在。电脑端没有隧道时，Funnel 中继仍会接受 TCP 连接，再在 TLS 握手阶段断开，与链路故障的表现相同；这通常发生在构建触发插件重载、DSH 重启或隧道进程退出之后，与手机使用 Wi-Fi 还是蜂窝网络无关。映射不在时重新打开远程控制弹窗即可重建隧道。

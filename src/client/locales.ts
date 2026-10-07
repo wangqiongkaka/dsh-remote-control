@@ -4,6 +4,7 @@ export const NS = 'remote-control'
 
 /** Chinese UI copy for pairing and tunnel control. */
 export const zh = {
+  'clear.loading': '正在清理上下文…',
   'files.sourceTitle': '文件',
   'files.sourceDescription': '上传手机文件，或引用远端路径。',
   'files.local': '手机文件',
@@ -70,6 +71,7 @@ export type RemoteControlKey = keyof typeof zh
 
 /** English UI copy for pairing and tunnel control. */
 export const en: Record<RemoteControlKey, string> = {
+  'clear.loading': 'Clearing context…',
   'files.sourceTitle': 'File',
   'files.sourceDescription': 'Choose a phone attachment or add a remote file path.',
   'files.local': 'Phone files',

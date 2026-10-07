@@ -225,6 +225,11 @@ it('places panel shortcuts beside the sidebar toggle with equal button sizes and
     expect(style('.ui_sidebar__root__h1').columnGap).toBe('8px')
     // One painted header spans every column, including the gaps between its controls.
     expect(style('.ui_sidebar__logoRow__h1').gridColumn).toBe('1 / -1')
+    // The host list cancels the root's side padding. Cover those exposed strips too,
+    // without enlarging the header's layout box or moving the buttons.
+    const headerShadow = style('.ui_sidebar__logoRow__h1').boxShadow
+    expect(headerShadow).toContain('var(--dsh-sidebar-inline-padding,12px) 0 0 var(--dsw-specific-sidebar-fill)')
+    expect(headerShadow).toContain('calc(-1 * var(--dsh-sidebar-inline-padding,12px)) 0 0 var(--dsw-specific-sidebar-fill)')
     expect(style('.ui_sidebar__brand__h1').gridColumn).toBe('1')
     expect(style('.ui_sidebar__toggle__h1').gridColumn).toBe('4')
     expect(style('.ui_sidebar__panelList__h1').gridColumn).toBe('2')
