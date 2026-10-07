@@ -176,6 +176,12 @@ export function followKeyboard(): () => void {
       else if (event.target !== menuFocus.editor) menuFocus = undefined
     }
     if (!isTextField(event.target)) return
+    if (released && event.target instanceof HTMLElement) {
+      // The source dialog closing over the picker hands focus back to the editor. A keyboard rising
+      // under the sheet is taken straight back down by it, and WeChat leaves the page panned.
+      event.target.blur()
+      return
+    }
     watchSession(false)
     if (blockEntryFocus && event.target instanceof HTMLElement
       && event.target.matches('[data-composer-input]') && sessionBody?.contains(event.target)) {
@@ -203,8 +209,8 @@ export function followKeyboard(): () => void {
    * rest the shell without waiting for a viewport that will not report it. Whether a keyboard was
    * read yet does not matter: a field left focused can still have one reported under the sheet.
    * The picker's own change or cancel ends this, and so does the next touch — nothing reaches the
-   * page while the sheet is up, and older WebKit sends no cancel. Focus does not: a host handing
-   * it back to the editor under the sheet would read the stale viewport as a keyboard again.
+   * page while the sheet is up, and older WebKit sends no cancel. Focus does not, and no text field
+   * keeps focus until then (see the focus handler).
    */
   const onFilePicker = (event: MouseEvent): void => {
     if (!(event.target instanceof HTMLInputElement) || event.target.type !== 'file') return

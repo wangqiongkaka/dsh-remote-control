@@ -440,13 +440,18 @@ it.each(['change', 'cancel'])('rests the shell and closes the keyboard under a n
     expect(root.style.getPropertyValue(KEYBOARD_HEIGHT_VARIABLE)).toBe('')
     expect(root.style.getPropertyValue(KEYBOARD_SHIFT_VARIABLE)).toBe('')
     expect(scrollTo).toHaveBeenCalledWith(0, 0)
-    // A stale reading while the sheet is up is not a keyboard, even with focus handed back.
+    // The source dialog closing over the sheet hands focus back to the editor: a keyboard rising
+    // under the sheet leaves WeChat's page panned, so the editor may not keep that focus.
     editor.focus()
+    expect(document.activeElement).not.toBe(editor)
+    // A stale reading while the sheet is up is not a keyboard either.
     viewport.resize({ height: 480 })
     expect(root.hasAttribute(KEYBOARD_ATTRIBUTE)).toBe(false)
 
-    // The picker closed with the keyboard back up: follow it again.
+    // The picker closed: focus and the keyboard are followed again.
     file.dispatchEvent(new Event(closed, { bubbles: true }))
+    editor.focus()
+    expect(document.activeElement).toBe(editor)
     viewport.resize({ height: 480 })
     expect(root.hasAttribute(KEYBOARD_ATTRIBUTE)).toBe(true)
   } finally {
