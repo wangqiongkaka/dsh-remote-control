@@ -451,7 +451,81 @@ it('dismisses the keyboard only after a sent draft clears', () => {
   }
 })
 
-it('dismisses after Enter submits but preserves Shift+Enter and IME composition', () => {
+it.each(['composer', 'history'])('keeps phone Enter on the native newline path in the %s editor', (kind) => {
+  vi.useFakeTimers()
+  visualViewport({ layout: 800, height: 800 })
+  const dispose = followKeyboard()
+  const { card, editor: composerEditor } = composer()
+  const editor = kind === 'composer' ? composerEditor : document.createElement('textarea')
+  if (kind === 'history') {
+    card.className = 'hp-edit'
+    editor.textContent = '草稿'
+    card.replaceChildren(editor)
+  }
+  // Both host editors submit plain Enter and leave Shift+Enter to their native editing path.
+  const submit = vi.fn()
+  editor.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault()
+      submit()
+    }
+  })
+  try {
+    editor.focus()
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    editor.dispatchEvent(enter)
+    vi.advanceTimersByTime(0)
+    expect(submit).not.toHaveBeenCalled()
+    expect(enter.shiftKey).toBe(true)
+    expect(enter.defaultPrevented).toBe(false)
+    expect(document.activeElement).toBe(editor)
+    expect(editor.textContent).toBe('草稿')
+
+    // Phone input events still reach the editor; jsdom does not perform native text editing.
+    const beforeInput = vi.fn()
+    editor.addEventListener('beforeinput', beforeInput)
+    const newline = new InputEvent('beforeinput', { inputType: 'insertParagraph', bubbles: true, cancelable: true })
+    editor.dispatchEvent(newline)
+    expect(beforeInput).toHaveBeenCalledOnce()
+    expect(newline.defaultPrevented).toBe(false)
+
+    dispose()
+    editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(submit).toHaveBeenCalledOnce()
+  } finally {
+    dispose()
+    card.remove()
+  }
+})
+
+it('leaves IME, modified Enter and unrelated fields to their existing handlers', () => {
+  visualViewport({ layout: 800, height: 800 })
+  const dispose = followKeyboard()
+  const { card, editor } = composer()
+  const field = focusField()
+  try {
+    const enter = (target: HTMLElement, init: KeyboardEventInit = {}): KeyboardEvent => {
+      const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...init })
+      target.dispatchEvent(event)
+      return event
+    }
+    for (const init of [{ isComposing: true }, { keyCode: 229 }, { ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+      expect(enter(editor, init).shiftKey).toBe(false)
+    }
+    editor.setAttribute('data-composer-composing', '')
+    expect(enter(editor).shiftKey).toBe(false)
+    editor.removeAttribute('data-composer-composing')
+    editor.setAttribute('contenteditable', 'false')
+    expect(enter(editor).shiftKey).toBe(false)
+    expect(enter(field).shiftKey).toBe(false)
+  } finally {
+    dispose()
+    card.remove()
+    field.remove()
+  }
+})
+
+it.each(['ctrlKey', 'metaKey'])('dismisses after %s+Enter submits but preserves Shift+Enter and IME composition', (modifier) => {
   vi.useFakeTimers()
   visualViewport({ layout: 800, height: 800 })
   const dispose = followKeyboard()
@@ -469,7 +543,7 @@ it('dismisses after Enter submits but preserves Shift+Enter and IME composition'
     editor.removeAttribute('data-composer-composing')
 
     editor.addEventListener('keydown', () => { editor.textContent = '' })
-    editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', [modifier]: true, bubbles: true }))
     vi.advanceTimersByTime(0)
     expect(document.activeElement).not.toBe(editor)
   } finally {

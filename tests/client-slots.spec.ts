@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
 import type { Context } from '@deepseek-ai/cordis'
+import { createElement } from 'react'
+import { createRoot } from 'react-dom/client'
+import { act } from 'react-dom/test-utils'
 import { SlotCore } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -19,6 +22,7 @@ function slots(): SlotCore {
     name: 'root',
     children: {
       'conversation.header.leading': { kind: 'single', scope: 'root' },
+      'conversation.input.dock': { kind: 'list', scope: 'session' },
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
       'sidebar.footer.action': { kind: 'list', scope: 'root' },
       'shell.overlay': { kind: 'list', scope: 'root' },
@@ -74,6 +78,73 @@ it('activates the mobile sidebar control in the single leading slot', () => {
     expect(core.entries('conversation.header.leading')).toHaveLength(1)
   } finally {
     for (const dispose of disposers) dispose()
+  }
+})
+
+it.each(['success', 'failure', 'dispose'])('shows clear progress until the command settles with %s', async (outcome) => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const core = slots()
+  const disposers: (() => void)[] = []
+  const ctx = context(core, disposers)
+  let finish!: (value: unknown) => void
+  let fail!: (error: Error) => void
+  const native = vi.fn((_session: { sessionId: string }, _line: string, _attachments: unknown[]) =>
+    new Promise<unknown>((resolve, reject) => { finish = resolve; fail = reject }))
+  const runner = { execute: native }
+  Object.assign(ctx, {
+    inject: (names: string[], callback: (scope: Context) => void) => { if (names.includes('commandUi')) callback(ctx) },
+    get: (name: string) => name === 'commandUi' ? runner : undefined,
+  })
+  const mount = document.createElement('div')
+  document.body.append(mount)
+  const root = createRoot(mount)
+  try {
+    apply(ctx)
+    const entry = core.entries('conversation.input.dock').find(item => item.options.id === 'remote-control.clear')
+    expect(entry).toBeDefined()
+    const injected = (entry!.inject as () => object)()
+    const render = (sessionId: string): void => {
+      act(() => root.render(createElement(entry!.component as never, { ...injected, sessionId, t: (key: string) => key })))
+    }
+    render('s1')
+    expect(mount.querySelector('[role="status"]')).toBeNull()
+    let pending!: Promise<unknown>
+    act(() => { pending = runner.execute({ sessionId: 's1' }, '/clear', []) })
+    expect(mount.querySelector('[role="status"]')?.textContent).toBe('clear.loading')
+    expect(mount.querySelector('[data-state="ongoing"]')).not.toBeNull()
+    render('s2')
+    expect(mount.querySelector('[role="status"]')).toBeNull()
+    render('s1')
+    expect(mount.querySelector('[role="status"]')).not.toBeNull()
+    expect(native).toHaveBeenCalledWith({ sessionId: 's1' }, '/clear', [])
+    const settled = pending.then(value => ({ value }), error => ({ error }))
+    if (outcome === 'dispose') {
+      act(() => { for (const dispose of disposers.splice(0)) dispose() })
+      expect(mount.querySelector('[role="status"]')).toBeNull()
+      expect(runner.execute).toBe(native)
+    }
+    await act(async () => {
+      if (outcome === 'failure') fail(new Error('清理失败'))
+      else finish({ kind: 'success' })
+      await settled
+    })
+    expect(mount.querySelector('[role="status"]')).toBeNull()
+    if (outcome === 'failure') expect(await settled).toEqual({ error: new Error('清理失败') })
+    else expect(await settled).toEqual({ value: { kind: 'success' } })
+    // Other commands keep their original result without displaying clear progress.
+    act(() => { pending = runner.execute({ sessionId: 's1' }, '/compact', []) })
+    expect(mount.querySelector('[role="status"]')).toBeNull()
+    await act(async () => { finish({ kind: 'success' }); await pending })
+    for (const dispose of disposers.splice(0)) dispose()
+    expect(runner.execute).toBe(native)
+  } finally {
+    act(() => root.unmount())
+    for (const dispose of disposers) dispose()
+    mount.remove()
+    proxy.remove()
   }
 })
 

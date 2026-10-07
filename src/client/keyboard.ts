@@ -224,9 +224,20 @@ export function followKeyboard(): () => void {
     if (event.key === 'Tab' || (event.target instanceof Element
       && event.target.closest('[data-composer-card]') !== null)) blockEntryFocus = false
     if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.getModifierState('AltGraph')
-      || event.repeat || event.isComposing
+      || event.isComposing
       || event.keyCode === 229 || (event.ctrlKey && event.metaKey)) return
     const editor = event.target instanceof Element ? event.target.closest('[data-composer-input]') : null
+    // Both the Lexical composer and history textarea already support Shift+Enter. Keep the
+    // original event and native editing path so the phone's Return key never submits a draft.
+    if (!event.ctrlKey && !event.metaKey
+      && ((editor instanceof HTMLElement && editor.getAttribute('contenteditable') === 'true'
+        && !editor.hasAttribute('data-composer-composing'))
+        || (event.target instanceof HTMLTextAreaElement
+          && event.target.matches('.hp-edit textarea:not(:disabled):not([readonly])')))) {
+      Object.defineProperty(event, 'shiftKey', { value: true })
+      return
+    }
+    if (event.repeat) return
     if (editor instanceof HTMLElement && !editor.hasAttribute('data-composer-composing')) dismissCommitted(editor)
   }
   const onPointerDown = (event: PointerEvent): void => {

@@ -75,8 +75,12 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + 'scrollbar-gutter:stable;padding-top:0 !important;padding-bottom:0 !important;'
   + '--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2)}'
   + `${DRAWER_SCROLL_ROOT} > *{flex-shrink:0}`
+  // Workspace negative margins reach past the header box; paint over both side insets
+  // without widening its grid or shifting the controls.
   + `${DRAWER_SCROLL_ROOT} > [class*="_logoRow"]{position:sticky;top:0;z-index:3;`
-  + 'height:66px;padding-top:14px;background:var(--dsw-specific-sidebar-fill)}'
+  + 'height:66px;padding-top:14px;background:var(--dsw-specific-sidebar-fill);'
+  + 'box-shadow:var(--dsh-sidebar-inline-padding,12px) 0 0 var(--dsw-specific-sidebar-fill),'
+  + 'calc(-1 * var(--dsh-sidebar-inline-padding,12px)) 0 0 var(--dsw-specific-sidebar-fill)}'
   + `${DRAWER_HEADER}{display:grid;grid-template-columns:minmax(0,1fr) auto auto 40px;grid-template-rows:66px auto 1fr auto;column-gap:8px}`
   // Paint one full-width sticky header; its subgrid leaves the middle track to panel shortcuts.
   + `${DRAWER_HEADER} > [class*="_logoRow"]{grid-column:1 / -1;grid-row:1;display:grid;grid-template-columns:subgrid;`

@@ -65,6 +65,23 @@ it('keeps the active phone composer at the bottom while the chat scrolls without
   expect(out).not.toContain('padding-bottom:var(--dsh-composer-height')
 })
 
+it('reduces the phone composer foot while keeping the safe area and keyboard clearance', () => {
+  const out = phoneDocument('<head></head>')
+  const composer = '[class*="_root"]:not([class*="_hero"]):has(> [data-composer-card]):has(> [class*="_dock"])'
+  expect(out).toContain(`${composer}{padding-bottom:max(8px,env(safe-area-inset-bottom)) !important}`)
+  expect(out).toContain(`[data-dsh-remote-keyboard] ${composer}{padding-bottom:4px !important}`)
+  expect(out).not.toContain(`${composer}{padding-bottom:max(32px,`)
+})
+
+it('shares the phone page background with the theme-aware safe-area surface', () => {
+  const out = phoneDocument('<head></head>')
+  const phone = out.slice(out.indexOf('@media (max-width: 720px){'), out.indexOf('@media (max-width: 1023px){'))
+  // The frame and browser theme-color already read the base surface; use the safe-area palette
+  // there too, including when the host applies custom theme tokens inline on body.
+  expect(phone).toContain('body{--dsw-alias-bg-base:var(--dsw-specific-sidebar-fill) !important;'
+    + 'background:var(--dsw-alias-bg-base) !important}')
+})
+
 // The host's transcript sits 16px inside the composer's clearance: a phone's text lines up with the
 // input card instead, and the turn rail that lived in that inset stays off the text's line ends.
 it('widens the phone transcript to the input card and drops the turn rail', () => {
