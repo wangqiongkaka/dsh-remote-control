@@ -19,11 +19,11 @@ it('opens the drawer full screen at phone width and keeps the tablet drawer', ()
   // A phone gets the whole screen.
   const phone = drawer.slice(drawer.indexOf('@media (max-width: 720px){'))
   expect(phone).not.toBe(drawer)
-  expect(phone).toContain(`${column}{width:100vw}`)
+  expect(phone).toContain(`${column}{width:100vw;bottom:var(--dsh-remote-bottom-clearance)}`)
   // The shell sizes the sidebar content inline at its track width; the full column overrides it,
   // and lifts Settings off the screen's bottom edge by the chat's own bottom clearance.
   expect(phone).toContain(`${open} [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important;`
-    + 'padding-bottom:max(32px,env(safe-area-inset-bottom)) !important}')
+    + 'padding-bottom:0 !important}')
 })
 
 // The shell auto-places its sidebar, conversation and right columns in order. The fixed drawer
@@ -65,12 +65,25 @@ it('keeps the active phone composer at the bottom while the chat scrolls without
   expect(out).not.toContain('padding-bottom:var(--dsh-composer-height')
 })
 
-it('reduces the phone composer foot while keeping the safe area and keyboard clearance', () => {
+it('shares one safe-area clearance across the phone drawer, conversation and right panel', () => {
   const out = phoneDocument('<head></head>')
+  const frame = '[class*="_frame"]:has([class*="_sidebarCol"])'
   const composer = '[class*="_root"]:not([class*="_hero"]):has(> [data-composer-card]):has(> [class*="_dock"])'
-  expect(out).toContain(`${composer}{padding-bottom:max(8px,env(safe-area-inset-bottom)) !important}`)
-  expect(out).toContain(`[data-dsh-remote-keyboard] ${composer}{padding-bottom:4px !important}`)
-  expect(out).not.toContain(`${composer}{padding-bottom:max(32px,`)
+  expect(out).toContain('html{--dsh-remote-bottom-clearance:max(8px,env(safe-area-inset-bottom,0px))}')
+  // Grid content (chat and the right panel's positioning column) ends above this one inset.
+  expect(out).toContain(`${frame}{box-sizing:border-box;padding-bottom:var(--dsh-remote-bottom-clearance) !important}`)
+  expect(out).toContain('html[data-dsh-remote-keyboard]{--dsh-remote-bottom-clearance:4px}')
+  // The fixed drawer uses the same inset; the composer adds no second safe area.
+  expect(out).toContain(`${composer}{padding-bottom:0 !important}`)
+  expect(out).not.toContain(`[data-dsh-remote-keyboard] ${composer}{padding-bottom:`)
+})
+
+it('places the statistics dock above the phone input card without moving its controls', () => {
+  const out = phoneDocument('<head></head>')
+  expect(out).toContain('[data-composer-dock]{order:-1;padding-top:0 !important;padding-bottom:4px}')
+  expect(out).toContain('[data-composer-dock]:empty{display:none}')
+  // All existing dock entries (performance, usage and context) retain their own interactions.
+  expect(out).not.toContain('[data-composer-card]{order:')
 })
 
 it('shares the phone page background with the theme-aware safe-area surface', () => {

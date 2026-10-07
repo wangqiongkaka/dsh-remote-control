@@ -149,6 +149,8 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   // At phone width the drawer is the whole screen: rows grow to thumb size, and so does the logo
   // row's collapse control, which is the drawer's only way back there.
   + '@media (max-width: 720px){'
+  // The phone drawer's outer edge already reserves the shared home-indicator inset.
+  + `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]{padding-bottom:0}`
   // Task modes share one phone layout. A bounded dock leaves room for the draft and transcript
   // when the keyboard opens; full-width model picks cannot push their neighbours off-screen.
   + `${TASK_MODE}{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 8px;align-content:start;`
