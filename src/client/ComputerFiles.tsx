@@ -7,12 +7,12 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { DirectoryFlowOwnerProps } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { ComputerDirectory, ComputerFile } from '../remote-files.ts'
 import { NS } from './locales.ts'
-import { proxiedFrame } from './SidebarToggle.tsx'
+import { NARROW, proxiedFrame } from './SidebarToggle.tsx'
 
 interface Selection {
   path: string
   available(): boolean
-  local(): boolean
+  local(anchor?: DOMRect): boolean
   pick(file: ComputerFile): boolean
   close(): void
 }
@@ -67,6 +67,7 @@ export function registerComputerFiles(ctx: Context): void {
     }
     scope.effect(() => {
       let active = true
+      let restoreAnchor: (() => void) | undefined
       const descriptor = Object.getOwnPropertyDescriptor(inputs, 'pickFiles')
       const nativePicker = inputs.pickFiles.bind(inputs)
       // All host File actions share this hub. Keep its intake guards and native upload flow.
@@ -80,10 +81,37 @@ export function registerComputerFiles(ctx: Context): void {
         const available = (): boolean => active && sessions.scope(sessionId) === actx && inputs.canPickFiles(sessionId)
         update({
           path: sessions.list.getSnapshot().byId[sessionId]?.cwd ?? '', available,
-          local: () => {
+          local: anchor => {
             if (!available()) return false
+            restoreAnchor?.()
+            const positionPicker = (event: MouseEvent): void => {
+              if (!anchor || !(event.target instanceof HTMLInputElement) || event.target.type !== 'file') return
+              const input = event.target
+              const hidden = input.hidden
+              const style = input.getAttribute('style')
+              // ponytail: iOS owns the final menu bounds; use a custom menu if exact alignment is required.
+              input.hidden = false
+              input.style.cssText = `position:fixed;left:${anchor.left + anchor.width / 2}px;top:${anchor.bottom}px;`
+                + 'width:1px;height:1px;opacity:0;pointer-events:none;padding:0;border:0;margin:0;'
+              restoreAnchor = () => {
+                input.hidden = hidden
+                if (style === null) input.removeAttribute('style')
+                else input.setAttribute('style', style)
+                input.removeEventListener('change', restore)
+                input.removeEventListener('cancel', restore)
+                document.removeEventListener('pointerdown', restore, true)
+                restoreAnchor = undefined
+              }
+              const restore = restoreAnchor
+              input.addEventListener('change', restore)
+              input.addEventListener('cancel', restore)
+              document.addEventListener('pointerdown', restore, true)
+            }
             update(null)
-            nativePicker(sessionId)
+            if (anchor && window.matchMedia(NARROW).matches) document.addEventListener('click', positionPicker, true)
+            try { nativePicker(sessionId) }
+            catch (error) { restoreAnchor?.(); throw error }
+            finally { document.removeEventListener('click', positionPicker, true) }
             return true
           },
           pick: file => available() && file.mention !== null
@@ -95,6 +123,7 @@ export function registerComputerFiles(ctx: Context): void {
       inputs.pickFiles = pickFiles
       return () => {
         active = false
+        restoreAnchor?.()
         update(null)
         if (Object.getOwnPropertyDescriptor(inputs, 'pickFiles')?.value !== pickFiles) return
         if (descriptor) Object.defineProperty(inputs, 'pickFiles', descriptor)
@@ -119,8 +148,8 @@ function FileDialog({ selection, t }: { selection: Selection; t: PropsLocale<typ
       selection.close()
       return true
     }} t={t} /> : <div style={{ display: 'grid', gap: 12 }}>
-      <Button type="button" variant="outline" style={{ minHeight: 44 }} onClick={() => {
-        if (!selection.local()) setError(t('files.changed'))
+      <Button type="button" variant="outline" style={{ minHeight: 44 }} onClick={event => {
+        if (!selection.local(event.currentTarget.closest('[role="dialog"]')?.getBoundingClientRect())) setError(t('files.changed'))
       }}>{t('files.local')}</Button>
       <Button type="button" variant="outline" style={{ minHeight: 44 }} onClick={() => {
         if (selection.available()) setRemote(true)

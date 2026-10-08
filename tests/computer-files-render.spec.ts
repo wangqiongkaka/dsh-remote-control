@@ -46,6 +46,7 @@ beforeEach(() => {
   canPickFiles.mockReset().mockReturnValue(true)
   fetcher.mockReset().mockImplementation(async () => Response.json(listing))
   vi.stubGlobal('fetch', fetcher)
+  vi.stubGlobal('matchMedia', () => ({ matches: false }))
   mount = document.createElement('div'); document.body.append(mount); root = createRoot(mount)
   const proxy = document.createElement('style'); proxy.setAttribute('data-dsh-remote-control', ''); document.head.append(proxy)
   scope = {} as Context
@@ -109,6 +110,39 @@ it('opens the original phone picker only after choosing phone files and refuses 
   await click('files.title')
   expect(fetcher).not.toHaveBeenCalled()
   expect(mount.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('files.sourceDescription')
+})
+
+it.each(['change', 'cancel', 'pointerdown', 'dispose', 'wide'])('anchors the native phone menu to the source dialog and restores the input on %s', async (closed) => {
+  vi.stubGlobal('matchMedia', () => ({ matches: closed !== 'wide' }))
+  const input = document.createElement('input')
+  input.type = 'file'; input.hidden = true; input.multiple = true
+  input.setAttribute('style', 'color: red;')
+  mount.append(input)
+  const style = input.getAttribute('style')
+  nativePicker.mockImplementation(() => { input.click() })
+  await act(async () => { inputHub.pickFiles('s1') })
+  const dialog = mount.querySelector<HTMLElement>('[role="dialog"]')!
+  vi.spyOn(dialog, 'getBoundingClientRect').mockReturnValue(new DOMRect(24, 300, 380, 200))
+  await click('files.local')
+  expect(nativePicker).toHaveBeenCalledExactlyOnceWith('s1')
+  expect(mount.querySelector('[role="dialog"]')).toBeNull()
+  expect(input.multiple).toBe(true)
+  if (closed !== 'wide') {
+    expect(input.hidden).toBe(false)
+    expect(input.style.position).toBe('fixed')
+    expect(input.style.left).toBe('214px')
+    expect(input.style.top).toBe('500px')
+    expect(input.style.opacity).toBe('0')
+    expect(input.style.pointerEvents).toBe('none')
+    if (closed === 'dispose') act(() => { for (const dispose of disposers.splice(0)) dispose() })
+    else if (closed === 'pointerdown') document.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    else input.dispatchEvent(new Event(closed, { bubbles: true }))
+  }
+  expect(input.hidden).toBe(true)
+  expect(input.getAttribute('style')).toBe(style)
+  input.click()
+  expect(input.hidden).toBe(true)
+  expect(input.getAttribute('style')).toBe(style)
 })
 
 it('restores the host picker on disposal and keeps local pages and disabled file intake unchanged', async () => {
