@@ -4,7 +4,10 @@ export const NS = 'remote-control'
 
 /** Chinese UI copy for pairing and tunnel control. */
 export const zh = {
+  'clear.title': '清理上下文',
   'clear.loading': '正在清理上下文…',
+  'clear.success': '上下文已清理',
+  'clear.error': '清理未完成',
   'files.sourceDescription': '上传手机文件，或引用远端路径。',
   'files.local': '手机文件',
   'files.directoryTitle': '选择远端项目目录',
@@ -70,7 +73,10 @@ export type RemoteControlKey = keyof typeof zh
 
 /** English UI copy for pairing and tunnel control. */
 export const en: Record<RemoteControlKey, string> = {
+  'clear.title': 'Clear context',
   'clear.loading': 'Clearing context…',
+  'clear.success': 'Context cleared',
+  'clear.error': 'Context was not cleared',
   'files.sourceDescription': 'Choose a phone attachment or add a remote file path.',
   'files.local': 'Phone files',
   'files.directoryTitle': 'Select remote project directory',

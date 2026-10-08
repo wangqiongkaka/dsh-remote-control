@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { Context, Service } from '@deepseek-ai/cordis'
-import { createElement } from 'react'
+import { createElement, useEffect, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { SlotCore } from '@deepseek-ai/dsh-client-ui-slots'
@@ -8,6 +9,25 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { expect, it, vi } from 'vitest'
 import { apply } from '../dist/client/index.js'
+
+// Linked host primitives bundle their own React. Keep the plugin's modal contract on this test's React.
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', async (importOriginal) => ({
+  ...await importOriginal<object>(),
+  Modal: ({ open, onClose, title, closeLabel, children, footer }: {
+    open: boolean; onClose(): void; title: string; closeLabel: string; children: ReactNode; footer: ReactNode
+  }) => {
+    useEffect(() => {
+      if (!open) return
+      const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose() }
+      document.addEventListener('keydown', escape)
+      return () => document.removeEventListener('keydown', escape)
+    }, [open, onClose])
+    return open ? createPortal(createElement('div', { role: 'presentation' },
+      createElement('div', { 'aria-hidden': true, onClick: onClose }),
+      createElement('div', { role: 'dialog', 'aria-modal': true, 'aria-label': title },
+        createElement('button', { 'aria-label': closeLabel, onClick: onClose }), children, footer)), document.body) : null
+  },
+}))
 
 // jsdom ships neither of these; the apply-time phone effect and the slot entries ask for both.
 Object.defineProperty(window, 'matchMedia', {
@@ -41,6 +61,7 @@ function context(core: SlotCore, disposers: (() => void)[] = []): Context {
   const listeners = new Set<() => void>()
   return {
     inject: () => {},
+    on: () => () => {},
     effect: (register: () => () => void) => { disposers.push(register()) },
     locale: { register: () => () => {} },
     slots: {
@@ -81,7 +102,7 @@ it('activates the mobile sidebar control in the single leading slot', () => {
   }
 })
 
-it.each(['success', 'failure', 'dispose'])('shows clear progress until the command settles with %s', async (outcome) => {
+it.each(['success', 'failure', 'empty-failure', 'handler-error', 'admission-error', 'overlap', 'dispose'])('keeps a clear modal until settlement and acknowledges %s', async (outcome) => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   const proxy = document.createElement('style')
   proxy.setAttribute('data-dsh-remote-control', '')
@@ -94,7 +115,14 @@ it.each(['success', 'failure', 'dispose'])('shows clear progress until the comma
   const native = vi.fn((_session: { sessionId: string }, _line: string, _attachments: unknown[]) =>
     new Promise<unknown>((resolve, reject) => { finish = resolve; fail = reject }))
   const runner = { execute: native }
+  let executed!: (sessionId: string, name: string, result: { kind: string; text?: string }) => void
+  const off = vi.fn()
   Object.assign(ctx, {
+    on: (name: string, listener: typeof executed) => {
+      expect(name).toBe('command/executed')
+      executed = listener
+      return off
+    },
     inject: (names: string[], callback: (scope: Context) => void) => { if (names.includes('commandUi')) callback(ctx) },
     get: (name: string) => name === 'commandUi' ? runner : undefined,
   })
@@ -103,40 +131,93 @@ it.each(['success', 'failure', 'dispose'])('shows clear progress until the comma
   const root = createRoot(mount)
   try {
     apply(ctx)
-    const entry = core.entries('conversation.input.dock').find(item => item.options.id === 'remote-control.clear')
+    const entry = core.entries('shell.overlay').find(item => item.options.id === 'remote-control.clear')
     expect(entry).toBeDefined()
+    expect(core.entries('conversation.input.dock').some(item => item.options.id === 'remote-control.clear')).toBe(false)
     const injected = (entry!.inject as () => object)()
     const render = (sessionId: string): void => {
       act(() => root.render(createElement(entry!.component as never, { ...injected, sessionId, t: (key: string) => key })))
     }
     render('s1')
-    expect(mount.querySelector('[role="status"]')).toBeNull()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
     let pending!: Promise<unknown>
-    act(() => { pending = runner.execute({ sessionId: 's1' }, '/clear', []) })
-    expect(mount.querySelector('[role="status"]')?.textContent).toBe('clear.loading')
-    expect(mount.querySelector('[data-state="ongoing"]')).not.toBeNull()
+    act(() => { pending = runner.execute({ sessionId: 's1' }, ' /clear ', []) })
+    const dialog = () => document.querySelector('[role="dialog"][aria-label="clear.title"]')
+    expect(dialog()).not.toBeNull()
+    expect(dialog()?.querySelector('[role="status"]')?.textContent).toBe('clear.loading')
+    expect(dialog()?.querySelector('[data-state="ongoing"]')).not.toBeNull()
+    const close = () => dialog()!.querySelector<HTMLButtonElement>('button[aria-label="close"]')!
+    act(() => close().click())
+    expect(dialog()).not.toBeNull()
+    act(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(dialog()).not.toBeNull()
+    const mask = dialog()!.parentElement!.querySelector<HTMLElement>('[aria-hidden="true"]')!
+    act(() => mask.click())
+    expect(dialog()).not.toBeNull()
     render('s2')
-    expect(mount.querySelector('[role="status"]')).toBeNull()
-    render('s1')
-    expect(mount.querySelector('[role="status"]')).not.toBeNull()
-    expect(native).toHaveBeenCalledWith({ sessionId: 's1' }, '/clear', [])
+    expect(dialog()?.querySelector('[role="status"]')?.textContent).toBe('clear.loading')
+    expect(native).toHaveBeenCalledWith({ sessionId: 's1' }, ' /clear ', [])
     const settled = pending.then(value => ({ value }), error => ({ error }))
+    if (outcome === 'overlap') {
+      const firstFinish = finish
+      act(() => { pending = runner.execute({ sessionId: 's1' }, '/clear', []) })
+      await act(async () => {
+        executed('s1', 'clear', { kind: 'error', text: '请先结束当前请求' })
+        firstFinish({ kind: 'success' })
+        await settled
+      })
+      expect(dialog()?.querySelector('[role="status"]')?.textContent).toBe('clear.loading')
+      act(() => close().click())
+      expect(dialog()).not.toBeNull()
+    } else {
+      act(() => {
+        executed('other-session', 'clear', { kind: 'error', text: '无关失败' })
+        executed('s1', 'compact', { kind: 'error', text: '无关失败' })
+      })
+    }
     if (outcome === 'dispose') {
       act(() => { for (const dispose of disposers.splice(0)) dispose() })
-      expect(mount.querySelector('[role="status"]')).toBeNull()
+      expect(dialog()).toBeNull()
       expect(runner.execute).toBe(native)
+      expect(off).toHaveBeenCalledOnce()
     }
+    const result = outcome === 'admission-error' ? { kind: 'error', text: '未能执行清理' } : { kind: 'success' }
     await act(async () => {
-      if (outcome === 'failure') fail(new Error('清理失败'))
-      else finish({ kind: 'success' })
-      await settled
+      if (outcome === 'failure' || outcome === 'empty-failure') fail(new Error(outcome === 'failure' ? '清理失败' : ''))
+      else {
+        if (outcome === 'handler-error') executed('s1', 'clear', { kind: 'error', text: '请先结束当前请求' })
+        else executed('s1', 'clear', result)
+        finish(result)
+      }
+      if (outcome === 'overlap') await pending
+      else await settled
     })
-    expect(mount.querySelector('[role="status"]')).toBeNull()
-    if (outcome === 'failure') expect(await settled).toEqual({ error: new Error('清理失败') })
-    else expect(await settled).toEqual({ value: { kind: 'success' } })
-    // Other commands keep their original result without displaying clear progress.
+    expect(document.querySelector('[data-state="ongoing"]')).toBeNull()
+    if (outcome === 'dispose') expect(dialog()).toBeNull()
+    else {
+      expect(dialog()).not.toBeNull()
+      if (outcome === 'success') expect(dialog()?.querySelector('[role="status"]')?.textContent).toBe('clear.success')
+      else {
+        expect(dialog()?.querySelector('[role="alert"]')?.textContent).toContain('clear.error')
+        const message = outcome === 'handler-error' || outcome === 'overlap' ? '请先结束当前请求' : outcome === 'admission-error' ? '未能执行清理' : outcome === 'empty-failure' ? '' : '清理失败'
+        expect(dialog()?.textContent).toContain(message)
+      }
+      act(() => close().click())
+      expect(dialog()).toBeNull()
+    }
+    if (outcome === 'failure' || outcome === 'empty-failure') expect(await settled).toEqual({ error: new Error(outcome === 'failure' ? '清理失败' : '') })
+    else expect(await settled).toEqual({ value: result })
+    if (outcome !== 'dispose') {
+      act(() => { pending = runner.execute({ sessionId: 's1' }, '/clear', []) })
+      expect(dialog()?.querySelector('[role="status"]')?.textContent).toBe('clear.loading')
+      await act(async () => { executed('s1', 'clear', { kind: 'success' }); finish({ kind: 'success' }); await pending })
+      expect(dialog()?.querySelector('[role="status"]')?.textContent).toBe('clear.success')
+      act(() => dialog()!.querySelector<HTMLButtonElement>('button:not([aria-label])')!.click())
+      expect(dialog()).toBeNull()
+    }
+    // Other commands keep their original result without displaying a clear modal.
     act(() => { pending = runner.execute({ sessionId: 's1' }, '/compact', []) })
-    expect(mount.querySelector('[role="status"]')).toBeNull()
+    expect(dialog()).toBeNull()
     await act(async () => { finish({ kind: 'success' }); await pending })
     for (const dispose of disposers.splice(0)) dispose()
     expect(runner.execute).toBe(native)
@@ -148,12 +229,13 @@ it.each(['success', 'failure', 'dispose'])('shows clear progress until the comma
   }
 })
 
-it('preserves the command caller dependency context while tracking clear progress', async () => {
+it('preserves the command caller context and receives actual Cordis command outcomes', async () => {
   const proxy = document.createElement('style')
   proxy.setAttribute('data-dsh-remote-control', '')
   document.head.append(proxy)
   const ctx = new Context()
-  const fake = context(slots())
+  const core = slots()
+  const fake = context(core)
   for (const name of ['slots', 'locale', 'layout'] as const) ctx.provide(name, fake[name])
   class Remote extends Service {
     constructor(scope: Context) { super(scope, 'remote') }
@@ -161,8 +243,15 @@ it('preserves the command caller dependency context while tracking clear progres
   class Commands extends Service {
     static inject = ['remote', 'remote.commands']
     constructor(scope: Context) { super(scope, 'commandUi') }
-    execute(session: { sessionId: string }, line: string) {
-      return this.ctx.remote.commands.execute(session.sessionId as never, line, [])
+    async execute(session: { sessionId: string }, line: string) {
+      const result = await this.ctx.remote.commands.execute(session.sessionId as never, line, [])
+      if (line === '/clear') {
+        const events = this.ctx as unknown as {
+          emit(event: 'command/executed', sessionId: string, name: string, result: { kind: 'error'; text: string }): void
+        }
+        events.emit('command/executed', session.sessionId, 'clear', { kind: 'error', text: '真实清理失败' })
+      }
+      return result
     }
   }
   const execute = vi.fn(async () => ({ kind: 'success' }))
@@ -172,9 +261,12 @@ it('preserves the command caller dependency context while tracking clear progres
     await ctx.plugin(Commands).await()
     await ctx.plugin({ inject: ['slots', 'locale', 'layout'], apply }).await()
     expect(Object.hasOwn(ctx.get('commandUi'), 'execute')).toBe(true)
+    const entry = core.entries('shell.overlay').find(item => item.options.id === 'remote-control.clear')!
+    const { progress } = (entry.inject as () => { progress: { getSnapshot(): unknown } })()
     await ctx.inject(['commandUi', 'remote', 'remote.commands'], async (scope) => {
       const commands = scope.get('commandUi') as unknown as Commands
       await expect(commands.execute({ sessionId: 's1' }, '/clear')).resolves.toEqual({ kind: 'success' })
+      expect(progress.getSnapshot()).toEqual({ kind: 'error', error: '真实清理失败' })
       await expect(commands.execute({ sessionId: 's1' }, '/compact')).resolves.toEqual({ kind: 'success' })
     }).await()
     expect(execute.mock.calls).toEqual([['s1', '/clear', []], ['s1', '/compact', []]])
