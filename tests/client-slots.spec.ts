@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
@@ -144,6 +144,42 @@ it.each(['success', 'failure', 'dispose'])('shows clear progress until the comma
     act(() => root.unmount())
     for (const dispose of disposers) dispose()
     mount.remove()
+    proxy.remove()
+  }
+})
+
+it('preserves the command caller dependency context while tracking clear progress', async () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const ctx = new Context()
+  const fake = context(slots())
+  for (const name of ['slots', 'locale', 'layout'] as const) ctx.provide(name, fake[name])
+  class Remote extends Service {
+    constructor(scope: Context) { super(scope, 'remote') }
+  }
+  class Commands extends Service {
+    static inject = ['remote', 'remote.commands']
+    constructor(scope: Context) { super(scope, 'commandUi') }
+    execute(session: { sessionId: string }, line: string) {
+      return this.ctx.remote.commands.execute(session.sessionId as never, line, [])
+    }
+  }
+  const execute = vi.fn(async () => ({ kind: 'success' }))
+  try {
+    await ctx.plugin(scope => { scope.provide('remote.commands', { execute }) }).await()
+    await ctx.plugin(Remote).await()
+    await ctx.plugin(Commands).await()
+    await ctx.plugin({ inject: ['slots', 'locale', 'layout'], apply }).await()
+    expect(Object.hasOwn(ctx.get('commandUi'), 'execute')).toBe(true)
+    await ctx.inject(['commandUi', 'remote', 'remote.commands'], async (scope) => {
+      const commands = scope.get('commandUi') as unknown as Commands
+      await expect(commands.execute({ sessionId: 's1' }, '/clear')).resolves.toEqual({ kind: 'success' })
+      await expect(commands.execute({ sessionId: 's1' }, '/compact')).resolves.toEqual({ kind: 'success' })
+    }).await()
+    expect(execute.mock.calls).toEqual([['s1', '/clear', []], ['s1', '/compact', []]])
+  } finally {
+    await ctx.fiber.dispose()
     proxy.remove()
   }
 })

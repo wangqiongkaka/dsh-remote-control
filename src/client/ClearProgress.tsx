@@ -45,15 +45,16 @@ export function registerClearProgress(ctx: Context): void {
     scope.effect(() => {
       let active = true
       const descriptor = Object.getOwnPropertyDescriptor(commands, 'execute')
-      const nativeExecute = commands.execute.bind(commands)
-      const execute: typeof commands.execute = async (session, line, ...args) => {
+      const nativeExecute = commands.execute
+      // Cordis supplies the caller's dependency context through the Service receiver.
+      const execute: typeof commands.execute = async function (this: typeof commands, session, line, ...args) {
         if (!active || !proxiedFrame() || !/^\/clear(?:\s|$)/u.test(line.trim())) {
-          return nativeExecute(session, line, ...args)
+          return nativeExecute.call(this, session, line, ...args)
         }
         const id = session.sessionId
         pending.set(id, (pending.get(id) ?? 0) + 1)
         publish()
-        try { return await nativeExecute(session, line, ...args) }
+        try { return await nativeExecute.call(this, session, line, ...args) }
         finally {
           if (active) {
             const remaining = (pending.get(id) ?? 1) - 1
