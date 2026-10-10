@@ -138,7 +138,7 @@ else if (args[0] === 'funnel') {
   }
   const config: Config = {
     tailscaleBinary: binary, access: 'public', funnelPort: 443, invitationTtlMs: 60_000,
-    browserTtlMs, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000,
+    browserTtlMs, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000, phoneSilenceMs: 60_000,
   }
   apply(ctx as never as Context, config)
   if (route === undefined) throw new Error('Control route not installed')
@@ -462,7 +462,7 @@ async function controlRoute(
   }
   apply(ctx as never as Context, {
     tailscaleBinary: binary, access, funnelPort: 443, invitationTtlMs: 60_000,
-    browserTtlMs: 60_000, startupTimeoutMs, stopTimeoutMs: 5_000, ...overrides,
+    browserTtlMs: 60_000, startupTimeoutMs, stopTimeoutMs: 5_000, phoneSilenceMs: 60_000, ...overrides,
   })
   if (route === undefined) throw new Error('Control route not installed')
   return route
@@ -683,7 +683,7 @@ else if (args[0] === 'funnel') {
       },
     } as never as Context, {
       tailscaleBinary: binary, access: 'public', funnelPort: 443, invitationTtlMs: 60_000,
-      browserTtlMs: 0, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000,
+      browserTtlMs: 0, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000, phoneSilenceMs: 60_000,
     })
     if (route === undefined) throw new Error('Control route not installed')
     stop = async () => { await dispose?.() }
@@ -752,4 +752,150 @@ else if (args[0] === 'funnel') {
   await expect(readFile(target, 'utf8')).rejects.toThrow()
   expect(await (await third.control.fetch(new Request('http://localhost/api/remote-control'))).json())
     .toEqual({ active: false })
+}, 30_000)
+
+/** Split a WebSocket byte stream into frames, leaving payloads masked. */
+function frames(bytes: Buffer): { opcode: number; payload: Buffer }[] {
+  const result: { opcode: number; payload: Buffer }[] = []
+  for (let offset = 0; offset + 2 <= bytes.length;) {
+    const short = (bytes[offset + 1] ?? 0) & 0x7f
+    const extended = short === 126 ? 2 : short === 127 ? 8 : 0
+    const header = 2 + extended + (((bytes[offset + 1] ?? 0) & 0x80) === 0 ? 0 : 4)
+    if (offset + header > bytes.length) break
+    const length = extended === 0 ? short : extended === 2 ? bytes.readUInt16BE(offset + 2) : Number(bytes.readBigUInt64BE(offset + 2))
+    result.push({ opcode: (bytes[offset] ?? 0) & 0x0f, payload: bytes.subarray(offset + header, offset + header + length) })
+    offset += header + length
+  }
+  return result
+}
+
+it.skipIf(process.platform === 'win32')('answers DSH heartbeats for a slow phone and drops a silent one', async () => {
+  directory = await mkdtemp(join(tmpdir(), 'dsh-remote-control-'))
+  process.env.DSH_HOME = directory
+  const target = join(directory, 'funnel-target')
+  const binary = join(directory, 'tailscale')
+  await writeFile(binary, `#!/usr/bin/env node
+const fs = require('node:fs')
+const target = ${JSON.stringify(target)}
+const args = process.argv.slice(2)
+if (args[0] === 'status') console.log(JSON.stringify({ BackendState: 'Running', Self: { DNSName: 'host.tailnet.ts.net.' } }))
+else if (args[1] === 'status') console.log(fs.existsSync(target) ? JSON.stringify({ Web: { Proxy: fs.readFileSync(target, 'utf8') } }) : '{}')
+else if (args[0] === 'funnel') {
+  fs.writeFileSync(target, args.at(-1))
+  process.on('SIGTERM', () => { fs.unlinkSync(target); process.exit(0) })
+  setInterval(() => {}, 1000)
+} else process.exit(1)
+`)
+  await chmod(binary, 0o700)
+  backend = createServer((req, res) => {
+    if (req.url === '/?token=launch') {
+      res.writeHead(303, { location: '/', 'set-cookie': 'dsh-session=signed; Path=/; HttpOnly' }).end()
+      return
+    }
+    res.writeHead(req.headers.cookie === 'dsh-session=signed' ? 204 : 401).end()
+  })
+  // DSH's gateway: a Ping every two seconds, and a socket that missed two of them is terminated.
+  const received: Buffer[] = []
+  let terminated = false
+  backend.on('upgrade', (_req: IncomingMessage, socket: Duplex) => {
+    socket.on('error', () => {})
+    socket.write('HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n')
+    let missed = 0
+    let seen = 0
+    const heartbeat = setInterval(() => {
+      const pongs = frames(Buffer.concat(received)).filter(frame => frame.opcode === 0xa).length
+      if (pongs > seen) missed = 0
+      seen = pongs
+      if (missed >= 2) { terminated = true; socket.destroy(); return }
+      missed++
+      socket.write(Buffer.from([0x89, 0x00]))
+    }, 2_000)
+    socket.on('data', (chunk: Buffer) => { received.push(chunk) })
+    socket.once('close', () => { clearInterval(heartbeat) })
+  })
+  await new Promise<void>(resolve => { backend?.listen(0, '127.0.0.1', resolve) })
+  const dshPort = (backend.address() as AddressInfo).port
+  const load = (phoneSilenceMs: number): ConnectionFetchRoute => {
+    let route: ConnectionFetchRoute | undefined
+    let dispose: (() => void | Promise<void>) | undefined
+    apply({
+      connection: {
+        authenticatedUrl: (url: string) => url + '?token=launch',
+        fetch: { register(value: ConnectionFetchRoute) { route = value; return async () => {} } },
+      },
+      webServer: { port: dshPort },
+      workspaceRegistry: { get: (id: string) => ({ workspaceId: id }) },
+      effect(register: () => (() => void | Promise<void>)) {
+        const registered = register()
+        if (route !== undefined) dispose = registered
+      },
+    } as never as Context, {
+      tailscaleBinary: binary, access: 'public', funnelPort: 443, invitationTtlMs: 60_000,
+      browserTtlMs: 0, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000, phoneSilenceMs,
+    })
+    if (route === undefined) throw new Error('Control route not installed')
+    stop = async () => { await dispose?.() }
+    return route
+  }
+  /** Pair, then open the phone's live stream through the proxy. */
+  const connect = async (control: ConnectionFetchRoute): Promise<Duplex> => {
+    const { url } = await (await control.fetch(new Request('http://localhost/api/remote-control', {
+      method: 'POST', body: JSON.stringify({ action: 'refresh' }),
+    }))).json() as { url: string }
+    const proxy = new URL(await readFile(target, 'utf8'))
+    const headers = { host: 'host.tailnet.ts.net' }
+    const cookie = await new Promise<string>((resolve, reject) => {
+      httpRequest({ hostname: proxy.hostname, port: Number(proxy.port), path: '/' + new URL(url).search, headers }, (reply) => {
+        reply.resume()
+        resolve(String(reply.headers['set-cookie'] ?? '').split(';', 1)[0] ?? '')
+      }).on('error', reject).end()
+    })
+    return new Promise((resolve, reject) => {
+      const outgoing = httpRequest({
+        hostname: proxy.hostname, port: Number(proxy.port), path: '/api/remote.mux',
+        headers: { ...headers, cookie, connection: 'Upgrade', upgrade: 'websocket' },
+      })
+      outgoing.on('upgrade', (_reply, socket) => { socket.on('error', () => {}); resolve(socket) })
+      outgoing.on('response', (reply) => { reply.resume(); reject(new Error('Upgrade refused: ' + String(reply.statusCode))) })
+      outgoing.on('error', reject)
+      outgoing.end()
+    })
+  }
+
+  // The Pings reach this phone, but its Pongs are still queued behind a session snapshot on a slow relay.
+  const slow = await connect(load(60_000))
+  let slowClosed = false
+  slow.once('close', () => { slowClosed = true })
+  // Frames that cross the link in pieces must reach DSH whole, with nothing spliced into them:
+  // one of each length encoding, cut inside its mask key or its extended length.
+  const frame = (length: number): Buffer => Buffer.concat([
+    length < 126 ? Buffer.from([0x81, 0x80 | length])
+      : length < 65_536 ? Buffer.from([0x81, 0xfe, length >> 8, length & 0xff])
+        : Buffer.from([0x81, 0xff, 0, 0, 0, 0, 0, length >> 16, (length >> 8) & 0xff, length & 0xff]),
+    Buffer.from([1, 2, 3, 4]), Buffer.alloc(length, length % 251),
+  ])
+  for (const [length, cut] of [[5, 4], [300, 3], [70_000, 12]] as const) {
+    slow.write(frame(length).subarray(0, cut))
+    await new Promise(resolve => setTimeout(resolve, 1_300))
+    slow.write(frame(length).subarray(cut))
+  }
+  await new Promise(resolve => setTimeout(resolve, 3_000))
+  expect(terminated).toBe(false)
+  expect(slowClosed).toBe(false)
+  const upstream = frames(Buffer.concat(received))
+  expect(upstream.filter(frame => frame.opcode === 0x1).map(frame => frame.payload.length)).toEqual([5, 300, 70_000])
+  expect(upstream.every(frame => (frame.opcode === 0xa && frame.payload.length === 0)
+    || (frame.opcode === 0x1 && frame.payload.every(byte => byte === frame.payload.length % 251)))).toBe(true)
+  expect(upstream.filter(frame => frame.opcode === 0xa).length).toBeGreaterThanOrEqual(2)
+  await stop?.()
+
+  // A phone that left without closing its stream must not hold it open forever.
+  received.length = 0
+  const silent = await connect(load(1_500))
+  const silentClosed = new Promise<void>((resolve) => { silent.once('close', () => { resolve() }) })
+  await expect(Promise.race([
+    silentClosed.then(() => 'closed'),
+    new Promise(resolve => setTimeout(() => { resolve('open') }, 3_500)),
+  ])).resolves.toBe('closed')
+  expect(terminated).toBe(false)
 }, 30_000)

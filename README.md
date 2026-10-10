@@ -74,7 +74,7 @@ pnpm dsh plugin --profile web add file:/Users/wangqiongkaka/AIProjetcs/dsh-plugi
 
 插件只在本机回环地址上代理已有的 DSH Web 服务。所选隧道提供 HTTPS 入口（`access: tailnet` 时入口只在 tailnet 内可达，手机需登录同一 tailnet）；插件校验请求来源、消耗一次性配对凭证，并以独立 HttpOnly Cookie 授权手机。DSH 的本地浏览器 Cookie 不会发给手机。插件允许与其他端口的 Serve/Funnel 映射共存，例如 DSH 使用 443、前端使用 8443；目标端口被后台或前台会话占用时会拒绝启动，报错包含端口，不会覆盖已有映射。唯一可自动清理的残留是配置中只有本插件目标端口的 Foreground 会话、且其所有回环后端都已停止；配置中包含其他端口或后台映射时不会执行全局清理。停止远程控制只关闭本次启动的代理和前台隧道，保留其他映射。电脑关闭 DSH 或隧道进程后，远程入口不可用；Tailscale 入口也会在电脑断开 Tailscale 后失效。为了在插件重载或 DSH 重启后恢复访问，配对成功时会把手机 Cookie 的 SHA-256 哈希和访问有效期写入 `$DSH_HOME/dsh-remote-control/pairing.json`（未设置 `DSH_HOME` 时为 `~/.dsh`，仅本人可读写）；文件中没有 Cookie 本身，停止远程控制时删除。自动重建在插件加载后的一分钟内每两秒尝试一次，以等待旧隧道释放端口或 Tailscale 完成连接；超时后需在电脑上重新打开弹窗，原配对仍然有效。
 
-可通过 profile 的 `cordis.patch.yml` 覆盖 `remote-control` 行的 `tailscaleBinary`、`access`、`funnelPort`（443、8443 或 10000）、`invitationTtlMs`、`browserTtlMs`、`startupTimeoutMs` 和 `stopTimeoutMs`。`browserTtlMs` 默认 `0`，表示手机访问权限一直有效；仍可设置 1,000 至 86,400,000 毫秒的有限有效期，显式配置会覆盖默认值。`access` 默认 `public`，使用 `tailscale funnel`；改为 `tailnet` 则用 `tailscale serve`，只有同一 tailnet 内的设备能打开链接，不再暴露公网入口。插件在本机映射注册后显示二维码，这不代表公网 DNS 与 Funnel 中继链路已验证可达；公网故障不会改用其他隧道或域名。电脑 Tailscale 关闭、未登录或不可用时，开启远控会报错。Funnel 的命令形式参见 [Tailscale CLI 文档](https://tailscale.com/docs/reference/tailscale-cli/funnel)。
+可通过 profile 的 `cordis.patch.yml` 覆盖 `remote-control` 行的 `tailscaleBinary`、`access`、`funnelPort`（443、8443 或 10000）、`invitationTtlMs`、`browserTtlMs`、`startupTimeoutMs`、`stopTimeoutMs` 和 `phoneSilenceMs`。`browserTtlMs` 默认 `0`，表示手机访问权限一直有效；仍可设置 1,000 至 86,400,000 毫秒的有限有效期，显式配置会覆盖默认值。`access` 默认 `public`，使用 `tailscale funnel`；改为 `tailnet` 则用 `tailscale serve`，只有同一 tailnet 内的设备能打开链接，不再暴露公网入口。插件在本机映射注册后显示二维码，这不代表公网 DNS 与 Funnel 中继链路已验证可达；公网故障不会改用其他隧道或域名。电脑 Tailscale 关闭、未登录或不可用时，开启远控会报错。Funnel 的命令形式参见 [Tailscale CLI 文档](https://tailscale.com/docs/reference/tailscale-cli/funnel)。
 
 使用 Tailscale 入口并需要「直连优先、公网备用」时，保持 `access: public`，并在手机上开启 Tailscale、连接同一 tailnet、启用 Tailscale DNS（MagicDNS）。手机通过同一 HTTPS 域名访问 tailnet 内的服务，Tailscale 会优先尝试直接连接；同一 Wi-Fi 且设备间互通时可走本地路径，5G 下也会尝试直连，不能直连时回退到 Tailscale 中继。关闭手机 Tailscale DNS 或关闭 Tailscale 后，同一域名改经公网 DNS 和 Funnel 中继访问，需要公网入口可达。公网 Funnel 本身仍有中继和带宽限制，不能保证比 5G 下的 Tailscale 直连更快。该策略由 Tailscale 与 DNS 处理，适用于 Safari 和 Chrome。连接机制参见 [Tailscale 连接类型](https://tailscale.com/docs/reference/connection-types)、[MagicDNS](https://tailscale.com/docs/features/magicdns) 和 [Funnel 工作原理](https://tailscale.com/docs/features/tailscale-funnel)。
 
@@ -103,6 +103,8 @@ pnpm dsh plugin --profile web add file:/Users/wangqiongkaka/AIProjetcs/dsh-plugi
 4. 同一手机分别使用 Wi-Fi 和蜂窝网络测试，区分本地网络与 Funnel 服务故障。不要用 HTTPS IP 地址代替域名，也不要关闭证书校验。
 
 旧配置中的 `publicTunnel` 和 `cloudflaredBinary` 已移除，应从本插件的 profile 配置中删除。配对后，同一手机、同一浏览器切换 Wi-Fi/5G、断线后重连或关闭再打开浏览器，仍使用相同的访问 Cookie；正在传输的连接可能因切网中断，是否自动重连由 DSH Web 客户端处理。
+
+DSH 每两秒向实时连接发送一次 WebSocket Ping，连续两次未收到应答就断开连接。经 Funnel 中继时，手机的应答可能排在一大段会话数据之后，几秒内到不了电脑，表现为手机反复显示「重新连接中」，每次重连又要重新下载同一段数据。代理因此在本机替手机向 DSH 应答心跳，并自行判断手机是否离线：Ping 仍会转发给手机，手机超过 `phoneSilenceMs`（默认 60,000 毫秒，最小 1,000）没有发来任何数据时才关闭这条连接。链路很慢、打开很长的会话仍被断开时可调大该值；调小则能更快释放已离线手机占用的连接。
 
 ## 手机访问前端服务
 

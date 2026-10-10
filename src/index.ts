@@ -34,6 +34,8 @@ export interface Config {
   browserTtlMs: number
   startupTimeoutMs: number
   stopTimeoutMs: number
+  /** How long a phone's live stream may send nothing before it counts as gone. */
+  phoneSilenceMs: number
 }
 
 export const Config: z<Config> = z.object({
@@ -44,6 +46,7 @@ export const Config: z<Config> = z.object({
   browserTtlMs: z.union([z.const(0), z.natural().min(1_000).max(24 * 60 * 60_000)]).default(0),
   startupTimeoutMs: z.natural().min(1_000).default(30_000),
   stopTimeoutMs: z.natural().min(1_000).default(5_000),
+  phoneSilenceMs: z.natural().min(1_000).default(60_000),
 })
 
 /** Public proxy plus the upgraded sockets `closeAllConnections()` does not reach. */
@@ -309,8 +312,40 @@ function refuseUpgrade(socket: Duplex, status: number): void {
     + '\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
 }
 
+/** An empty masked Pong: a client frame DSH accepts at any time as proof of life. */
+const PONG = Buffer.from([0x8a, 0x80, 0, 0, 0, 0])
+
+/** Follow a client's WebSocket byte stream; each call reports whether it now rests between two frames. */
+function frameBoundary(): (chunk: Buffer) => boolean {
+  let header = Buffer.alloc(0)
+  let payload = 0
+  return (chunk) => {
+    for (let offset = 0; offset < chunk.length;) {
+      if (payload > 0) {
+        const skipped = Math.min(payload, chunk.length - offset)
+        payload -= skipped
+        offset += skipped
+        continue
+      }
+      header = Buffer.concat([header, chunk.subarray(offset, ++offset)])
+      if (header.length < 2) continue
+      const short = (header[1] ?? 0) & 0x7f
+      const extended = short === 126 ? 2 : short === 127 ? 8 : 0
+      if (header.length < 2 + extended) continue
+      // The mask key counts as payload here: only where the frame ends matters.
+      payload = (((header[1] ?? 0) & 0x80) === 0 ? 0 : 4)
+        + (extended === 0 ? short : extended === 2 ? header.readUInt16BE(2) : Number(header.readBigUInt64BE(2)))
+      header = Buffer.alloc(0)
+    }
+    return payload === 0 && header.length === 0
+  }
+}
+
 /** Splice an admitted WebSocket handshake (DSH live streams) onto the loopback Web server. */
-function tunnel(req: IncomingMessage, socket: Duplex, head: Buffer, port: number, dshCookie: string, sockets: Set<Duplex>): void {
+function tunnel(
+  req: IncomingMessage, socket: Duplex, head: Buffer, port: number, dshCookie: string, sockets: Set<Duplex>,
+  phoneSilenceMs: number,
+): void {
   sockets.add(socket)
   const upstream = httpRequest({
     hostname: '127.0.0.1', port, method: req.method, path: req.url,
@@ -333,6 +368,19 @@ function tunnel(req: IncomingMessage, socket: Duplex, head: Buffer, port: number
     }
     socket.write(lines.join('\r\n') + '\r\n\r\n')
     if (upHead.length > 0) socket.write(upHead)
+    // DSH ends a stream that leaves two Pings, sent two seconds apart, unanswered. On a relayed
+    // tunnel the phone's Pong can spend longer than that queued behind a session snapshot, so a
+    // healthy phone was cut off and made to fetch the snapshot again. Answer DSH from here, where
+    // the answer cannot be delayed, and judge the phone by a silence a slow link does not reach.
+    const between = frameBoundary()
+    let idle = head.length === 0 || between(head)
+    // A Pong may only go between two of the phone's frames. One frame in flight for longer than
+    // DSH waits still ends the stream, as it did before.
+    const pongs = setInterval(() => { if (idle) upSocket.write(PONG) }, 1_000)
+    // The phone answers the Pings forwarded to it, so it is never this quiet while it is reachable.
+    const silence = setTimeout(() => { socket.destroy() }, phoneSilenceMs)
+    socket.on('data', (chunk: Buffer) => { idle = between(chunk); silence.refresh() })
+    socket.once('close', () => { clearInterval(pongs); clearTimeout(silence) })
     if (head.length > 0) upSocket.write(head)
     upSocket.pipe(socket)
     socket.pipe(upSocket)
@@ -466,7 +514,7 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
     socket.on('error', () => { socket.destroy() })
     const url = target(req)
     const status = url === undefined || req.headers.upgrade?.toLowerCase() !== 'websocket' ? 403 : refuse(req, url)
-    if (status === undefined) tunnel(req, socket, head, dshPort, dshCookie, sockets)
+    if (status === undefined) tunnel(req, socket, head, dshPort, dshCookie, sockets, config.phoneSilenceMs)
     else refuseUpgrade(socket, status)
   })
   return { server, sockets, invite, paired, pairedUntil }
