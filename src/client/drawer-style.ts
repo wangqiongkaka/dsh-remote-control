@@ -104,6 +104,7 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${DRAWER_HEADER} [class*="_settingsArea"] [class*="_triggerRow"]{grid-column:2;grid-row:1;position:sticky;top:0;z-index:4;`
   + 'display:flex;align-items:center;align-self:start;gap:8px;width:auto;height:66px;box-sizing:border-box;'
   + 'padding:14px 0 12px;margin:0;background:var(--dsw-specific-sidebar-fill)}'
+  + `${DRAWER_HEADER} [class*="_settingsArea"] [class*="_triggerRow"] > :is([data-phase],[role="status"]){order:-1}`
   + `${DRAWER_HEADER} [class*="_triggerLabel"]{display:none}`
   + `${DRAWER_HEADER} > [data-remote-control-agents]{grid-column:1 / -1;grid-row:2;min-width:0}`
   + `${DRAWER_HEADER} > [class*="_regionArea"]{grid-column:1 / -1;grid-row:3;min-width:0;min-height:auto}`

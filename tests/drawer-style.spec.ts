@@ -285,7 +285,8 @@ it('places settings before panel shortcuts beside the sidebar toggle with equal 
     + '<div data-slot="settings.launcher" style="display:contents"><button class="settings__trigger__h1" aria-label="设置" aria-haspopup="dialog">'
     + '<div data-slot="settings.trigger" style="display:contents"><svg width="16" height="16"></svg>'
     + '<span class="settings__triggerLabel__h1">设置</span></div></button></div>'
-    + '<span data-connection-indicator>连接状态</span></div></div></div></div>'
+    + '<button class="ConnectionIndicator__indicator__h1" data-phase="disconnected" data-connection-indicator>重新连接</button>'
+    + '<button class="DesktopUpdateIndicator__indicator__h1" data-update-indicator>更新</button></div></div></div></div>'
     + '</div></div>'
   document.body.append(frame)
   const dispose = applyDrawerSelection()
@@ -312,6 +313,14 @@ it('places settings before panel shortcuts beside the sidebar toggle with equal 
     expect(style('.settings__triggerRow__h1').width).toBe('auto')
     expect(style('.settings__triggerLabel__h1').display).toBe('none')
     expect(style('[data-connection-indicator]').display).not.toBe('none')
+    expect(style('[data-connection-indicator]').order).toBe('-1')
+    const indicator = frame.querySelector<HTMLElement>('[data-connection-indicator]')!
+    indicator.dataset.phase = 'connecting'
+    expect(style('[data-connection-indicator]').order).toBe('-1')
+    indicator.removeAttribute('data-phase')
+    indicator.setAttribute('role', 'status')
+    expect(style('[data-connection-indicator]').order).toBe('-1')
+    expect(style('[data-update-indicator]').order).not.toBe('-1')
     // The project track grows with its content while the settings control shares the header.
     expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('auto')
     for (const selector of ['.ui_sidebar__logoRow__h1', '.ui_sidebar__panelList__h1', '.settings__triggerRow__h1']) {
@@ -336,10 +345,12 @@ it('places settings before panel shortcuts beside the sidebar toggle with equal 
     expect(style('.ui_sidebar__panelTitle__h1').display).not.toBe('none')
     expect(style('.settings__triggerRow__h1').gridColumn).not.toBe('2')
     expect(style('.settings__triggerLabel__h1').display).not.toBe('none')
+    expect(style('[data-connection-indicator]').order).not.toBe('-1')
     frame.removeAttribute('data-sidebar-collapsed')
     dispose()
     expect(style('.ui_sidebar__footArea__h1').display).not.toBe('contents')
     expect(style('.settings__triggerRow__h1').gridRow).not.toBe('1')
+    expect(style('[data-connection-indicator]').order).not.toBe('-1')
   } finally { dispose(); frame.remove() }
 })
 
