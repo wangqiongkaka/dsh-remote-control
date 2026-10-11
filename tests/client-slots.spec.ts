@@ -311,6 +311,7 @@ it('wires the file-source picker and renamed copy without a separate command', (
   const services: Record<string, unknown> = {
     commandUi: { register }, sessions: {},
     conversation: { input: { pickFiles: () => {}, canPickFiles: () => true } },
+    sidebarRight: { openResource: () => {} },
   }
   Object.assign(ctx, {
     inject: (_names: string[], run: (scope: Context) => void) => { run(ctx) },
@@ -1753,4 +1754,44 @@ it('springs the phone composer chips past either strip end while its pinned ends
     proxy.remove()
     card.remove()
   }
+})
+
+it('opens a file link written as path:line on the real file, at that line', async () => {
+  const ctx = new Context()
+  const fake = context(slots())
+  for (const name of ['slots', 'locale', 'layout'] as const) ctx.provide(name, fake[name])
+  const opened: { address: string; options: unknown }[] = []
+  // The shell's right sidebar as every file opener reaches it: one instance, the method on its prototype.
+  class Sidebar {
+    openResource(address: string, options?: unknown): void {
+      expect(this).toBe(sidebar)
+      opened.push({ address, options })
+    }
+  }
+  const sidebar = new Sidebar()
+  const file = 'dsh-resource://file/session/s1/src/acp-adapter.ts'
+  const open = (address: string, options?: unknown): unknown => {
+    opened.length = 0
+    sidebar.openResource(address, options)
+    return opened[0]
+  }
+  try {
+    await ctx.plugin({ inject: ['slots', 'locale', 'layout'], apply }).await()
+    // The shell package may load after this plugin.
+    await ctx.plugin((scope) => { scope.provide('sidebarRight', sidebar) }).await()
+    // `[acp-adapter.ts:1026](src/acp-adapter.ts:1026)`: the shell reads a line only from `#L1026`.
+    expect(open(`${file}:1026`)).toEqual({ address: file, options: { params: { line: 1026 } } })
+    expect(open(`${file}:1026:7`)).toEqual({ address: file, options: { params: { line: 1026 } } })
+    expect(open(`${file}:10-20`)).toEqual({ address: file, options: { params: { line: 10 } } })
+    expect(open(`${file}:5`, { pane: 'p1' })).toEqual({ address: file, options: { pane: 'p1', params: { line: 5 } } })
+    // A line the caller already parsed wins over the suffix.
+    expect(open(`${file}:12`, { params: { line: 40 } })).toEqual({ address: file, options: { params: { line: 40 } } })
+    expect(open(file)).toEqual({ address: file })
+    expect(open(file, { params: { line: 3 } })).toEqual({ address: file, options: { params: { line: 3 } } })
+    expect(open('dsh-resource://file/session/s1/C:/x/y.ts')).toEqual({ address: 'dsh-resource://file/session/s1/C:/x/y.ts' })
+    expect(open('dsh-resource://plan/s1/call:12')).toEqual({ address: 'dsh-resource://plan/s1/call:12' })
+  } finally {
+    await ctx.fiber.dispose()
+  }
+  expect(open(`${file}:9`)).toEqual({ address: `${file}:9` })
 })

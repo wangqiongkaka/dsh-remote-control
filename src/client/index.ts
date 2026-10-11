@@ -19,6 +19,7 @@ import { followVerticalPulls, followSidebarSwipes, followRowHolds, followStripPu
 import { en, NS, zh, type RemoteControlKey } from './locales.ts'
 import { registerComputerDirectories, registerComputerFiles } from './ComputerFiles.tsx'
 import { registerClearProgress } from './ClearProgress.tsx'
+import { registerFileLineLinks } from './file-line-links.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -49,6 +50,7 @@ export function apply(ctx: Context): void {
   registerComputerFiles(ctx)
   registerComputerDirectories(ctx)
   registerClearProgress(ctx)
+  registerFileLineLinks(ctx)
   ctx.effect(() => {
     const closeLauncher = (event: MouseEvent): void => {
       if (!(event.target instanceof Element)) return
