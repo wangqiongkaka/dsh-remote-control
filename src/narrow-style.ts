@@ -51,6 +51,12 @@ export const PHONE_SAFE_AREA_STYLE = 'html{--dsh-remote-bottom-clearance:max(8px
   + 'padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(24px,env(safe-area-inset-right,0px))}'
   + `${MODAL} > [role="dialog"]{max-height:100%}`
   + `${MODAL} > [role="dialog"] > [class*="_content"]{min-height:0;overflow-y:auto}`
+  // Harness approvals put the entire command in the non-shrinking question header.
+  + '[data-question-key] > section{max-height:min(520px,calc(var(--dsh-remote-keyboard-height,100dvh) * .6))}'
+  + '[data-question-key] > section > header > [class*="_headingBlock"]{'
+  + 'max-height:min(160px,calc(var(--dsh-remote-keyboard-height,100dvh) * .25));'
+  + 'overflow-y:auto;overflow-wrap:anywhere;overscroll-behavior-y:contain}'
+  + '[data-question-key] > section > footer{flex-wrap:wrap}'
 
 /** The DSH shell has no narrow-screen layout, so the proxy lends phones a small patch layer. */
 export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
