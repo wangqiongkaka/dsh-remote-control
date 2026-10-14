@@ -20,6 +20,7 @@ import { en, NS, zh, type RemoteControlKey } from './locales.ts'
 import { registerComputerDirectories, registerComputerFiles } from './ComputerFiles.tsx'
 import { registerClearProgress } from './ClearProgress.tsx'
 import { registerFileLineLinks } from './file-line-links.ts'
+import { registerSessionLoading } from './session-loading.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -46,6 +47,7 @@ async function command(action: 'start' | 'stop' | 'refresh', workspaceId?: strin
 }
 
 export function apply(ctx: Context): void {
+  registerSessionLoading(ctx)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'remote-control: dictionaries')
   registerComputerFiles(ctx)
   registerComputerDirectories(ctx)
