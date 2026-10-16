@@ -10,6 +10,11 @@ const FRAME = '[class*="_frame"]:has([class*="_sidebarCol"])'
 /** The sidebar column as the phone drawer: always while it is open, and closed too while no right panel holds a track. */
 const DRAWER = `${FRAME}[data-rightbar-collapsed] [class*="_sidebarCol"],${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]`
 
+/** Keep the home-indicator clearance inside the phone scrollport so no fixed strip clips its rows. */
+export const PHONE_DRAWER_BOTTOM_STYLE = `${DRAWER}{height:calc(var(--dsh-remote-keyboard-height,100dvh) - var(--dsh-remote-top-clearance)) !important}`
+  + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"] [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important;`
+  + 'padding-bottom:var(--dsh-remote-bottom-clearance) !important}'
+
 /** The shell's slow duration and in-out curve, which the right panel slides on. */
 export const SLOW = 'var(--ds-transition-duration-slow,.3s)'
 export const EASE = 'var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1))'
@@ -35,6 +40,49 @@ export const PHONE_HERO_COMPOSER_STYLE = `${HERO} > [data-conversation-scroll] >
 const COMPOSER_ROW = '[data-composer-card] > [class*="_row"]:has(> [class*="_tools"]:not([hidden]))'
 
 const MODAL = 'body > [role="presentation"]:has(> [role="dialog"])'
+
+const SETTINGS = '[data-shortcut-modal="settings"]'
+const SETTING_CHOICE = `${SETTINGS} [data-slot="settings.general.item"] [class*="_row"]:has(> [class*="_rowText"] [class*="_desc"]):has([class*="_selector"])`
+
+/** Share the compact settings layout with already-open pages when the client reloads. */
+export const PHONE_SETTINGS_STYLE = `${MODAL}:has(> ${SETTINGS}){height:var(--dsh-remote-keyboard-height,100dvh) !important;bottom:auto !important;align-items:flex-end;`
+  + 'padding:max(8px,var(--dsh-remote-top-clearance)) 0 0 !important}'
+  + `${MODAL} > ${SETTINGS}{box-sizing:border-box;flex-direction:column !important;width:100% !important;max-width:none !important;`
+  + `height:min(calc(var(--dsh-settings-ratio,.5) * var(--dsh-remote-keyboard-height,100dvh)),100%) !important;padding-bottom:var(--dsh-remote-bottom-clearance);border-radius:24px 24px 0 0;animation:dsh-remote-settings-in ${SLOW} ${EASE}}`
+  + `${SETTINGS} > [data-dsh-settings-resize]{display:flex;align-items:center;justify-content:center;flex:none;width:100%;height:44px;padding:0;border:0;background:none;`
+  + 'color:var(--dsw-alias-label-tertiary);cursor:ns-resize;touch-action:none;user-select:none}'
+  + `${SETTINGS} > [data-dsh-settings-resize]::before{content:"";width:36px;height:4px;border-radius:999px;background:currentColor}`
+  + `${SETTINGS}[data-dsh-settings-sheet] [class*="_header"]:has([class*="_close"]){top:52px}`
+  + `${SETTINGS} > nav{flex:none;width:auto !important;min-width:0;padding:8px 12px !important;gap:8px !important;border-bottom:.5px solid var(--dsw-alias-border-l2)}`
+  + `${SETTINGS} [class*="_navTitle"]{padding:8px 52px 8px 4px !important;font-size:20px;line-height:28px;font-weight:600}`
+  + `${SETTINGS} [class*="_navList"]{flex-direction:row !important;flex:none;gap:4px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:none}`
+  + `${SETTINGS} [class*="_navList"]::-webkit-scrollbar{display:none}`
+  + `${SETTINGS} [class*="_navCell"]{flex:none;min-height:44px;height:44px !important;padding:0 10px !important;gap:6px}`
+  + `${SETTINGS} > [class*="_content"]{min-height:0;overflow:hidden !important;padding-bottom:0}`
+  + `${SETTINGS} [class*="_header"]:has([class*="_close"]){position:absolute;top:8px;right:8px;height:44px !important;padding:0 !important;align-items:center;z-index:2}`
+  + `${SETTINGS} [class*="_header"] > [class*="_close"]{width:44px;height:44px}`
+  + `${SETTINGS} [class*="_options"]{padding:0 16px 16px !important;overscroll-behavior-y:contain;mask-image:none}`
+  + `${SETTINGS} [class*="_themeCube"]{flex:1 1 0;min-width:0;padding:12px 4px}`
+  + `${SETTINGS} [class*="_rowText"],${SETTINGS} [class*="_settingText"]{padding-right:0 !important;overflow-wrap:anywhere}`
+  + `${SETTINGS} button[class*="_selector"],${SETTINGS} button[class*="_button"]{min-height:44px}`
+  + `${SETTING_CHOICE}{flex-direction:column;align-items:stretch;gap:10px}`
+  + `${SETTING_CHOICE} [class*="_rowText"]{flex:none}`
+  + `${SETTING_CHOICE} button[class*="_selector"]{width:100%;justify-content:space-between}`
+  + `${SETTINGS} [class*="_setting"]:has(> [class*="_settingText"]){flex-direction:column;align-items:stretch;gap:10px}`
+  + `${SETTINGS} [class*="_setting"]:has(> [class*="_settingText"]) button{width:100%;max-width:none}`
+  + `${SETTINGS} [class*="_row"]:has(> [class*="_control"] > [class*="_stepper"]){flex-wrap:wrap}`
+  + `${SETTINGS} [class*="_row"]:has(> [class*="_control"] > [class*="_stepper"]) > [class*="_rowText"]{flex:1 1 140px}`
+  + `${SETTINGS} [class*="_control"]:has(> [class*="_stepper"]){flex:none;margin-left:auto}`
+  + `${SETTINGS} [class*="_stepper"]{display:grid;grid-template-columns:44px minmax(28px,1fr) 44px;min-width:116px;height:44px}`
+  + `${SETTINGS} [class*="_stepper"] > [class*="_value"]{grid-column:2;grid-row:1}`
+  + `${SETTINGS} [class*="_arrows"]{display:contents;position:static;opacity:1}`
+  + `${SETTINGS} button[class*="_arrow"]{grid-row:1;width:44px;height:44px;background:transparent}`
+  + `${SETTINGS} button[class*="_arrow"]:first-child{grid-column:3}`
+  + `${SETTINGS} button[class*="_arrow"]:last-child{grid-column:1}`
+  + `${SETTINGS} button[class*="_arrow"] svg{width:14px;height:14px}`
+  + `${SETTINGS} button[class*="_expander"]{width:44px;height:44px}`
+  + '@keyframes dsh-remote-settings-in{from{transform:translateY(100%)}to{transform:translateY(0)}}'
+  + `@media (prefers-reduced-motion: reduce){${SETTINGS}{animation:none !important}}`
 
 /** Fresh proxy documents and client reloads share one safe visible band for every page. */
 export const PHONE_SAFE_AREA_STYLE = 'html{--dsh-remote-bottom-clearance:max(8px,env(safe-area-inset-bottom,0px));'
@@ -71,6 +119,7 @@ export const PHONE_SAFE_AREA_STYLE = 'html{--dsh-remote-bottom-clearance:max(8px
 export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '@media (max-width: 720px){'
   + PHONE_HERO_COMPOSER_STYLE
+  + PHONE_SETTINGS_STYLE
   // Only the conversation scrollport moves. At its ends, stop a pull from panning the page and
   // carrying the composer and its context meter with the whole shell.
   + 'html,body{overflow:hidden;overscroll-behavior-y:none}'
@@ -191,18 +240,6 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // applied to reveal the focused field, which the shell follows to stay inside the visible band.
   + '[data-dsh-remote-keyboard] [class*="hp-menu"],[data-dsh-remote-keyboard] [class*="hp-panel"],'
   + '[data-dsh-remote-keyboard] [class*="_portal"]{max-height:calc(var(--dsh-remote-keyboard-height,100dvh) - 140px) !important}'
-  // Settings has a fixed desktop nav; stack it above the content on phones.
-  + '[data-shortcut-modal="settings"]{flex-direction:column !important;width:calc(100vw - 24px) !important;max-width:none !important;height:calc(100dvh - 32px) !important}'
-  + '[data-shortcut-modal="settings"] > nav{width:auto !important;padding:14px 16px 8px !important;gap:10px !important}'
-  + '[data-shortcut-modal="settings"] [class*="_navTitle"]{padding:0 40px 0 0 !important}'
-  + '[data-shortcut-modal="settings"] [class*="_navList"]{flex-direction:row !important;flex:none;overflow-x:auto;overflow-y:hidden;scrollbar-width:none}'
-  + '[data-shortcut-modal="settings"] [class*="_navList"]::-webkit-scrollbar{display:none}'
-  + '[data-shortcut-modal="settings"] [class*="_navCell"]{flex:none;height:40px !important;padding:8px 10px !important}'
-  + '[data-shortcut-modal="settings"] > [class*="_content"]{min-height:0}'
-  + '[data-shortcut-modal="settings"] [class*="_header"]:has([class*="_close"]){position:absolute;top:12px;right:12px;height:28px !important;padding:0 !important;z-index:1}'
-  + '[data-shortcut-modal="settings"] [class*="_options"]{padding:0 16px 20px !important}'
-  + '[data-shortcut-modal="settings"] [class*="_themeCube"]{flex:1 1 0;min-width:0;padding:12px 4px}'
-  + '[data-shortcut-modal="settings"] [class*="_rowText"]{padding-right:0 !important}'
   // Harness settings keep the shell's type scale on phones; toggles belong beside their copy,
   // while the multi-Harness selector can scroll rather than forcing the whole sheet wider.
   + '[data-shortcut-modal="settings"] .hp-set{gap:10px}'
@@ -217,10 +254,6 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '[data-shortcut-modal="settings"] .hp-set-control input.hp-set-number{width:88px !important;text-align:center !important}'
   + '[data-shortcut-modal="settings"] .hp-set-control .hp-delegate-harness{max-width:100%;overflow-x:auto;scrollbar-width:none}'
   + '[data-shortcut-modal="settings"] .hp-set-control .hp-delegate-harness button{flex:none}'
-  // The sheet's own scroll region keeps its content reachable under the phone's home indicator,
-  // and the keyboard (visual-viewport height) bounds it the same way it bounds the shell.
-  + '[data-shortcut-modal="settings"]{padding-bottom:env(safe-area-inset-bottom)}'
-  + '[data-dsh-remote-keyboard] [data-shortcut-modal="settings"]{height:calc(var(--dsh-remote-keyboard-height,100dvh) - 16px) !important}'
   + '}'
   + '@media (max-width: 1023px){' + PHONE_SAFE_AREA_STYLE + '}</style>'
   // The shell keeps a 56px icon rail whenever it is not a desktop window (AppFrame's collapsedWidth),
@@ -258,8 +291,6 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // and the collapse control in the sidebar's own logo row is the way back. The shell sizes the
   // sidebar content inline at the column's track width, which the full column overrides.
   + '@media (max-width: 720px){'
-  + `${DRAWER}{width:100vw;bottom:var(--dsh-remote-bottom-clearance)}`
-  // The drawer ends above the same page-edge inset, so its content needs no extra safe-area pad.
-  + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"] [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important;`
-  + 'padding-bottom:0 !important}'
+  + `${DRAWER}{width:100vw}`
+  + PHONE_DRAWER_BOTTOM_STYLE
   + '}</style>'

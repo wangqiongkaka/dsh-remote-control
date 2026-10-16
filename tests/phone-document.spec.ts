@@ -20,11 +20,12 @@ it('opens the drawer full screen at phone width and keeps the tablet drawer', ()
   // A phone gets the whole screen.
   const phone = drawer.slice(drawer.indexOf('@media (max-width: 720px){'))
   expect(phone).not.toBe(drawer)
-  expect(phone).toContain(`${column}{width:100vw;bottom:var(--dsh-remote-bottom-clearance)}`)
+  expect(phone).toContain(`${column}{width:100vw}`)
+  expect(phone).toContain(`${column}{height:calc(var(--dsh-remote-keyboard-height,100dvh) - var(--dsh-remote-top-clearance)) !important}`)
   // The shell sizes the sidebar content inline at its track width; the full column overrides it,
-  // and lifts Settings off the screen's bottom edge by the chat's own bottom clearance.
+  // and reserves the home-indicator clearance inside the scrollport instead of clipping rows.
   expect(phone).toContain(`${open} [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important;`
-    + 'padding-bottom:0 !important}')
+    + 'padding-bottom:var(--dsh-remote-bottom-clearance) !important}')
 })
 
 // The shell auto-places its sidebar, conversation and right columns in order. The fixed drawer

@@ -22,8 +22,9 @@
  * styling); this module only owns the sheet.
  */
 
-import { PHONE_HERO_COMPOSER_STYLE, PHONE_SAFE_AREA_STYLE } from '../narrow-style.ts'
+import { PHONE_DRAWER_BOTTOM_STYLE, PHONE_HERO_COMPOSER_STYLE, PHONE_SAFE_AREA_STYLE, PHONE_SETTINGS_STYLE } from '../narrow-style.ts'
 import { phoneViewport } from '../phone-document.ts'
+import { followSettingsSheet } from './settings-sheet.ts'
 
 /** Attribute on the injected sheet; the proxy's layers use their own attribute names. */
 export const DRAWER_STYLE_ATTRIBUTE = 'data-dsh-remote-control-drawer-selection'
@@ -154,12 +155,14 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   // row's collapse control, which is the drawer's only way back there.
   + '@media (max-width: 1023px){' + PHONE_SAFE_AREA_STYLE + '}'
   + '@media (max-width: 720px){'
+  + PHONE_DRAWER_BOTTOM_STYLE
   + PHONE_HERO_COMPOSER_STYLE
+  + PHONE_SETTINGS_STYLE
   // Client reloads do not replace the proxy HTML; keep live composer layout in this sheet.
   // Installed hosts lack data-composer-dock; the card's dock sibling exists in both versions.
   + '[data-composer-card] ~ [class*="_dock"]{order:-1;padding-top:0 !important;padding-bottom:4px}'
   + '[data-composer-card] ~ [class*="_dock"]:empty{display:none}'
-  // The phone drawer's outer edge already reserves the shared home-indicator inset.
+  // The scrollport reserves the shared home-indicator inset.
   + `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]{padding-bottom:0}`
   // Task modes share one phone layout. A bounded dock leaves room for the draft and transcript
   // when the keyboard opens; full-width model picks cannot push their neighbours off-screen.
@@ -202,6 +205,7 @@ export function applyDrawerSelection(): () => void {
   style.setAttribute(DRAWER_STYLE_ATTRIBUTE, '')
   style.textContent = DRAWER_SELECTION_STYLE
   document.head.append(style)
+  const disposeSettings = followSettingsSheet()
   const selector = `${TASK_MODE} .hp-menu`
   const viewport = window.visualViewport
   let frame = 0
@@ -228,6 +232,7 @@ export function applyDrawerSelection(): () => void {
   viewport?.addEventListener('scroll', schedule)
   position()
   return () => {
+    disposeSettings()
     if (viewportMeta && originalViewport != null && viewportMeta.content === fittedViewport) viewportMeta.content = originalViewport
     observer.disconnect()
     cancelAnimationFrame(frame)

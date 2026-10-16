@@ -21,6 +21,22 @@ it('also docks the blank composer after a client-only reload', () => {
 
 afterEach(() => { sheet()?.remove() })
 
+it('fills the phone drawer to the bottom and puts the safe area inside its scrollport after a reload', () => {
+  const dispose = applyDrawerSelection()
+  try {
+    const phone = Array.from(sheet()!.sheet!.cssRules).find(rule => rule instanceof CSSMediaRule
+      && rule.conditionText === '(max-width: 720px)') as CSSMediaRule
+    const rules = Array.from(phone.cssRules).filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule)
+    const drawer = rules.find(rule => rule.selectorText.split(',').some(selector => selector.endsWith(' [class*="_sidebarCol"]'))
+      && rule.style.getPropertyValue('height'))
+    expect(drawer?.style.getPropertyValue('height')).toBe('calc(var(--dsh-remote-keyboard-height,100dvh) - var(--dsh-remote-top-clearance))')
+    expect(sheet()!.textContent).toContain('height:calc(var(--dsh-remote-keyboard-height,100dvh) - var(--dsh-remote-top-clearance)) !important')
+    const root = rules.find(rule => rule.selectorText === DRAWER_SCROLL_ROOT)
+    expect(root?.style.getPropertyValue('padding-bottom')).toBe('var(--dsh-remote-bottom-clearance)')
+    expect(sheet()!.textContent).toContain('padding-bottom:var(--dsh-remote-bottom-clearance) !important}')
+  } finally { dispose() }
+})
+
 it('bounds the drawer scrim above the same safe area as the phone sidebar', () => {
   const dispose = applyDrawerSelection()
   try {
@@ -270,7 +286,7 @@ it('scrolls the whole drawer while the brand and settings stay pinned', () => {
     expect(style('.ui_sidebar__logoRow__h1').top).toBe('0px')
     expect(style('.ui_sidebar__footArea__h1').position).toBe('sticky')
     expect(style('.ui_sidebar__footArea__h1').bottom).toBe('0px')
-    // The page edge owns the home-indicator inset, not this inner sticky footer.
+    // The scrollport owns the home-indicator inset, not this inner sticky footer.
     expect(document.querySelector(`[${DRAWER_STYLE_ATTRIBUTE}]`)!.textContent).toContain(
       `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]{padding-bottom:0}`,
     )
