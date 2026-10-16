@@ -10,7 +10,7 @@ import {
 import { promisify } from 'node:util'
 import { connect, type AddressInfo } from 'node:net'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
 import type { Duplex } from 'node:stream'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
@@ -23,8 +23,20 @@ import { computerFiles } from './remote-files.ts'
 export const name = 'dsh-remote-control'
 export const inject = ['connection', 'webServer', 'workspaceRegistry']
 
+/** An explicit SSH reverse tunnel to an HTTPS reverse proxy on the server. */
+interface SshConfig {
+  destination: string
+  publicUrl: string
+  binary: string
+  port: number
+  remotePort: number
+  identityFile?: string
+}
+
 /** Tunnel and pairing settings. */
 export interface Config {
+  /** When set, use SSH instead of Tailscale; credentials stay in OpenSSH. */
+  ssh?: SshConfig | undefined
   tailscaleBinary: string
   /** `public` opens an internet ingress; `tailnet` serves Tailscale peers only. */
   access: 'public' | 'tailnet'
@@ -38,7 +50,17 @@ export interface Config {
   phoneSilenceMs: number
 }
 
+const SSH_DESTINATION = /^(?:[A-Za-z0-9_][A-Za-z0-9_.-]*@)?(?:[A-Za-z0-9_][A-Za-z0-9_.-]*|[A-Fa-f0-9:]+|\[[A-Fa-f0-9:]+\])$/u
+
 export const Config: z<Config> = z.object({
+  ssh: z.union([z.object({
+    destination: z.string().pattern(SSH_DESTINATION).required(),
+    publicUrl: z.string().min(1).required(),
+    binary: z.string().min(1).default('ssh'),
+    port: z.natural().min(1).max(65_535).default(22),
+    remotePort: z.natural().min(1).max(65_535).default(18_080),
+    identityFile: z.string().min(1),
+  }), z.const(undefined)]),
   tailscaleBinary: z.string().min(1).default('tailscale'),
   access: z.union([z.const('public'), z.const('tailnet')]).default('public'),
   funnelPort: z.union([z.const(443), z.const(8443), z.const(10000)]).default(443),
@@ -163,6 +185,37 @@ function publicUrl(config: Config, status: unknown): string {
   const result = new URL('https://' + hostname + port + '/')
   if (result.hostname !== hostname || result.pathname !== '/') throw new Error('Invalid Tailscale DNS name')
   return result.href
+}
+
+/** Keep the public origin usable by Secure cookies and the existing Host/Origin fence. */
+function sshPublicUrl(ssh: SshConfig): string {
+  if (!SSH_DESTINATION.test(ssh.destination)) throw new Error('Invalid SSH destination')
+  if (![ssh.port, ssh.remotePort].every(port => Number.isSafeInteger(port) && port >= 1 && port <= 65_535)) {
+    throw new Error('Invalid SSH port')
+  }
+  if (ssh.identityFile !== undefined && !isAbsolute(ssh.identityFile) && !ssh.identityFile.startsWith('~/')) {
+    throw new Error('SSH identityFile must be absolute or start with ~/')
+  }
+  let url: URL
+  try { url = new URL(ssh.publicUrl) } catch { throw new Error('Invalid SSH publicUrl') }
+  if (url.protocol !== 'https:' || url.username !== '' || url.password !== ''
+    || url.pathname !== '/' || url.search !== '' || url.hash !== '') {
+    throw new Error('SSH publicUrl must be an HTTPS origin without credentials, path, query or fragment')
+  }
+  return url.origin + '/'
+}
+
+function sshArguments(ssh: SshConfig, proxyPort: number): string[] {
+  const args = ['-N', '-T', '-v',
+    '-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ExitOnForwardFailure=yes',
+    '-o', 'ControlMaster=no', '-o', 'ControlPath=none', '-o', 'ForkAfterAuthentication=no',
+    '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3', '-p', String(ssh.port),
+    '-R', '127.0.0.1:' + String(ssh.remotePort) + ':127.0.0.1:' + String(proxyPort)]
+  if (ssh.identityFile !== undefined) {
+    const file = ssh.identityFile.startsWith('~/') ? join(homedir(), ssh.identityFile.slice(2)) : ssh.identityFile
+    args.push('-i', file, '-o', 'IdentitiesOnly=yes')
+  }
+  return [...args, ssh.destination]
 }
 
 /** Exchange DSH's process token on loopback; this cookie never reaches the phone. */
@@ -574,6 +627,8 @@ async function closeProxy({ server, sockets }: Proxy): Promise<void> {
 
 export function apply(ctx: Context, config: Config): void {
   let active: Tunnel | undefined
+  let disposed = false
+  let recoveryEpoch = 0
   let operation: Promise<void> = Promise.resolve()
   const serialize = <T>(run: () => Promise<T>): Promise<T> => {
     const result = operation.then(run)
@@ -581,6 +636,7 @@ export function apply(ctx: Context, config: Config): void {
     return result
   }
   const stop = async (): Promise<void> => {
+    recoveryEpoch++
     const current = active
     active = undefined
     if (current === undefined) return
@@ -595,24 +651,40 @@ export function apply(ctx: Context, config: Config): void {
   }
   const open = async (refresh = false): Promise<Invitation> => {
     if (active !== undefined) return active.proxy.invite(refresh)
+    const ssh = config.ssh ?? undefined
     const command = config.access === 'public' ? 'funnel' : 'serve'
-    const label = 'Tailscale ' + (config.access === 'public' ? 'Funnel' : 'Serve')
-    const baseUrl = publicUrl(config, await cliJson(config.tailscaleBinary, ['status', '--json']))
-    const existing = await cliJson(config.tailscaleBinary, [command, 'status', '--json'])
-    if (!portAvailable(existing, config.funnelPort)) {
-      if (!record(existing) || !await abandoned(existing, config.funnelPort)) {
-        throw new Error(label + ' port ' + String(config.funnelPort) + ' already has a configuration')
+    const label = ssh === undefined ? 'Tailscale ' + (config.access === 'public' ? 'Funnel' : 'Serve') : 'SSH tunnel'
+    const baseUrl = ssh === undefined
+      ? publicUrl(config, await cliJson(config.tailscaleBinary, ['status', '--json'])) : sshPublicUrl(ssh)
+    if (ssh === undefined) {
+      const existing = await cliJson(config.tailscaleBinary, [command, 'status', '--json'])
+      if (!portAvailable(existing, config.funnelPort)) {
+        if (!record(existing) || !await abandoned(existing, config.funnelPort)) {
+          throw new Error(label + ' port ' + String(config.funnelPort) + ' already has a configuration')
+        }
+        // Either verb can own the leftover, so clear both before claiming the port.
+        for (const other of ['serve', 'funnel']) await cliRun(config.tailscaleBinary, [other, 'reset'])
       }
-      // Either verb can own the leftover, so clear both before claiming the port.
-      for (const other of ['serve', 'funnel']) await cliRun(config.tailscaleBinary, [other, 'reset'])
     }
     const dshCookie = await localCookie(ctx)
     const pairing = browserProxy(baseUrl, ctx.webServer.port, dshCookie, config)
     const proxyPort = await listen(pairing.server)
     const target = 'http://127.0.0.1:' + String(proxyPort)
-    const child = spawn(config.tailscaleBinary, [command, '--yes', '--https=' + String(config.funnelPort), target], {
+    const child = spawn(ssh?.binary ?? config.tailscaleBinary, ssh === undefined
+      ? [command, '--yes', '--https=' + String(config.funnelPort), target] : sshArguments(ssh, proxyPort), {
       env: cliEnv(), stdio: ['ignore', 'pipe', 'pipe'], detached: true,
     })
+    let sshReady = false
+    if (ssh !== undefined) {
+      // OpenSSH emits this only after the server acknowledges the requested reverse listener.
+      const confirmation = 'debug1: remote forward success for: listen 127.0.0.1:' + String(ssh.remotePort) + ','
+      let pending = ''
+      child.stderr?.on('data', (chunk: Buffer) => {
+        const text = pending + chunk.toString('utf8')
+        sshReady ||= text.includes(confirmation)
+        pending = text.slice(-confirmation.length)
+      })
+    }
     const output = captureOutput(child)
     // Funnel prints why it refuses to start and then waits for an admin instead of exiting, so the
     // reason has to travel with whichever failure ends the wait.
@@ -628,24 +700,27 @@ export function apply(ctx: Context, config: Config): void {
         resolve()
       })
     })
-    void exited.then(() => {
+    void exited.then(async () => {
       if (active?.child === child) {
         const current = active
+        const epoch = recoveryEpoch
         active = undefined
-        void closeProxy(current.proxy)
+        await closeProxy(current.proxy)
+        if (ssh !== undefined) void restore(epoch)
       }
     })
     try {
       const deadline = Date.now() + config.startupTimeoutMs
       while (Date.now() < deadline && exitReason === undefined) {
-        const ready = JSON.stringify(await cliJson(config.tailscaleBinary, [command, 'status', '--json'])).includes(target)
+        const ready = ssh === undefined
+          ? JSON.stringify(await cliJson(config.tailscaleBinary, [command, 'status', '--json'])).includes(target) : sshReady
         if (ready && exitReason === undefined) {
           active = { child, exited, proxy: pairing }
           return pairing.invite()
         }
         // A public ingress the tailnet has not enabled is a setup step, not a slow start: report it
         // without the wait. `serve` needs no such permission.
-        if (config.access === 'public' && /funnel is not enabled/iu.test(output())) {
+        if (ssh === undefined && config.access === 'public' && /funnel is not enabled/iu.test(output())) {
           throw failure('Tailscale Funnel could not start')
         }
         await new Promise(resolve => setTimeout(resolve, 250))
@@ -655,6 +730,19 @@ export function apply(ctx: Context, config: Config): void {
       await closeProxy(pairing)
       await stopChild(child, exited, config.stopTimeoutMs)
       throw error
+    }
+  }
+  // Reloads and interrupted SSH connections share the existing one-minute recovery window.
+  const restore = async (epoch: number): Promise<void> => {
+    const deadline = Date.now() + 60_000
+    while (!disposed && epoch === recoveryEpoch && Date.now() < deadline) {
+      try {
+        await serialize(async () => {
+          if (!disposed && epoch === recoveryEpoch && loadPairing() !== undefined) await open()
+        })
+        return
+      } catch { /* not ready yet */ }
+      await new Promise((resolve) => { setTimeout(resolve, 2_000).unref() })
     }
   }
   ctx.effect(() => ctx.connection.fetch.register({
@@ -685,20 +773,9 @@ export function apply(ctx: Context, config: Config): void {
       }
     },
   }), 'remote-control: local control route')
-  let disposed = false
   ctx.effect(() => () => { disposed = true; return serialize(stop) }, 'remote-control: tunnel shutdown')
   // A reload or DSH restart closes the tunnel, usually while nobody is at the desktop to reopen it.
   // Reopen it for a phone that is still paired. The previous instance may still hold the port and
   // Tailscale may still be connecting after login, so keep trying for a minute.
-  void (async () => {
-    const deadline = Date.now() + 60_000
-    while (!disposed && Date.now() < deadline) {
-      try {
-        // Checked in turn with the control route, so a stop that got in first is not undone.
-        await serialize(async () => { if (!disposed && loadPairing() !== undefined) await open() })
-        return
-      } catch { /* not ready yet */ }
-      await new Promise((resolve) => { setTimeout(resolve, 2_000).unref() })
-    }
-  })()
+  void restore(recoveryEpoch)
 }

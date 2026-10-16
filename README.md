@@ -4,7 +4,7 @@
 
 ## 安装
 
-需要正在运行的 DSH Web profile，以及已连接的 Tailscale。默认使用 [Tailscale Funnel](https://tailscale.com/docs/features/tailscale-funnel) 提供公网 HTTPS 入口，需启用 MagicDNS、HTTPS 和 Funnel 权限；手机走公网入口时无需 Tailscale。开发依赖中的 `link:` 路径假定本插件与 `deepseek-harness` 同在 `AIProjetcs` 目录下；如目录不同，先调整 `package.json` 的开发链接。打包产物不依赖这些路径。
+需要正在运行并提供 Web 服务的 DSH profile。默认使用 [Tailscale Funnel](https://tailscale.com/docs/features/tailscale-funnel) 提供公网 HTTPS 入口，需连接 Tailscale 并启用 MagicDNS、HTTPS 和 Funnel 权限；手机走公网入口时无需 Tailscale。也可使用下文的 SSH 隧道模式，此时电脑和手机均不需要 Tailscale。开发依赖中的 `link:` 路径假定本插件与 `deepseek-harness` 同在 `AIProjetcs` 目录下；如目录不同，先调整 `package.json` 的开发链接。打包产物不依赖这些路径。
 
 ```sh
 cd /Users/wangqiongkaka/AIProjetcs/dsh-plugin/dsh-remote-control
@@ -19,6 +19,51 @@ pnpm dsh plugin --profile web add file:/Users/wangqiongkaka/AIProjetcs/dsh-plugi
 ```
 
 使用已安装的 `dsh` CLI 时，去掉 `pnpm`。安装后重启 Web profile 并重新打开 Web 页面。插件只向 profile 安装自己的 bundle，不要求修改 DSH 主仓库。若同版本重新打包，需要先移除旧包再安装，避免 pnpm 复用缓存。
+
+## SSH 隧道模式
+
+Mac 主动通过 OpenSSH 连接公网服务器，将服务器的回环端口转发到插件的本机鉴权代理；服务器上的 Caddy 提供 HTTPS 和 WebSocket 入口。手机访问服务器，无需 Mac 具备公网入站条件。HTTPS 在服务器终止，服务器属于可信边界，可以接触会话内容；手机访问仍需一次性扫码配对。
+
+在目标 profile 的 `cordis.patch.yml` 中为 `remote-control` 配置 `ssh`（将示例 IP 换成自己的服务器）：
+
+```yaml
+- id: remote-control
+  name: dsh-remote-control
+  config:
+    ssh:
+      destination: dsh-tunnel@203.0.113.10
+      publicUrl: https://203.0.113.10
+      identityFile: ~/.ssh/dsh-remote-tunnel
+      port: 22
+      remotePort: 18080
+```
+
+`destination` 支持 SSH 主机别名或 `用户@主机`，也支持 IPv6 地址；`publicUrl` 必须是无用户名、密码、路径、查询参数和片段的 HTTPS 根地址，可以使用域名或公网 IP。`port` 默认 `22`，`remotePort` 默认 `18080`，`binary` 默认 `ssh`。`identityFile` 可省略以使用 OpenSSH 默认身份或 ssh-agent；显式指定时须为绝对路径或以 `~/` 开头的路径，私钥内容不写入插件配置。加密私钥须预先载入可供 DSH 进程访问的 ssh-agent。插件以非交互方式登录，不接受密码提示，并始终校验服务器主机密钥；首次连接前应将核验过的主机公钥加入 Mac 的 `known_hosts`。
+
+服务器 SSH 必须允许远程 TCP 转发；建议为隧道建立专用账户，仅允许 `127.0.0.1:18080` 的远程监听，保持 `GatewayPorts no`，避免隧道端口对公网开放。Caddy 与 SSH 服务部署在同一台服务器时，已有域名站点可将后端设为 `127.0.0.1:18080`。使用公网 IP 时，以下示例显式申请 Let's Encrypt 的 `shortlived` IP 证书，并为不发送 SNI 的客户端提供默认服务器名：
+
+```caddyfile
+{
+    default_sni 203.0.113.10
+}
+
+https://203.0.113.10 {
+    tls {
+        issuer acme {
+            dir https://acme-v02.api.letsencrypt.org/directory
+            profile shortlived
+            disable_tlsalpn_challenge
+        }
+    }
+    reverse_proxy 127.0.0.1:18080
+}
+```
+
+示例通过公网 80 端口验证 IP，手机访问 443；Caddy 版本须支持 IP 证书与 ACME profile，并保持证书存储可写、自动续期运行。合并到已有 Caddyfile 时保留现有站点和全局配置。若需保留原有 HTTP 欢迎页而不自动跳转，在全局配置中添加 `auto_https disable_redirects`。
+
+配置 `ssh` 后只启动 SSH，不调用 Tailscale，也不自动切换其他隧道；移除 `ssh` 即恢复原有 Tailscale 模式。二维码使用 `publicUrl`；更新二维码不重启隧道。插件仅在 OpenSSH 确认远端监听建立后返回二维码，这不代表服务器证书或公网链路已验证可达。未知主机密钥、密钥登录失败、远端端口占用和启动超时会返回具体诊断，并关闭本次本机代理与子进程。
+
+已配对的 SSH 连接意外退出时，插件关闭旧代理及长连接，并沿用持久配对重建隧道；恢复流程与插件重载共用一分钟窗口，每次失败后间隔两秒再试，单次启动仍受 `startupTimeoutMs` 限制。窗口结束后需在电脑上重新打开远控弹窗；未配对时不会自动重建。点击「停止远程控制」会取消重试、关闭隧道并撤销配对，不会改动服务器的 Caddy 或其他 SSH 会话。首次从 Tailscale 域名切换到自有公网地址时，浏览器 Cookie 不跨站共享，手机需要重新扫码一次。
 
 ## 开发热更新
 
@@ -124,4 +169,4 @@ npm run dev -- --host 0.0.0.0
 
 ## 验证
 
-运行 `npm run check`，依次完成构建、类型检查和全部测试；测试直接引用 `dist/` 构建产物。测试用假的 Tailscale 命令和本机 HTTP 服务验证一次性配对、二维码更新、替换配对时旧凭证及长连接的撤销、完整 Web 路由代理、Host/Origin 拒绝及停止后的撤销，并验证弹窗重新打开和已配对时的二维码展示。公网 HTTP 和 WebSocket 连通性需要通过实际隧道单独验证。
+运行 `npm run check`，依次完成构建、类型检查和全部测试；测试直接引用 `dist/` 构建产物。测试用假的 Tailscale、OpenSSH 命令和本机 HTTP 服务验证一次性配对、二维码更新、替换配对时旧凭证及长连接的撤销、完整 Web 路由代理、Host/Origin 拒绝及停止后的撤销，并验证弹窗重新打开和已配对时的二维码展示。SSH 测试还验证监听确认、启动失败及清理、配置校验、重载恢复、意外断线重建，以及停止后不再自动重连。公网 HTTP 和 WebSocket 连通性需要通过实际隧道单独验证。
