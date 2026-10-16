@@ -3,3 +3,5 @@ lib/
 dist/
 *.tgz
 .pnpm-store/
+ios/**/xcuserdata/
+ios/build/

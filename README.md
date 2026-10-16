@@ -170,3 +170,23 @@ npm run dev -- --host 0.0.0.0
 ## 验证
 
 运行 `npm run check`，依次完成构建、类型检查和全部测试；测试直接引用 `dist/` 构建产物。测试用假的 Tailscale、OpenSSH 命令和本机 HTTP 服务验证一次性配对、二维码更新、替换配对时旧凭证及长连接的撤销、完整 Web 路由代理、Host/Origin 拒绝及停止后的撤销，并验证弹窗重新打开和已配对时的二维码展示。SSH 测试还验证监听确认、启动失败及清理、配置校验、重载恢复、意外断线重建，以及停止后不再自动重连。公网 HTTP 和 WebSocket 连通性需要通过实际隧道单独验证。
+
+## iOS App
+
+`ios/` 是手机端的 iOS 壳应用：全屏 WKWebView 加载同一个远程入口，页面功能与手机浏览器完全一致，宿主或插件更新后无需重新安装 App。它取代微信或 Safari 打开链接这一步，不经过、也不修改 DSH 宿主。
+
+- 配对：首次打开点「扫码配对」扫描电脑远程控制弹窗里的二维码，或点「粘贴链接」粘贴弹窗里复制的链接。只接受 `https://主机[:端口]/?pair=令牌` 形式的链接，App 只记住入口地址，配对 Cookie 保存在 App 自己的网站数据里，重启 App 后继续有效。配对规则与浏览器相同：App 配对成功会替换并断开之前配对的手机浏览器。
+- 重新配对：远程入口返回未配对或拒绝页面时，底部出现「扫码配对 / 粘贴链接」；无法连接时另有「重试」。更换隧道地址（如从 Tailscale 切换到 SSH 模式）后重新扫码即可。
+- 外部网站链接交给系统浏览器打开；导出会话等下载完成后弹出系统分享面板，可保存到「文件」；语音输入使用麦克风前系统会询问一次权限。
+- App 没有地址栏和刷新按钮：隧道重建后页面没有自动恢复时，从多任务界面关闭 App 再打开即可重新加载。
+- 未提供：推送通知、App 图标、App Store 发布。
+
+用 Xcode 打开 `ios/DSHRemote.xcodeproj`，在 Signing & Capabilities 中选择自己的 Team（免费 Apple ID 安装的 App 每 7 天需要重新安装一次），必要时把 Bundle Identifier 改成自己的，连接 iPhone 后运行。需要 iOS 17 或更高版本。
+
+配对链接校验的检查脚本：
+
+```sh
+swiftc ios/DSHRemote/PairingLink.swift ios/Checks/main.swift -o "$TMPDIR/pairing-check" && "$TMPDIR/pairing-check"
+```
+
+模拟器没有扫码，可先运行 `node ios/Checks/mock.mjs 18731` 启动模拟配对代理，再用启动参数指定入口：`xcrun simctl launch booted io.github.wangqiong.dsh-remote -origin 'http://127.0.0.1:18731/?pair=ok'` 完成配对，`/download`、`/external` 分别检查下载和外链。
