@@ -179,7 +179,8 @@ npm run dev -- --host 0.0.0.0
 - 重新配对：远程入口返回未配对或拒绝页面时，底部出现「扫码配对 / 粘贴链接」；无法连接时另有「重试」。更换隧道地址（如从 Tailscale 切换到 SSH 模式）后重新扫码即可。
 - 外部网站链接交给系统浏览器打开；导出会话等下载完成后弹出系统分享面板，可保存到「文件」；语音输入使用麦克风前系统会询问一次权限。
 - App 没有地址栏和刷新按钮：隧道重建后页面没有自动恢复时，从多任务界面关闭 App 再打开即可重新加载。
-- 未提供：推送通知、App 图标、App Store 发布。
+- 主屏幕名称为 DeepSeek，图标为黑灰底白色鲸鱼，源文件是 `ios/AppIcon.svg`（鲸鱼路径取自 DSH 的 `FishLogo`），修改后用浏览器按 1024×1024 渲染并替换 `ios/DSHRemote/Assets.xcassets/AppIcon.appiconset/AppIcon.png`。
+- 未提供：推送通知、App Store 发布。
 
 用 Xcode 打开 `ios/DSHRemote.xcodeproj`，在 Signing & Capabilities 中选择自己的 Team（免费 Apple ID 安装的 App 每 7 天需要重新安装一次），必要时把 Bundle Identifier 改成自己的，连接 iPhone 后运行。需要 iOS 17 或更高版本。
 
