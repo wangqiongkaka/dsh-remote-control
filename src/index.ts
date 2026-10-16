@@ -19,6 +19,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { phoneDocument, remoteErrorDocument } from './phone-document.ts'
 import { computerFiles } from './remote-files.ts'
+import { worktreeParents } from './worktree-groups.ts'
 import { pushBark, watchSessions, type BarkConfig } from './notify.ts'
 
 export const name = 'dsh-remote-control'
@@ -754,6 +755,11 @@ export function apply(ctx: Context, config: Config): void {
   }
   const bark = config.bark ?? undefined
   if (bark !== undefined) watchSessions(ctx, (notice) => { void pushBark(bark, notice) })
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: '/api/remote-control/worktree-groups', methods: ['GET'], requestBody: 'buffered',
+    fetch: async request => Response.json(await worktreeParents(ctx.workspaceRegistry.list(), request.signal),
+      { headers: { 'cache-control': 'no-store' } }),
+  }), 'remote-control: worktree groups route')
   ctx.effect(() => ctx.connection.fetch.register({
     path: '/api/remote-control/files', methods: ['GET'], requestBody: 'buffered', fetch: computerFiles,
   }), 'remote-control: computer directory route')

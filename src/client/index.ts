@@ -21,6 +21,7 @@ import { registerComputerDirectories, registerComputerFiles } from './ComputerFi
 import { registerClearProgress } from './ClearProgress.tsx'
 import { registerFileLineLinks } from './file-line-links.ts'
 import { registerSessionLoading } from './session-loading.ts'
+import { registerWorktreeGroups } from './worktree-groups.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -48,6 +49,7 @@ async function command(action: 'start' | 'stop' | 'refresh', workspaceId?: strin
 
 export function apply(ctx: Context): void {
   registerSessionLoading(ctx)
+  registerWorktreeGroups(ctx)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'remote-control: dictionaries')
   registerComputerFiles(ctx)
   registerComputerDirectories(ctx)

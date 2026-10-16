@@ -42,6 +42,8 @@ export default [
       'client/RemoteControlAction': 'src/client/RemoteControlAction.tsx',
       'client/ComputerFiles': 'src/client/ComputerFiles.tsx',
       'remote-files': 'src/remote-files.ts',
+      'worktree-groups': 'src/worktree-groups.ts',
+      'client/worktree-groups': 'src/client/worktree-groups.ts',
       notify: 'src/notify.ts',
       'phone-document': 'src/phone-document.ts',
     },
