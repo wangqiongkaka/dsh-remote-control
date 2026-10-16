@@ -6,6 +6,11 @@ import WebKit
 /// UserDefaults key of the paired DSH Web origin; launching with `-origin <url>` overrides it.
 private let originKey = "origin"
 
+private final class RemoteWebView: WKWebView {
+  // The page owns its composer; WebKit's form-navigation toolbar only consumes keyboard space.
+  override var inputAccessoryView: UIView? { nil }
+}
+
 /// The page's drawer swipes ask for a light tap as they cross their release point (sidebar-swipe.ts).
 private final class Haptics: NSObject, WKScriptMessageHandler {
   private let generator = UIImpactFeedbackGenerator(style: .light)
@@ -17,7 +22,7 @@ private final class Haptics: NSObject, WKScriptMessageHandler {
 
 /// DSH Web full screen, signed in with the cookie the pairing link leaves in the default data store.
 final class RemoteViewController: UIViewController {
-  private let webView = WKWebView(frame: .zero, configuration: {
+  private let webView = RemoteWebView(frame: .zero, configuration: {
     let configuration = WKWebViewConfiguration()
     // Same engine as Safari, so identify as Safari: DSH enables its WebKit textarea repair by user agent.
     configuration.applicationNameForUserAgent = "Version/\(UIDevice.current.systemVersion) Mobile/15E148 Safari/604.1"

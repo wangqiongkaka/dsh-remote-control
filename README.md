@@ -179,6 +179,7 @@ npm run dev -- --host 0.0.0.0
 - 重新配对：远程入口返回未配对或拒绝页面时，底部出现「扫码配对 / 粘贴链接」；无法连接时另有「重试」。更换隧道地址（如从 Tailscale 切换到 SSH 模式）后重新扫码即可。
 - 外部网站链接交给系统浏览器打开；导出会话等下载完成后弹出系统分享面板，可保存到「文件」；语音输入使用麦克风前系统会询问一次权限。
 - App 没有地址栏和刷新按钮：隧道重建后页面没有自动恢复时，从多任务界面关闭 App 再打开即可重新加载。
+- 网页输入框不显示系统的表单辅助栏（上下箭头和完成按钮），收起键盘使用输入法自身的按钮。此项属于原生 App，修改后需重新构建安装。
 - 主屏幕名称为 DeepSeek，图标为黑灰底白色鲸鱼，源文件是 `ios/AppIcon.svg`（鲸鱼路径取自 DSH 的 `FishLogo`），修改后用浏览器按 1024×1024 渲染并替换 `ios/DSHRemote/Assets.xcassets/AppIcon.appiconset/AppIcon.png`。
 - 点击下文 Bark 通知会打开 App 并切到对应会话（手机抽屉打开时自动收起）。
 - 未提供：App 自身的系统推送（需要付费开发者账号）、App Store 发布。
@@ -192,6 +193,19 @@ swiftc ios/DSHRemote/PairingLink.swift ios/Checks/main.swift -o "$TMPDIR/pairing
 ```
 
 模拟器没有扫码，可先运行 `node ios/Checks/mock.mjs 18731` 启动模拟配对代理，再用启动参数指定入口：`xcrun simctl launch booted io.github.wangqiong.dsh-remote -origin 'http://127.0.0.1:18731/?pair=ok'` 完成配对，`/download`、`/external` 分别检查下载和外链。
+
+`/keyboard` 用于检查输入框上方的系统辅助栏。保持模拟代理运行，在已启动的模拟器上运行独立检查 App（检查真实输入响应器、键盘唤起和文字编辑；成功后保持页面打开以便截图）：
+
+```sh
+keyboard_app="$(mktemp -d)/DSHKeyboardCheck.app"
+mkdir -p "$keyboard_app"
+xcrun --sdk iphonesimulator swiftc -parse-as-library -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" -target "$(uname -m)-apple-ios17.0-simulator" ios/DSHRemote/RemoteViewController.swift ios/DSHRemote/PairingLink.swift ios/Checks/Keyboard.swift -o "$keyboard_app/DSHKeyboardCheck"
+cat > "$keyboard_app/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>io.github.wangqiong.dsh-keyboard-check</string><key>CFBundleExecutable</key><string>DSHKeyboardCheck</string><key>CFBundlePackageType</key><string>APPL</string><key>UILaunchScreen</key><dict/></dict></plist>
+PLIST
+xcrun simctl install booted "$keyboard_app"
+xcrun simctl launch --console booted io.github.wangqiong.dsh-keyboard-check -origin 'http://127.0.0.1:18731/keyboard?pair=ok'
+```
 
 ## 手机通知（Bark）
 

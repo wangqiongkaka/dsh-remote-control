@@ -13,7 +13,7 @@ createServer((req, res) => {
     // What the server's reverse proxy sends while DSH or its tunnel is down: an empty 502.
     res.writeHead(502).end()
   } else if (url.searchParams.get('pair') === 'ok') {
-    res.writeHead(303, { location: '/', 'set-cookie': 'dsh-remote-control=t; Max-Age=34560000; Path=/; HttpOnly; SameSite=Lax' }).end()
+    res.writeHead(303, { location: url.pathname, 'set-cookie': 'dsh-remote-control=t; Max-Age=34560000; Path=/; HttpOnly; SameSite=Lax' }).end()
   } else if (!paired) {
     res.writeHead(401, { 'content-type': 'text/html; charset=utf-8', 'x-dsh-remote-control': 'unpaired' })
       .end(head + '<h1>无法打开远程页面</h1><p>访问凭据无效或配对已被替换，需要重新扫码。</p>')
@@ -25,6 +25,10 @@ createServer((req, res) => {
   } else if (url.pathname === '/external') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
       .end(head + `<h1>外链测试</h1><script>setTimeout(()=>{location.href="http://localhost:${port}/elsewhere"},300)</script>`)
+  } else if (url.pathname === '/keyboard') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      .end(head + '<h1>键盘检查</h1><p>输入框与键盘之间不应出现上下箭头和完成工具栏。</p>'
+        + '<textarea aria-label="消息" placeholder="点此输入" style="font:20px system-ui;width:100%;height:100px;box-sizing:border-box"></textarea>')
   } else {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
       .end(head + `<h1>已配对 DSH Web</h1><p>${req.headers.host}${req.url}</p><p id=u></p>`
