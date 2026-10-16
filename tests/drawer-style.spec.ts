@@ -7,6 +7,18 @@ function sheet(): HTMLStyleElement | null {
   return document.head.querySelector(`style[${DRAWER_STYLE_ATTRIBUTE}]`)
 }
 
+it('also docks the blank composer after a client-only reload', () => {
+  const dispose = applyDrawerSelection()
+  try {
+    const phone = Array.from(sheet()!.sheet!.cssRules).find(rule => rule instanceof CSSMediaRule
+      && rule.conditionText === '(max-width: 720px)') as CSSMediaRule
+    const rules = Array.from(phone.cssRules).map(rule => rule.cssText).join('')
+    expect(rules).toContain('[data-phase="hero"] > [data-conversation-content] > [data-conversation-scroll] > [data-composer-seat]')
+    expect(rules).toContain('inset: 0')
+    expect(rules).toContain('min-height: 36px !important')
+  } finally { dispose() }
+})
+
 afterEach(() => { sheet()?.remove() })
 
 it('bounds the drawer scrim above the same safe area as the phone sidebar', () => {

@@ -66,6 +66,17 @@ it('keeps the active phone composer at the bottom while the chat scrolls without
   expect(out).not.toContain('padding-bottom:var(--dsh-composer-height')
 })
 
+it('docks the blank phone composer and gives its editor the active composer floor', () => {
+  const out = phoneDocument('<head></head>')
+  const phone = out.slice(out.indexOf('@media (max-width: 720px){'), out.indexOf('@media (max-width: 1023px){'))
+  const hero = '[class*="_frame"]:has([class*="_sidebarCol"]) [data-phase="hero"] > [data-conversation-content]'
+  expect(phone).toContain(`${hero} > [data-conversation-scroll] > [data-composer-seat]{position:absolute !important;inset:0}`)
+  expect(phone).toContain(`${hero} [class*="_composerHero"]{flex:1;min-height:0;justify-content:flex-end;padding-bottom:0}`)
+  expect(phone).toContain(`${hero} [class*="_composerHero"] > :first-child{flex:1;min-height:0;height:auto;overflow:hidden}`)
+  expect(phone).toContain(`${hero} [data-composer-input]{min-height:36px !important}`)
+  expect(phone).toContain(`${hero} [data-composer-card] [class*="_placeholder"]{display:block;white-space:nowrap}`)
+})
+
 it('shares one safe-area clearance across the phone drawer, conversation and right panel', () => {
   const out = phoneDocument('<head></head>')
   const frame = '[class*="_frame"]:has([class*="_sidebarCol"])'

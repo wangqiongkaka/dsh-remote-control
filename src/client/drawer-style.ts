@@ -22,7 +22,7 @@
  * styling); this module only owns the sheet.
  */
 
-import { PHONE_SAFE_AREA_STYLE } from '../narrow-style.ts'
+import { PHONE_HERO_COMPOSER_STYLE, PHONE_SAFE_AREA_STYLE } from '../narrow-style.ts'
 import { phoneViewport } from '../phone-document.ts'
 
 /** Attribute on the injected sheet; the proxy's layers use their own attribute names. */
@@ -154,6 +154,7 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   // row's collapse control, which is the drawer's only way back there.
   + '@media (max-width: 1023px){' + PHONE_SAFE_AREA_STYLE + '}'
   + '@media (max-width: 720px){'
+  + PHONE_HERO_COMPOSER_STYLE
   // Client reloads do not replace the proxy HTML; keep live composer layout in this sheet.
   // Installed hosts lack data-composer-dock; the card's dock sibling exists in both versions.
   + '[data-composer-card] ~ [class*="_dock"]{order:-1;padding-top:0 !important;padding-bottom:4px}'

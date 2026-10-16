@@ -18,6 +18,15 @@ const SLIDE = `transform ${SLOW} ${EASE}`
 /** The main chat scroller; other views own their composer overlay positioning. */
 const CHAT_SCROLL = `${FRAME} [data-phase="active"] > [data-conversation-content] > [data-conversation-scroll]:not(:has([data-conversation-composer-overlay]))`
 
+const HERO = `${FRAME} [data-phase="hero"] > [data-conversation-content]`
+
+/** Keep the welcome mark in the free space above a phone's shared, bottom-aligned composer. */
+export const PHONE_HERO_COMPOSER_STYLE = `${HERO} > [data-conversation-scroll] > [data-composer-seat]{position:absolute !important;inset:0}`
+  + `${HERO} [class*="_composerHero"]{flex:1;min-height:0;justify-content:flex-end;padding-bottom:0}`
+  + `${HERO} [class*="_composerHero"] > :first-child{flex:1;min-height:0;height:auto;overflow:hidden}`
+  + `${HERO} [data-composer-input]{min-height:36px !important}`
+  + `${HERO} [data-composer-card] [class*="_placeholder"]{display:block;white-space:nowrap}`
+
 /**
  * The composer's button row while it carries a live composer. A running voice activity replaces
  * both host groups (`hidden`) with an expanded panel that owns the row, and none of the strip
@@ -61,6 +70,7 @@ export const PHONE_SAFE_AREA_STYLE = 'html{--dsh-remote-bottom-clearance:max(8px
 /** The DSH shell has no narrow-screen layout, so the proxy lends phones a small patch layer. */
 export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '@media (max-width: 720px){'
+  + PHONE_HERO_COMPOSER_STYLE
   // Only the conversation scrollport moves. At its ends, stop a pull from panning the page and
   // carrying the composer and its context meter with the whole shell.
   + 'html,body{overflow:hidden;overscroll-behavior-y:none}'
