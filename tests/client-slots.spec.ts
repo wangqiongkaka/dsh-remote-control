@@ -927,6 +927,86 @@ it('moves the phone drawer and right panel with the finger and settles them on r
   }
 })
 
+it('taps the iOS App haptic when a drawer drag crosses its release point or is flung', () => {
+  vi.useFakeTimers()
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div data-left-content>左栏</div></div>'
+    + '<main class="ui_layout__centerCol__h1"><div data-conversation-scroll>消息</div></main>'
+  frame.setAttribute('data-sidebar-collapsed', '')
+  frame.setAttribute('data-rightbar-collapsed', '')
+  document.body.append(frame)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (query: string) => ({ matches: !query.includes('prefers-reduced-motion'), addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  frame.querySelector<HTMLElement>('[class*="_sidebarCol"]')!.getBoundingClientRect = () => ({ width: 300 }) as DOMRect
+  const haptic = vi.fn()
+  Object.defineProperty(window, 'webkit', { configurable: true, value: { messageHandlers: { haptic: { postMessage: haptic } } } })
+  const disposers: (() => void)[] = []
+  const ctx = context(slots(), disposers)
+  ctx.layout.toggleSidebar = () => { frame.toggleAttribute('data-sidebar-collapsed') }
+  const content = frame.querySelector('[data-conversation-scroll]')!
+  const left = frame.querySelector('[data-left-content]')!
+  const touch = (target: Element, type: string, x: number): void => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    const point = { identifier: 0, clientX: x, clientY: 100 }
+    Object.defineProperties(event, {
+      touches: { value: type === 'touchend' ? [] : [point] },
+      changedTouches: { value: [point] },
+    })
+    target.dispatchEvent(event)
+  }
+  try {
+    apply(ctx)
+    // Short of a third: no tap, and the drawer springs back.
+    touch(content, 'touchstart', 20)
+    touch(content, 'touchmove', 40)
+    touch(content, 'touchmove', 100)
+    vi.advanceTimersByTime(500)
+    touch(content, 'touchend', 100)
+    expect(haptic).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(300)
+    // Crossing the release point taps, crossing back taps again, and so does crossing once more.
+    touch(content, 'touchstart', 20)
+    touch(content, 'touchmove', 40)
+    touch(content, 'touchmove', 130)
+    expect(haptic).toHaveBeenCalledTimes(1)
+    touch(content, 'touchmove', 160)
+    expect(haptic).toHaveBeenCalledTimes(1)
+    touch(content, 'touchmove', 90)
+    expect(haptic).toHaveBeenCalledTimes(2)
+    touch(content, 'touchmove', 200)
+    vi.advanceTimersByTime(500)
+    touch(content, 'touchend', 200)
+    expect(haptic).toHaveBeenCalledTimes(3)
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(false)
+    vi.advanceTimersByTime(300)
+    // A short fling that commits taps once on release.
+    touch(left, 'touchstart', 250)
+    touch(left, 'touchmove', 230)
+    vi.advanceTimersByTime(16)
+    touch(left, 'touchmove', 190)
+    vi.advanceTimersByTime(16)
+    touch(left, 'touchend', 190)
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
+    expect(haptic).toHaveBeenCalledTimes(4)
+  } finally {
+    for (const dispose of disposers) dispose()
+    delete (window as { webkit?: unknown }).webkit
+    proxy.remove()
+    frame.remove()
+    vi.useRealTimers()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})
+
 // Session identity and right-panel tabs are restored by the host; this plugin remembers only
 // which area and global main panel were visible, without pulling a returning user off that page.
 it.each([

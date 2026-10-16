@@ -6,12 +6,22 @@ import WebKit
 /// UserDefaults key of the paired DSH Web origin; launching with `-origin <url>` overrides it.
 private let originKey = "origin"
 
+/// The page's drawer swipes ask for a light tap as they cross their release point (sidebar-swipe.ts).
+private final class Haptics: NSObject, WKScriptMessageHandler {
+  private let generator = UIImpactFeedbackGenerator(style: .light)
+
+  func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+    if message.frameInfo.isMainFrame { generator.impactOccurred() }
+  }
+}
+
 /// DSH Web full screen, signed in with the cookie the pairing link leaves in the default data store.
 final class RemoteViewController: UIViewController {
   private let webView = WKWebView(frame: .zero, configuration: {
     let configuration = WKWebViewConfiguration()
     // Same engine as Safari, so identify as Safari: DSH enables its WebKit textarea repair by user agent.
     configuration.applicationNameForUserAgent = "Version/\(UIDevice.current.systemVersion) Mobile/15E148 Safari/604.1"
+    configuration.userContentController.add(Haptics(), name: "haptic")
     return configuration
   }())
   private let panel = UIStackView()

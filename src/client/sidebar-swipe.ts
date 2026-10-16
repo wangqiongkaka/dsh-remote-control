@@ -308,8 +308,14 @@ const SETTLE = 300
 const RIGHT_PIECES = '[data-sidebar-right-panel] :is([data-dockkit-host="dock"],[data-dockkit-empty],[data-dockkit-divider])'
 const SCRIM = '[data-remote-control-scrim]'
 
+/** A light tap through the iOS App's native bridge (RemoteViewController); browsers have none. */
+function haptic(): void {
+  (window as { webkit?: { messageHandlers?: { haptic?: { postMessage(body: string): void } } } })
+    .webkit?.messageHandlers?.haptic?.postMessage('')
+}
+
 /** The left drawer (-1) or right panel (1) a horizontal drag moves, opening or closing it. */
-type Drag = { side: -1 | 1; opening: boolean; width: number; prev: { x: number; t: number }; last: { x: number; t: number } }
+type Drag = { side: -1 | 1; opening: boolean; width: number; past: boolean; prev: { x: number; t: number }; last: { x: number; t: number } }
 
 /**
  * Observe single-finger swipes without blocking native scrolling or clicks. Once a touch turns
@@ -375,6 +381,8 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     // Opening already flipped the shell at lock: undo it on cancel; closing flips only on commit.
     if (drag.opening !== commit) flip(from.frame, drag.side, false)
     const open = drag.opening === commit
+    // A drag past its release point already tapped there; a fling settles with its own tap.
+    if (commit && !drag.past) haptic()
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { clear(from.frame, drag.side); return }
     // Slide the rest of the way inline, so the shell's own transition never retargets mid-flight.
     paint(from.frame, drag.side, open ? 0 : drag.side * drag.width, open ? 1 : 0, `${SLOW} ${EASE}`)
@@ -384,6 +392,9 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     const base = drag.opening ? drag.side * drag.width : 0
     const offset = Math.min(Math.max(base + x - from.x, Math.min(0, drag.side * drag.width)), Math.max(0, drag.side * drag.width))
     paint(from.frame, drag.side, offset, 1 - Math.abs(offset) / drag.width, '')
+    // Tap each time the drag crosses the point where letting go keeps the new state.
+    const past = (x - from.x) * (drag.opening ? -drag.side : drag.side) >= drag.width / 3
+    if (past !== drag.past) { drag.past = past; haptic() }
   }
   const onStart = (event: TouchEvent): void => {
     finish(false)
@@ -431,7 +442,7 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     if (event.cancelable) event.preventDefault()
     if (aim.opening) flip(start.frame, aim.side, true)
     const sized = aim.side < 0 ? start.frame.querySelector('[class*="_sidebarCol"]') : start.frame.querySelector('[data-sidebar-right-panel]')
-    start.drag = { ...aim, width: sized?.getBoundingClientRect().width || window.innerWidth,
+    start.drag = { ...aim, width: sized?.getBoundingClientRect().width || window.innerWidth, past: false,
       prev: { x: start.x, t: start.at }, last: { x: touch.clientX, t: Date.now() } }
     drawTo(start, start.drag, touch.clientX)
   }
@@ -459,7 +470,9 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     const dy = touch.clientY - from.y
     if (Math.abs(dx) < MIN_SWIPE || Math.abs(dx) < Math.abs(dy) * 1.5) return
     const aim = target(from, dx)
-    if (aim) flip(from.frame, aim.side, aim.opening)
+    if (!aim) return
+    flip(from.frame, aim.side, aim.opening)
+    haptic()
   }
   const cancel = (): void => { finish(false) }
   const onSelection = (): void => { if (selecting()) cancel() }
