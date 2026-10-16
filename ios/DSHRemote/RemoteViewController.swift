@@ -18,6 +18,8 @@ final class RemoteViewController: UIViewController {
   private let notice = UILabel()
   private let actions = UIStackView()
   private var downloads: [WKDownload: URL] = [:]
+  /// Sessions tapped in notifications, waiting for DSH Web to finish loading.
+  private var tappedSessions: [String] = []
   private var origin: URL? {
     get { UserDefaults.standard.string(forKey: originKey).flatMap(URL.init(string:)) }
     set { UserDefaults.standard.set(newValue?.absoluteString, forKey: originKey) }
@@ -72,6 +74,22 @@ final class RemoteViewController: UIViewController {
     guard let origin else { return }
     panel.isHidden = true
     webView.load(URLRequest(url: origin))
+  }
+
+  /// A notification link: open its Session in DSH Web (the plugin's client reads the queue).
+  func openLink(_ url: URL) {
+    guard let id = sessionLinkId(url) else { return }
+    tappedSessions.append(id)
+    openTappedSessions()
+  }
+
+  private func openTappedSessions() {
+    guard !tappedSessions.isEmpty, webView.url != nil, !webView.isLoading,
+          let ids = try? JSONEncoder().encode(tappedSessions), let json = String(data: ids, encoding: .utf8)
+    else { return }
+    tappedSessions = []
+    webView.evaluateJavaScript(
+      "(window.__dshRemoteOpen ??= []).push(...\(json)); dispatchEvent(new Event('dsh-remote-open'))")
   }
 
   private func pair(_ link: String) {
@@ -178,6 +196,10 @@ extension RemoteViewController: WKNavigationDelegate {
       if refused { showPanel(nil) } else { panel.isHidden = true }
     }
     decisionHandler(response.canShowMIMEType ? .allow : .download)
+  }
+
+  func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    openTappedSessions()
   }
 
   func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {

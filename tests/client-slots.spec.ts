@@ -1756,6 +1756,52 @@ it('springs the phone composer chips past either strip end while its pinned ends
   }
 })
 
+it('opens Sessions the iOS app queues from notification taps and folds the phone drawer', async () => {
+  const ctx = new Context()
+  const fake = context(slots())
+  const toggleSidebar = vi.fn()
+  fake.layout.toggleSidebar = toggleSidebar
+  for (const name of ['slots', 'locale', 'layout'] as const) ctx.provide(name, fake[name])
+  const opened: string[] = []
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'x_frame_1'
+  frame.innerHTML = '<div class="x_sidebarCol_1"></div>'
+  document.body.append(frame)
+  const narrow = window.matchMedia
+  const win = window as { __dshRemoteOpen?: unknown[] }
+  // A cold launch from a notification queues before the client has loaded.
+  win.__dshRemoteOpen = ['s1']
+  try {
+    await ctx.plugin({ inject: ['slots', 'locale', 'layout'], apply }).await()
+    expect(opened).toEqual([])
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true, value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+    // The Workspace UI may mount after this plugin.
+    await ctx.plugin((scope) => { scope.provide('uiWorkspace', { openSession: (id: string) => { opened.push(id) } }) }).await()
+    expect(opened).toEqual(['s1'])
+    expect(toggleSidebar).toHaveBeenCalledOnce()
+    // A tap while the page is up; the drawer is already folded this time.
+    frame.setAttribute('data-sidebar-collapsed', '')
+    win.__dshRemoteOpen.push('s2', 42)
+    window.dispatchEvent(new Event('dsh-remote-open'))
+    expect(opened).toEqual(['s1', 's2'])
+    expect(win.__dshRemoteOpen).toEqual([])
+    expect(toggleSidebar).toHaveBeenCalledOnce()
+  } finally {
+    await ctx.fiber.dispose()
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: narrow })
+    proxy.remove()
+    frame.remove()
+    delete win.__dshRemoteOpen
+  }
+  window.dispatchEvent(new Event('dsh-remote-open'))
+  expect(opened).toEqual(['s1', 's2'])
+})
+
 it('opens a file link written as path:line on the real file, at that line', async () => {
   const ctx = new Context()
   const fake = context(slots())

@@ -24,6 +24,7 @@ createServer((req, res) => {
   } else {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
       .end(head + `<h1>已配对 DSH Web</h1><p>${req.headers.host}${req.url}</p><p id=u></p>`
-        + '<script>u.textContent=navigator.userAgent</script>')
+        + '<p id=o>no session link</p><script>u.textContent=navigator.userAgent;'
+        + 'addEventListener("dsh-remote-open",()=>{o.textContent="打开会话："+__dshRemoteOpen.splice(0).join(",")})</script>')
   }
 }).listen(port, () => { console.log('mock on', port) })

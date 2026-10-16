@@ -163,6 +163,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = G825KPY5T9;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = DeepSeek;
 				INFOPLIST_KEY_NSCameraUsageDescription = "扫描电脑上的配对二维码，以及在对话里拍照上传。";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "在对话里使用语音输入。";
@@ -191,6 +192,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = G825KPY5T9;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = DeepSeek;
 				INFOPLIST_KEY_NSCameraUsageDescription = "扫描电脑上的配对二维码，以及在对话里拍照上传。";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "在对话里使用语音输入。";

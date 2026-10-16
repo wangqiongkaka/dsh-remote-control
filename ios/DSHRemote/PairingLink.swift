@@ -13,6 +13,14 @@ func pairingOrigin(_ text: String) -> URL? {
   return URL(string: "/", relativeTo: link)?.absoluteURL
 }
 
+/// The Session id in a notification link `dshremote://session/<id>`, or nil for anything else.
+/// Any app can open the scheme, so only plain id characters reach the page.
+func sessionLinkId(_ url: URL) -> String? {
+  guard url.scheme == "dshremote", url.host == "session", url.query == nil, url.fragment == nil else { return nil }
+  let id = String(url.path.dropFirst())
+  return id.count <= 200 && id.range(of: "^[A-Za-z0-9._:-]+$", options: .regularExpression) != nil ? id : nil
+}
+
 /// Same scheme, host and port: a navigation that stays inside the paired DSH Web.
 func sameOrigin(_ a: URL, _ b: URL) -> Bool {
   a.scheme == b.scheme && a.host == b.host && a.port == b.port

@@ -180,7 +180,8 @@ npm run dev -- --host 0.0.0.0
 - 外部网站链接交给系统浏览器打开；导出会话等下载完成后弹出系统分享面板，可保存到「文件」；语音输入使用麦克风前系统会询问一次权限。
 - App 没有地址栏和刷新按钮：隧道重建后页面没有自动恢复时，从多任务界面关闭 App 再打开即可重新加载。
 - 主屏幕名称为 DeepSeek，图标为黑灰底白色鲸鱼，源文件是 `ios/AppIcon.svg`（鲸鱼路径取自 DSH 的 `FishLogo`），修改后用浏览器按 1024×1024 渲染并替换 `ios/DSHRemote/Assets.xcassets/AppIcon.appiconset/AppIcon.png`。
-- 未提供：推送通知、App Store 发布。
+- 点击下文 Bark 通知会打开 App 并切到对应会话（手机抽屉打开时自动收起）。
+- 未提供：App 自身的系统推送（需要付费开发者账号）、App Store 发布。
 
 用 Xcode 打开 `ios/DSHRemote.xcodeproj`，在 Signing & Capabilities 中选择自己的 Team（免费 Apple ID 安装的 App 每 7 天需要重新安装一次），必要时把 Bundle Identifier 改成自己的，连接 iPhone 后运行。需要 iOS 17 或更高版本。
 
@@ -191,3 +192,24 @@ swiftc ios/DSHRemote/PairingLink.swift ios/Checks/main.swift -o "$TMPDIR/pairing
 ```
 
 模拟器没有扫码，可先运行 `node ios/Checks/mock.mjs 18731` 启动模拟配对代理，再用启动参数指定入口：`xcrun simctl launch booted io.github.wangqiong.dsh-remote -origin 'http://127.0.0.1:18731/?pair=ok'` 完成配对，`/download`、`/external` 分别检查下载和外链。
+
+## 手机通知（Bark）
+
+会话需要你处理或停下时，电脑上的插件通过 [Bark](https://github.com/Finb/Bark) 推送到 iPhone，App 关闭或锁屏时也能收到。免费 Apple ID 无法让 DeepSeek App 自己接收远程推送，所以通知横幅显示为 Bark；点击后打开 DeepSeek App 并切到该会话。
+
+- 待确认：DSH 会话等待审批，或任何 harness（含 Codex、Claude Code）的会话等待审批、计划审核或回答问题。横幅标题为「待确认 · 等待审批 / 计划待审 / 等待回答」，副标题为会话标题，正文为工作区和审批内容或问题，以「时效性」级别推送。
+- 已完成：会话从运行变为空闲时推送一次（排队的后续轮次跑完才算），正常结束显示「已完成」，出错结束显示「出错停止」和错误信息；手动停止、崩溃恢复和分叉产生的结束不推送。
+- 只推送顶层会话，子 Agent 和委派子会话不单独推送。无论电脑前是否有人、手机是否正在查看该会话都会推送。
+
+配置：iPhone 安装 App Store 上的 Bark，打开后复制首页示例链接中 `https://api.day.app/` 后面的那段 Key，写进目标 profile 的 `cordis.patch.yml`，重启 DSH 或重载插件后生效：
+
+```yaml
+- id: remote-control
+  name: dsh-remote-control
+  config:
+    bark:
+      key: 你的BarkKey
+      # server: https://api.day.app   # 默认公共服务器；自建 bark-server 时改成自己的地址
+```
+
+通知内容（会话标题、工作区、审批或问题文字、错误信息）会经过 Bark 服务器转发给苹果推送服务；不希望经过公共服务器时，可在自己的服务器上部署 [bark-server](https://github.com/Finb/bark-server)，并在 Bark App 中添加该服务器后使用它的 Key。推送失败只会在 DSH 日志中记录 `[dsh-remote-control] Bark push failed`，不影响会话运行。未配置 `bark` 时不监听也不推送。

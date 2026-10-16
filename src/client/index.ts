@@ -9,7 +9,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { RemoteControlAction, type RemoteControlInjected } from './RemoteControlAction.tsx'
 import { NARROW, SidebarToggle, proxiedFrame, type SidebarToggleInjected } from './SidebarToggle.tsx'
-import { SidebarDismiss } from './SidebarDismiss.tsx'
+import { SidebarDismiss, drawerOpen } from './SidebarDismiss.tsx'
 import { AgentBoard, type AgentBoardInjected, type HarnessRemote } from './AgentBoard.tsx'
 import { followKeyboard } from './keyboard.ts'
 import { applyDrawerSelection } from './drawer-style.ts'
@@ -53,6 +53,26 @@ export function apply(ctx: Context): void {
   registerComputerDirectories(ctx)
   registerClearProgress(ctx)
   registerFileLineLinks(ctx)
+  // The iOS app queues Sessions tapped in notifications (ios/, `dshremote://session/<id>`) on
+  // `window.__dshRemoteOpen` and fires `dsh-remote-open`; open each once the Workspace UI is up.
+  ctx.inject(['uiWorkspace'], (scope) => {
+    scope.effect(() => {
+      const open = (): void => {
+        const queue = (window as { __dshRemoteOpen?: unknown[] }).__dshRemoteOpen ?? []
+        for (const id of queue.splice(0)) {
+          if (typeof id !== 'string') continue
+          (scope.get('uiWorkspace') as UiWorkspace).openSession(id as never)
+          const frame = document.querySelector('[class*="_frame"]:has([class*="_sidebarCol"])')
+          if (frame !== null && drawerOpen(frame) && proxiedFrame() && window.matchMedia(NARROW).matches) {
+            ctx.layout.toggleSidebar()
+          }
+        }
+      }
+      open()
+      window.addEventListener('dsh-remote-open', open)
+      return () => { window.removeEventListener('dsh-remote-open', open) }
+    }, 'remote-control: notification session links')
+  })
   ctx.effect(() => {
     const closeLauncher = (event: MouseEvent): void => {
       if (!(event.target instanceof Element)) return

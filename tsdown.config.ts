@@ -42,6 +42,7 @@ export default [
       'client/RemoteControlAction': 'src/client/RemoteControlAction.tsx',
       'client/ComputerFiles': 'src/client/ComputerFiles.tsx',
       'remote-files': 'src/remote-files.ts',
+      notify: 'src/notify.ts',
       'phone-document': 'src/phone-document.ts',
     },
     outDir: 'dist', format: 'esm', platform: 'node', clean: false,

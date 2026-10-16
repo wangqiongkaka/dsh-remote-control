@@ -32,4 +32,9 @@ let home = URL(string: "https://mac.ts.net/")!
 precondition(sameOrigin(URL(string: "https://mac.ts.net/api/x?y=1")!, home))
 precondition(!sameOrigin(URL(string: "https://mac.ts.net:8443/")!, home))
 precondition(!sameOrigin(URL(string: "https://github.com/")!, home))
+precondition(sessionLinkId(URL(string: "dshremote://session/01JABC-def_9.x:y")!) == "01JABC-def_9.x:y")
+for link in ["dshremote://session/", "dshremote://session/a%22b", "dshremote://session/a/b", "dshremote://session/a?x=1",
+             "dshremote://other/a", "https://session/a", "dshremote://session/a');alert(1)//"] {
+  precondition(URL(string: link).flatMap(sessionLinkId) == nil, "should refuse \(link)")
+}
 print("pairing link checks passed")

@@ -19,6 +19,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { phoneDocument, remoteErrorDocument } from './phone-document.ts'
 import { computerFiles } from './remote-files.ts'
+import { pushBark, watchSessions, type BarkConfig } from './notify.ts'
 
 export const name = 'dsh-remote-control'
 export const inject = ['connection', 'webServer', 'workspaceRegistry']
@@ -37,6 +38,8 @@ interface SshConfig {
 export interface Config {
   /** When set, use SSH instead of Tailscale; credentials stay in OpenSSH. */
   ssh?: SshConfig | undefined
+  /** When set, push waiting and finished Sessions to the phone through Bark. */
+  bark?: BarkConfig | undefined
   tailscaleBinary: string
   /** `public` opens an internet ingress; `tailnet` serves Tailscale peers only. */
   access: 'public' | 'tailnet'
@@ -60,6 +63,10 @@ export const Config: z<Config> = z.object({
     port: z.natural().min(1).max(65_535).default(22),
     remotePort: z.natural().min(1).max(65_535).default(18_080),
     identityFile: z.string().min(1),
+  }), z.const(undefined)]),
+  bark: z.union([z.object({
+    key: z.string().min(1).required(),
+    server: z.string().pattern(/^https?:\/\/[^\s]+$/u).default('https://api.day.app'),
   }), z.const(undefined)]),
   tailscaleBinary: z.string().min(1).default('tailscale'),
   access: z.union([z.const('public'), z.const('tailnet')]).default('public'),
@@ -745,6 +752,8 @@ export function apply(ctx: Context, config: Config): void {
       await new Promise((resolve) => { setTimeout(resolve, 2_000).unref() })
     }
   }
+  const bark = config.bark ?? undefined
+  if (bark !== undefined) watchSessions(ctx, (notice) => { void pushBark(bark, notice) })
   ctx.effect(() => ctx.connection.fetch.register({
     path: '/api/remote-control/files', methods: ['GET'], requestBody: 'buffered', fetch: computerFiles,
   }), 'remote-control: computer directory route')
