@@ -1,6 +1,7 @@
 /** Open and close the phone drawers with horizontal swipes. */
 
 import { DRAWER_SCROLL_ROOT, GIT_HISTORY_REF } from './drawer-style.ts'
+import { EASE, SLOW } from '../narrow-style.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 
@@ -299,15 +300,94 @@ export function followRowHolds(): () => void {
   }
 }
 
-/** Observe single-finger swipes without blocking native scrolling or clicks. */
+/** A release faster than this (px/ms) settles the drag its own way, however short it was. */
+const FLING = 0.3
+/** narrow-style's SLOW; the inline slide is cleared once it ends. */
+const SETTLE = 300
+/** What the shell slides for the right panel; its root stays untransformed so floating children escape. */
+const RIGHT_PIECES = '[data-sidebar-right-panel] :is([data-dockkit-host="dock"],[data-dockkit-empty],[data-dockkit-divider])'
+const SCRIM = '[data-remote-control-scrim]'
+
+/** The left drawer (-1) or right panel (1) a horizontal drag moves, opening or closing it. */
+type Drag = { side: -1 | 1; opening: boolean; width: number; prev: { x: number; t: number }; last: { x: number; t: number } }
+
+/**
+ * Observe single-finger swipes without blocking native scrolling or clicks. Once a touch turns
+ * sideways toward a drawer it owns the gesture: the drawer (opened at once, since a collapsed
+ * sidebar renders only its rail) follows the finger, and the release keeps it past a third or on
+ * a fling, otherwise springs it back.
+ */
 export function followSidebarSwipes(openLeft: () => void): () => void {
   let start: {
     id: number; x: number; y: number; frame: Element; area: 'center' | 'left' | 'right'
-    room: { back: boolean; forward: boolean }; at: number; moving: boolean
+    room: { back: boolean; forward: boolean }; at: number; moving: boolean; drag?: Drag
   } | undefined
+  let settling: { frame: Element; side: -1 | 1; timer: ReturnType<typeof setTimeout> } | undefined
   const selecting = (): boolean => document.getSelection()?.isCollapsed === false
-  const onStart = (event: TouchEvent): void => {
+  /** Which drawer a sideways swipe from this start opens or closes, if any. */
+  const target = (from: NonNullable<typeof start>, dx: number): Pick<Drag, 'side' | 'opening'> | undefined => {
+    if (from.area === 'left') {
+      return dx < 0 && !from.room.forward && !from.frame.hasAttribute('data-sidebar-collapsed') ? { side: -1, opening: false } : undefined
+    }
+    // A phone frame leaves the right panel no track (the shell's computeColumns yields 0), so the
+    // panel opens fullscreen over a frame still marked `data-rightbar-collapsed`: whether it is
+    // open is the panel's own mark, which the collapse control's selector already requires.
+    if (from.area === 'right') return dx > 0 && !from.room.back ? { side: 1, opening: false } : undefined
+    if (dx > 0 && from.frame.hasAttribute('data-sidebar-collapsed')) return { side: -1, opening: true }
+    if (dx < 0 && from.frame.hasAttribute('data-rightbar-collapsed') && from.frame.querySelector('[data-sidebar-right-expand]')) {
+      return { side: 1, opening: true }
+    }
+    return undefined
+  }
+  const flip = (frame: Element, side: -1 | 1, open: boolean): void => {
+    if (side < 0) openLeft()
+    else frame.querySelector<HTMLButtonElement>(open ? '[data-sidebar-right-expand]' : RIGHT_TOGGLE)?.click()
+  }
+  const pieces = (frame: Element, side: -1 | 1): HTMLElement[] => [...frame.querySelectorAll<HTMLElement>(side < 0 ? '[class*="_sidebarCol"]' : RIGHT_PIECES)]
+  const paint = (frame: Element, side: -1 | 1, offset: number, openness: number, transition: string): void => {
+    for (const piece of pieces(frame, side)) {
+      piece.style.transition = transition ? `transform ${transition}` : 'none'
+      piece.style.visibility = 'visible'
+      piece.style.transform = `translateX(${Math.round(offset)}px)`
+    }
+    if (side > 0) return
+    for (const scrim of document.querySelectorAll<HTMLElement>(SCRIM)) {
+      scrim.style.transition = transition ? `opacity ${transition}` : 'none'
+      scrim.style.opacity = String(openness)
+    }
+  }
+  const clear = (frame: Element, side: -1 | 1): void => {
+    for (const piece of pieces(frame, side)) for (const name of ['transform', 'transition', 'visibility']) piece.style.removeProperty(name)
+    if (side < 0) for (const scrim of document.querySelectorAll<HTMLElement>(SCRIM)) for (const name of ['opacity', 'transition']) scrim.style.removeProperty(name)
+  }
+  const settle = (): void => {
+    if (!settling) return
+    clearTimeout(settling.timer)
+    clear(settling.frame, settling.side)
+    settling = undefined
+  }
+  /** End a drag: commit leaves the drawer in its new state, otherwise it returns to where it was. */
+  const finish = (commit: boolean): void => {
+    const from = start
     start = undefined
+    const drag = from?.drag
+    if (!from || !drag) return
+    // Opening already flipped the shell at lock: undo it on cancel; closing flips only on commit.
+    if (drag.opening !== commit) flip(from.frame, drag.side, false)
+    const open = drag.opening === commit
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { clear(from.frame, drag.side); return }
+    // Slide the rest of the way inline, so the shell's own transition never retargets mid-flight.
+    paint(from.frame, drag.side, open ? 0 : drag.side * drag.width, open ? 1 : 0, `${SLOW} ${EASE}`)
+    settling = { frame: from.frame, side: drag.side, timer: setTimeout(settle, SETTLE) }
+  }
+  const drawTo = (from: NonNullable<typeof start>, drag: Drag, x: number): void => {
+    const base = drag.opening ? drag.side * drag.width : 0
+    const offset = Math.min(Math.max(base + x - from.x, Math.min(0, drag.side * drag.width)), Math.max(0, drag.side * drag.width))
+    paint(from.frame, drag.side, offset, 1 - Math.abs(offset) / drag.width, '')
+  }
+  const onStart = (event: TouchEvent): void => {
+    finish(false)
+    settle()
     if (selecting() || event.touches.length !== 1 || !(event.target instanceof Element)) return
     const target = event.target
     const center = target.closest('[class*="_centerCol"]')
@@ -331,14 +411,43 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     if (!start || !touch || touch.identifier !== start.id) return
     // Native WebView exit gestures can move its coordinate origin outside the viewport.
     if (touch.clientX < 0 || touch.clientX > window.innerWidth) { cancel(); return }
+    const { drag } = start
+    if (drag) {
+      if (event.cancelable) event.preventDefault()
+      drag.prev = drag.last
+      drag.last = { x: touch.clientX, t: Date.now() }
+      drawTo(start, drag, touch.clientX)
+      return
+    }
     if (start.moving) return
-    if (Math.hypot(touch.clientX - start.x, touch.clientY - start.y) <= HOLD_SLOP) return
+    const dx = touch.clientX - start.x
+    const dy = touch.clientY - start.y
+    if (Math.hypot(dx, dy) <= HOLD_SLOP) return
     // A stationary hold belongs to native text selection, even before its range is announced.
-    if (Date.now() - start.at >= HOLD) cancel()
-    else start.moving = true
+    if (Date.now() - start.at >= HOLD) { cancel(); return }
+    start.moving = true
+    const aim = Math.abs(dx) >= Math.abs(dy) * 1.5 && start.frame.isConnected ? target(start, dx) : undefined
+    if (!aim) return
+    if (event.cancelable) event.preventDefault()
+    if (aim.opening) flip(start.frame, aim.side, true)
+    const sized = aim.side < 0 ? start.frame.querySelector('[class*="_sidebarCol"]') : start.frame.querySelector('[data-sidebar-right-panel]')
+    start.drag = { ...aim, width: sized?.getBoundingClientRect().width || window.innerWidth,
+      prev: { x: start.x, t: start.at }, last: { x: touch.clientX, t: Date.now() } }
+    drawTo(start, start.drag, touch.clientX)
   }
   const onEnd = (event: TouchEvent): void => {
     const from = start
+    if (from?.drag) {
+      const touch = event.changedTouches[0]
+      if (event.touches.length !== 0 || touch?.identifier !== from.id) return
+      const { drag } = from
+      const toward = drag.opening ? -drag.side : drag.side
+      const speed = (touch.clientX - drag.prev.x) / Math.max(1, Date.now() - drag.prev.t) * toward
+      const moved = (touch.clientX - from.x) * toward
+      const inside = touch.clientX >= 0 && touch.clientX <= window.innerWidth
+      finish(inside && speed > -FLING && (speed >= FLING || moved >= drag.width / 3))
+      return
+    }
     start = undefined
     if (from === undefined || selecting() || (!from.moving && Date.now() - from.at >= HOLD)
       || event.touches.length !== 0 || event.changedTouches.length !== 1) return
@@ -349,24 +458,13 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     const dx = touch.clientX - from.x
     const dy = touch.clientY - from.y
     if (Math.abs(dx) < MIN_SWIPE || Math.abs(dx) < Math.abs(dy) * 1.5) return
-    if (from.area === 'left') {
-      if (dx < 0 && !from.room.forward && !from.frame.hasAttribute('data-sidebar-collapsed')) openLeft()
-    } else if (from.area === 'right') {
-      // A phone frame leaves the right panel no track (the shell's computeColumns yields 0), so the
-      // panel opens fullscreen over a frame still marked `data-rightbar-collapsed`: whether it is
-      // open is the panel's own mark, which the collapse control's selector already requires.
-      if (dx > 0 && !from.room.back) {
-        from.frame.querySelector<HTMLButtonElement>('[data-sidebar-right-panel][data-sidebar-right-open] [data-sidebar-right-toggle]')?.click()
-      }
-    } else if (dx > 0 && from.frame.hasAttribute('data-sidebar-collapsed')) openLeft()
-    else if (dx < 0 && from.frame.hasAttribute('data-rightbar-collapsed')) {
-      from.frame.querySelector<HTMLButtonElement>('[data-sidebar-right-expand]')?.click()
-    }
+    const aim = target(from, dx)
+    if (aim) flip(from.frame, aim.side, aim.opening)
   }
-  const cancel = (): void => { start = undefined }
+  const cancel = (): void => { finish(false) }
   const onSelection = (): void => { if (selecting()) cancel() }
   document.addEventListener('touchstart', onStart, { passive: true })
-  document.addEventListener('touchmove', onMove, { passive: true })
+  document.addEventListener('touchmove', onMove, { passive: false })
   document.addEventListener('touchend', onEnd, { passive: false })
   document.addEventListener('touchcancel', cancel, { passive: true })
   document.addEventListener('selectionchange', onSelection)
@@ -375,6 +473,8 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
   window.addEventListener('pagehide', cancel)
   window.addEventListener('blur', cancel)
   return () => {
+    finish(false)
+    settle()
     document.removeEventListener('touchstart', onStart)
     document.removeEventListener('touchmove', onMove)
     document.removeEventListener('touchend', onEnd)

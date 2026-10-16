@@ -594,9 +594,9 @@ it.each(['left', 'center'])('ignores WeChat exit coordinates when leaving %s', (
   const target = frame.querySelector(area === 'left' ? '[data-left]' : '[data-conversation-scroll]')!
   const disposers: (() => void)[] = []
   const ctx = context(slots(), disposers)
-  const navigate = vi.fn()
-  ctx.layout.toggleSidebar = navigate
-  frame.querySelector('button')!.addEventListener('click', navigate)
+  ctx.layout.toggleSidebar = () => { frame.toggleAttribute('data-sidebar-collapsed') }
+  const expand = vi.fn()
+  frame.querySelector('button')!.addEventListener('click', expand)
   const touch = (type: string, x: number, y: number): void => {
     const event = new Event(type, { bubbles: true })
     const point = { identifier: 0, clientX: x, clientY: y }
@@ -607,17 +607,20 @@ it.each(['left', 'center'])('ignores WeChat exit coordinates when leaving %s', (
   try {
     apply(ctx)
     // Actual phone trace: swiping right to exit moves the WebView, flipping its local coordinates.
+    // The drawer may follow the finger until then, but the page is left as it was.
     const points = area === 'left' ? [[12, 394], [29.33, 404.67], [35, 407.33], [-286.33, 462.33]]
       : [[13, 267.67], [27, 273.33], [47.33, 278.67], [54.67, 280.67], [-281.67, 313]]
     touch('touchstart', points[0]![0]!, points[0]![1]!)
     for (const [x, y] of points.slice(1)) touch('touchmove', x!, y!)
     touch('touchend', points.at(-1)![0]!, points.at(-1)![1]!)
-    expect(navigate).not.toHaveBeenCalled()
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(area === 'center')
+    expect(expand).not.toHaveBeenCalled()
     // A fresh, normal left swipe still closes the drawer or opens the right panel.
     touch('touchstart', 300, 300)
     touch('touchmove', 240, 300)
     touch('touchend', 180, 300)
-    expect(navigate).toHaveBeenCalledTimes(1)
+    if (area === 'left') expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
+    else expect(expand).toHaveBeenCalledTimes(1)
   } finally {
     for (const dispose of disposers) dispose()
     proxy.remove()
@@ -629,6 +632,7 @@ it.each(['left', 'center'])('ignores WeChat exit coordinates when leaving %s', (
 
 it.each([[20, 140], [300, 180]])('keeps text selection drags out of sidebar swipes (%i → %i)', (from, to) => {
   vi.useFakeTimers()
+  const innerWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')!
   const proxy = document.createElement('style')
   proxy.setAttribute('data-dsh-remote-control', '')
   document.head.append(proxy)
@@ -652,7 +656,7 @@ it.each([[20, 140], [300, 180]])('keeps text selection drags out of sidebar swip
     selection.removeAllRanges()
     selection.addRange(range)
   }
-  const touch = (type: string, x: number): Event => {
+  const touch = (type: string, x: number, prevented = false): Event => {
     const event = new Event(type, { bubbles: true, cancelable: true })
     const point = { identifier: 0, clientX: x, clientY: 100 }
     Object.defineProperties(event, {
@@ -660,7 +664,7 @@ it.each([[20, 140], [300, 180]])('keeps text selection drags out of sidebar swip
       changedTouches: { value: [point] },
     })
     content.dispatchEvent(event)
-    expect(event.defaultPrevented).toBe(false)
+    expect(event.defaultPrevented).toBe(prevented)
     return event
   }
   const toggle = vi.fn()
@@ -705,11 +709,13 @@ it.each([[20, 140], [300, 180]])('keeps text selection drags out of sidebar swip
     touch('touchend', to!)
     expect(toggle).not.toHaveBeenCalled()
 
-    // A collapsed caret and a slow swipe that starts moving promptly still allow navigation.
+    // A collapsed caret and a slow swipe that starts moving promptly still allow navigation; the
+    // drawer then follows the finger, and 120px is a third of this viewport.
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 360 })
     select()
     selection.collapseToStart()
     touch('touchstart', from!)
-    touch('touchmove', from! + Math.sign(to! - from!) * 20)
+    touch('touchmove', from! + Math.sign(to! - from!) * 20, true)
     vi.advanceTimersByTime(600)
     touch('touchend', to!)
     expect(toggle).toHaveBeenCalledTimes(1)
@@ -719,6 +725,7 @@ it.each([[20, 140], [300, 180]])('keeps text selection drags out of sidebar swip
     proxy.remove()
     frame.remove()
     vi.useRealTimers()
+    Object.defineProperty(window, 'innerWidth', innerWidth)
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
@@ -781,6 +788,138 @@ it('closes an open phone sidebar with a reverse swipe inside that sidebar', () =
     for (const dispose of disposers) dispose()
     proxy.remove()
     frame.remove()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})
+
+it('moves the phone drawer and right panel with the finger and settles them on release', () => {
+  vi.useFakeTimers()
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div data-left-content>左栏</div></div>'
+    + '<main class="ui_layout__centerCol__h1"><div data-conversation-scroll>消息</div>'
+    + '<button data-sidebar-right-expand>右栏</button></main>'
+    + '<div data-rightbar-col><div data-sidebar-right-panel="fullscreen">'
+    + '<div data-dockkit-host="dock"><div data-right-content>右栏内容</div></div>'
+    + '<button data-sidebar-right-toggle>收起</button></div></div>'
+  frame.setAttribute('data-sidebar-collapsed', '')
+  frame.setAttribute('data-rightbar-collapsed', '')
+  document.body.append(frame)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (query: string) => ({ matches: !query.includes('prefers-reduced-motion'), addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const drawer = frame.querySelector<HTMLElement>('[class*="_sidebarCol"]')!
+  const panel = frame.querySelector<HTMLElement>('[data-sidebar-right-panel]')!
+  const dock = frame.querySelector<HTMLElement>('[data-dockkit-host]')!
+  drawer.getBoundingClientRect = () => ({ width: 300 }) as DOMRect
+  panel.getBoundingClientRect = () => ({ width: 400 }) as DOMRect
+  const disposers: (() => void)[] = []
+  const ctx = context(slots(), disposers)
+  ctx.layout.toggleSidebar = () => { frame.toggleAttribute('data-sidebar-collapsed') }
+  frame.querySelector('[data-sidebar-right-expand]')!.addEventListener('click', () => {
+    panel.setAttribute('data-sidebar-right-open', '')
+  })
+  frame.querySelector('[data-sidebar-right-toggle]')!.addEventListener('click', () => {
+    panel.removeAttribute('data-sidebar-right-open')
+  })
+  const content = frame.querySelector('[data-conversation-scroll]')!
+  const touch = (target: Element, type: string, x: number): Event => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    const point = { identifier: 0, clientX: x, clientY: 100 }
+    Object.defineProperties(event, {
+      touches: { value: type === 'touchend' || type === 'touchcancel' ? [] : [point] },
+      changedTouches: { value: [point] },
+    })
+    target.dispatchEvent(event)
+    return event
+  }
+  const open = (): boolean => !frame.hasAttribute('data-sidebar-collapsed')
+  try {
+    apply(ctx)
+    // Opening: the drawer is expanded at once and parked under the finger.
+    touch(content, 'touchstart', 20)
+    expect(touch(content, 'touchmove', 40).defaultPrevented).toBe(true)
+    expect(open()).toBe(true)
+    expect(drawer.style.transform).toBe('translateX(-280px)')
+    expect(drawer.style.transition).toBe('none')
+    touch(content, 'touchmove', 80)
+    expect(drawer.style.transform).toBe('translateX(-240px)')
+    // A slow release short of a third springs back closed.
+    vi.advanceTimersByTime(500)
+    touch(content, 'touchend', 80)
+    expect(open()).toBe(false)
+    expect(drawer.style.transform).toBe('translateX(-300px)')
+    expect(drawer.style.transition).toContain('transform')
+    vi.advanceTimersByTime(300)
+    expect(drawer.style.transform).toBe('')
+    expect(drawer.style.transition).toBe('')
+
+    // A slow drag past a third stays open.
+    touch(content, 'touchstart', 20)
+    touch(content, 'touchmove', 40)
+    touch(content, 'touchmove', 140)
+    vi.advanceTimersByTime(500)
+    touch(content, 'touchend', 140)
+    expect(open()).toBe(true)
+    expect(drawer.style.transform).toBe('translateX(0px)')
+    vi.advanceTimersByTime(300)
+    expect(drawer.style.transform).toBe('')
+
+    // A short fling closes it.
+    const left = frame.querySelector('[data-left-content]')!
+    touch(left, 'touchstart', 250)
+    touch(left, 'touchmove', 230)
+    expect(drawer.style.transform).toBe('translateX(-20px)')
+    vi.advanceTimersByTime(16)
+    touch(left, 'touchmove', 190)
+    vi.advanceTimersByTime(16)
+    touch(left, 'touchend', 190)
+    expect(open()).toBe(false)
+    expect(drawer.style.transform).toBe('translateX(-300px)')
+    vi.advanceTimersByTime(300)
+    expect(drawer.style.transform).toBe('')
+
+    // The right panel follows from its off-screen edge, and dragging back cancels it.
+    touch(content, 'touchstart', 300)
+    touch(content, 'touchmove', 280)
+    expect(panel.hasAttribute('data-sidebar-right-open')).toBe(true)
+    expect(dock.style.transform).toBe('translateX(380px)')
+    touch(content, 'touchmove', 100)
+    expect(dock.style.transform).toBe('translateX(200px)')
+    vi.advanceTimersByTime(16)
+    touch(content, 'touchmove', 250)
+    vi.advanceTimersByTime(16)
+    touch(content, 'touchend', 250)
+    expect(panel.hasAttribute('data-sidebar-right-open')).toBe(false)
+    expect(dock.style.transform).toBe('translateX(400px)')
+    vi.advanceTimersByTime(300)
+    expect(dock.style.transform).toBe('')
+
+    // An interrupted drag leaves the page where it started.
+    touch(content, 'touchstart', 20)
+    touch(content, 'touchmove', 120)
+    expect(open()).toBe(true)
+    touch(content, 'touchcancel', 120)
+    expect(open()).toBe(false)
+    vi.advanceTimersByTime(300)
+    expect(drawer.style.transform).toBe('')
+    touch(content, 'touchstart', 20)
+    touch(content, 'touchmove', 120)
+    for (const dispose of disposers.splice(0)) dispose()
+    expect(open()).toBe(false)
+    expect(drawer.style.transform).toBe('')
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+    vi.useRealTimers()
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
@@ -1561,8 +1700,10 @@ it('rebounds the whole drawer at either edge without moving its pinned header or
       expect(touch(element, 'touchmove', 100).defaultPrevented).toBe(false)
       touch(element, 'touchend', 100)
     }
+    // A sideways drag belongs to the drawer's closing swipe, not to the rebound.
     touch(target, 'touchstart', 200)
-    expect(touch(target, 'touchmove', 200, 80).defaultPrevented).toBe(false)
+    touch(target, 'touchmove', 200, 80)
+    expect(projects.style.transform).toBe('')
     touch(target, 'touchcancel', 200)
     touch(target, 'touchstart', 200, 160, 2)
     expect(touch(target, 'touchmove', 100, 160, 2).defaultPrevented).toBe(false)

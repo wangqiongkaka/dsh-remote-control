@@ -11,8 +11,8 @@ const FRAME = '[class*="_frame"]:has([class*="_sidebarCol"])'
 const DRAWER = `${FRAME}[data-rightbar-collapsed] [class*="_sidebarCol"],${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]`
 
 /** The shell's slow duration and in-out curve, which the right panel slides on. */
-const SLOW = 'var(--ds-transition-duration-slow,.3s)'
-const EASE = 'var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1))'
+export const SLOW = 'var(--ds-transition-duration-slow,.3s)'
+export const EASE = 'var(--ds-ease-in-out,cubic-bezier(.4,0,.2,1))'
 const SLIDE = `transform ${SLOW} ${EASE}`
 
 /** The main chat scroller; other views own their composer overlay positioning. */
