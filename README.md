@@ -212,4 +212,6 @@ swiftc ios/DSHRemote/PairingLink.swift ios/Checks/main.swift -o "$TMPDIR/pairing
       # server: https://api.day.app   # 默认公共服务器；自建 bark-server 时改成自己的地址
 ```
 
+字段名区分大小写，须写成小写 `key`；`bark` 配置不合法时整个远程控制插件都不会加载，电脑上的远程控制弹窗会显示「not found」，手机端提示 DSH 没有响应。
+
 通知内容（会话标题、工作区、审批或问题文字、错误信息）会经过 Bark 服务器转发给苹果推送服务；不希望经过公共服务器时，可在自己的服务器上部署 [bark-server](https://github.com/Finb/bark-server)，并在 Bark App 中添加该服务器后使用它的 Key。推送失败只会在 DSH 日志中记录 `[dsh-remote-control] Bark push failed`，不影响会话运行。未配置 `bark` 时不监听也不推送。

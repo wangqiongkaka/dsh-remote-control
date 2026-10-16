@@ -18,6 +18,8 @@ final class RemoteViewController: UIViewController {
   private let notice = UILabel()
   private let actions = UIStackView()
   private var downloads: [WKDownload: URL] = [:]
+  /// The page that failed, so 重试 repeats it (an unused pairing link included) rather than going home.
+  private var failed: URL?
   /// Sessions tapped in notifications, waiting for DSH Web to finish loading.
   private var tappedSessions: [String] = []
   private var origin: URL? {
@@ -92,6 +94,13 @@ final class RemoteViewController: UIViewController {
       "(window.__dshRemoteOpen ??= []).push(...\(json)); dispatchEvent(new Event('dsh-remote-open'))")
   }
 
+  private func retry() {
+    guard let url = failed ?? origin else { return }
+    failed = nil
+    panel.isHidden = true
+    webView.load(URLRequest(url: url))
+  }
+
   private func pair(_ link: String) {
     let link = link.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let origin = pairingOrigin(link), let url = URL(string: link) else {
@@ -108,7 +117,7 @@ final class RemoteViewController: UIViewController {
     notice.text = message
     notice.isHidden = message == nil
     actions.arrangedSubviews.forEach { $0.removeFromSuperview() }
-    if retry { actions.addArrangedSubview(button("重试") { [weak self] in self?.open() }) }
+    if retry { actions.addArrangedSubview(button("重试") { [weak self] in self?.retry() }) }
     if DataScannerViewController.isSupported {
       actions.addArrangedSubview(button("扫码配对") { [weak self] in self?.scan() })
     }
@@ -193,7 +202,16 @@ extension RemoteViewController: WKNavigationDelegate {
     if response.isForMainFrame {
       // The proxy marks refused pages; their text already says why, so only offer the way out.
       let refused = (response.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "x-dsh-remote-control") != nil
-      if refused { showPanel(nil) } else { panel.isHidden = true }
+      let status = (response.response as? HTTPURLResponse)?.statusCode ?? 200
+      if refused {
+        showPanel(nil)
+      } else if status >= 500 {
+        // The server's reverse proxy answers with an empty page while DSH or its tunnel is down.
+        failed = response.response.url
+        showPanel("电脑上的 DSH 没有响应（HTTP \(status)）。请确认 DSH 正在运行、远程控制已开启。", retry: true)
+      } else {
+        panel.isHidden = true
+      }
     }
     decisionHandler(response.canShowMIMEType ? .allow : .download)
   }
@@ -216,6 +234,7 @@ extension RemoteViewController: WKNavigationDelegate {
     if error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled || error.domain == "WebKitErrorDomain" {
       return
     }
+    failed = error.userInfo[NSURLErrorFailingURLErrorKey] as? URL
     showPanel("无法连接电脑上的 DSH：\(error.localizedDescription)\n请确认电脑在线并已开启远程控制。", retry: true)
   }
 

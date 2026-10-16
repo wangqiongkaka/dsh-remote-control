@@ -2,13 +2,17 @@
 import { createServer } from 'node:http'
 
 const port = Number(process.argv[2] ?? 18731)
+let flaky = 0
 const head = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
   + '<body style="margin:0;padding:env(safe-area-inset-top) 16px 0;font:20px system-ui;background:#e8f4ff">'
 createServer((req, res) => {
   const url = new URL(req.url, 'http://x')
   const paired = /dsh-remote-control=t/.test(req.headers.cookie ?? '')
   console.log(req.method, req.headers.host, req.url, paired ? 'cookie' : 'no-cookie')
-  if (url.searchParams.get('pair') === 'ok') {
+  if (url.pathname === '/flaky' && flaky++ === 0) {
+    // What the server's reverse proxy sends while DSH or its tunnel is down: an empty 502.
+    res.writeHead(502).end()
+  } else if (url.searchParams.get('pair') === 'ok') {
     res.writeHead(303, { location: '/', 'set-cookie': 'dsh-remote-control=t; Max-Age=34560000; Path=/; HttpOnly; SameSite=Lax' }).end()
   } else if (!paired) {
     res.writeHead(401, { 'content-type': 'text/html; charset=utf-8', 'x-dsh-remote-control': 'unpaired' })
