@@ -45,6 +45,11 @@ final class RemoteViewController: UIViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .systemBackground
+    // WebKit otherwise paints an empty remote page white while its first response is pending.
+    webView.isOpaque = false
+    webView.backgroundColor = .clear
+    webView.scrollView.backgroundColor = .clear
+    webView.underPageBackgroundColor = .clear
     webView.navigationDelegate = self
     webView.uiDelegate = self
     // The page pads itself with env(safe-area-inset-*) and owns edge swipes for its sidebars.

@@ -25,6 +25,11 @@ createServer((req, res) => {
   } else if (url.pathname === '/external') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
       .end(head + `<h1>外链测试</h1><script>setTimeout(()=>{location.href="http://localhost:${port}/elsewhere"},300)</script>`)
+  } else if (url.pathname === '/startup') {
+    // A slow first response exposes WebKit's empty-page canvas before any HTML is available.
+    setTimeout(() => res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      .end(head + '<style>html{color-scheme:dark}body{background:#1b1b1b!important;color:#eee}</style>'
+        + '<h1>启动检查完成</h1><p>延迟响应后，页面正常显示。</p>'), 3000)
   } else if (url.pathname === '/keyboard') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
       .end(head + '<h1>键盘检查</h1><p>输入框与键盘之间不应出现上下箭头和完成工具栏。</p>'
