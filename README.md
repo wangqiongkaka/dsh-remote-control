@@ -185,6 +185,7 @@ npm run dev -- --host 0.0.0.0
 - App 没有地址栏和刷新按钮：隧道重建后页面没有自动恢复时，从多任务界面关闭 App 再打开即可重新加载。
 - 网页输入框不显示系统的表单辅助栏（上下箭头和完成按钮），收起键盘使用输入法自身的按钮。此项属于原生 App，修改后需重新构建安装。
 - 启动加载网页时，WebView 的空白画布使用原生系统背景，避免深色模式等待首个网络响应时白闪。此项属于原生 App，修改后需重新构建安装。
+- 已配对的 App 启动时显示鲸鱼浮动与水波动画，收到页面后切换到「正在打开工作区」，网页及其脚本加载完成后淡出（约 0.25 秒）。加载多久就显示多久，没有强制最短播放时间；连接失败时显示原有重试与配对入口。首次未配对、后台返回不播放，系统开启「减少动态效果」时使用静态画面。
 - 主屏幕名称为 DeepSeek，图标为黑灰底白色鲸鱼，源文件是 `ios/AppIcon.svg`（鲸鱼路径取自 DSH 的 `FishLogo`），修改后用浏览器按 1024×1024 渲染并替换 `ios/DSHRemote/Assets.xcassets/AppIcon.appiconset/AppIcon.png`。
 - 点击下文 Bark 通知会打开 App 并切到对应会话（手机抽屉打开时自动收起）。
 - 未提供：App 自身的系统推送（需要付费开发者账号）、App Store 发布。
@@ -206,12 +207,18 @@ xcodebuild -project ios/DSHRemote.xcodeproj -scheme DSHRemote -configuration Deb
 python3 ios/Checks/startup.py booted /tmp/dsh-startup-build/Build/Products/Debug-iphonesimulator/DSHRemote.app 'http://127.0.0.1:18731/startup?pair=ok' /tmp/dsh-startup-check
 ```
 
+保持模拟代理运行，可验证启动动画的快慢加载、慢脚本、失败重试、配对失效、离线及首次未配对分支（脚本创建并清理独立检查 App，不改正式 App 的配对数据；18732 端口须无人监听）：
+
+```sh
+sh ios/Checks/launch.sh booted /tmp/dsh-startup-build/Build/Products/Debug-iphonesimulator/DSHRemote.app
+```
+
 `/keyboard` 用于检查输入框上方的系统辅助栏。保持模拟代理运行，在已启动的模拟器上运行独立检查 App（检查真实输入响应器、键盘唤起和文字编辑；成功后保持页面打开以便截图）：
 
 ```sh
 keyboard_app="$(mktemp -d)/DSHKeyboardCheck.app"
 mkdir -p "$keyboard_app"
-xcrun --sdk iphonesimulator swiftc -parse-as-library -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" -target "$(uname -m)-apple-ios17.0-simulator" ios/DSHRemote/RemoteViewController.swift ios/DSHRemote/PairingLink.swift ios/Checks/Keyboard.swift -o "$keyboard_app/DSHKeyboardCheck"
+xcrun --sdk iphonesimulator swiftc -parse-as-library -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" -target "$(uname -m)-apple-ios17.0-simulator" ios/DSHRemote/RemoteViewController.swift ios/DSHRemote/PairingLink.swift ios/DSHRemote/StartupView.swift ios/Checks/Keyboard.swift -o "$keyboard_app/DSHKeyboardCheck"
 cat > "$keyboard_app/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>io.github.wangqiong.dsh-keyboard-check</string><key>CFBundleExecutable</key><string>DSHKeyboardCheck</string><key>CFBundlePackageType</key><string>APPL</string><key>UILaunchScreen</key><dict/></dict></plist>
 PLIST

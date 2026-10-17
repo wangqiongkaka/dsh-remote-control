@@ -9,7 +9,9 @@ createServer((req, res) => {
   const url = new URL(req.url, 'http://x')
   const paired = /dsh-remote-control=t/.test(req.headers.cookie ?? '')
   console.log(req.method, req.headers.host, req.url, paired ? 'cookie' : 'no-cookie')
-  if (url.pathname === '/flaky' && flaky++ === 0) {
+  if (url.pathname === '/startup-retry' && !/startup-retry=t/.test(req.headers.cookie ?? '')) {
+    res.writeHead(502, { 'set-cookie': 'startup-retry=t; Path=/' }).end()
+  } else if (url.pathname === '/flaky' && flaky++ === 0) {
     // What the server's reverse proxy sends while DSH or its tunnel is down: an empty 502.
     res.writeHead(502).end()
   } else if (url.searchParams.get('pair') === 'ok') {
@@ -25,6 +27,12 @@ createServer((req, res) => {
   } else if (url.pathname === '/external') {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
       .end(head + `<h1>外链测试</h1><script>setTimeout(()=>{location.href="http://localhost:${port}/elsewhere"},300)</script>`)
+  } else if (url.pathname === '/startup-script.js') {
+    setTimeout(() => res.writeHead(200, { 'content-type': 'text/javascript', 'cache-control': 'no-store' })
+      .end('document.body.append("脚本已就绪")'), 3000)
+  } else if (url.pathname === '/startup-script') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      .end(head + '<h1>正在加载脚本</h1><script src="/startup-script.js"></script>')
   } else if (url.pathname === '/startup') {
     // A slow first response exposes WebKit's empty-page canvas before any HTML is available.
     setTimeout(() => res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })

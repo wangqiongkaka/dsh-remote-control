@@ -30,6 +30,7 @@ final class RemoteViewController: UIViewController {
     return configuration
   }())
   private let panel = UIStackView()
+  private let startup = StartupView()
   private let notice = UILabel()
   private let actions = UIStackView()
   private var downloads: [WKDownload: URL] = [:]
@@ -61,6 +62,9 @@ final class RemoteViewController: UIViewController {
     webView.frame = view.bounds
     webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     view.addSubview(webView)
+    startup.frame = view.bounds
+    startup.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    view.addSubview(startup)
 
     notice.numberOfLines = 0
     notice.textAlignment = .center
@@ -95,6 +99,7 @@ final class RemoteViewController: UIViewController {
   private func open() {
     guard let origin else { return }
     panel.isHidden = true
+    startup.start()
     webView.load(URLRequest(url: origin))
   }
 
@@ -118,6 +123,7 @@ final class RemoteViewController: UIViewController {
     guard let url = failed ?? origin else { return }
     failed = nil
     panel.isHidden = true
+    startup.start()
     webView.load(URLRequest(url: url))
   }
 
@@ -129,11 +135,13 @@ final class RemoteViewController: UIViewController {
     }
     self.origin = origin
     panel.isHidden = true
+    startup.start()
     webView.load(URLRequest(url: url))
   }
 
   /// The way back to pairing; `message` is nil when the page already explains what happened.
   private func showPanel(_ message: String?, retry: Bool = false) {
+    startup.finish(animated: false)
     notice.text = message
     notice.isHidden = message == nil
     actions.arrangedSubviews.forEach { $0.removeFromSuperview() }
@@ -211,6 +219,7 @@ extension RemoteViewController: WKNavigationDelegate {
     // Without an address bar, leaving DSH would strand the app: other sites open in their own app.
     if action.targetFrame?.isMainFrame == true, let url = action.request.url, let origin,
        !sameOrigin(url, origin), !["about", "blob", "data"].contains(url.scheme ?? "") {
+      startup.finish(animated: false)
       UIApplication.shared.open(url)
       return decisionHandler(.cancel)
     }
@@ -236,15 +245,22 @@ extension RemoteViewController: WKNavigationDelegate {
     decisionHandler(response.canShowMIMEType ? .allow : .download)
   }
 
+  func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+    startup.opening()
+  }
+
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    startup.finish()
     openTappedSessions()
   }
 
   func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+    startup.finish(animated: false)
     download.delegate = self
   }
 
   func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+    startup.finish(animated: false)
     download.delegate = self
   }
 
@@ -260,6 +276,10 @@ extension RemoteViewController: WKNavigationDelegate {
 
   func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
     if webView.url == nil { open() } else { webView.reload() }
+  }
+
+  func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    self.webView(webView, didFailProvisionalNavigation: navigation, withError: error)
   }
 }
 
