@@ -297,7 +297,13 @@ it('scrolls the whole drawer while the brand and settings stay pinned', () => {
   } finally { dispose(); frame.remove() }
 })
 
-it('places settings before panel shortcuts beside the sidebar toggle with equal button sizes and spacing', () => {
+it('pins settings at the bottom and preserves the header button sizes and spacing', () => {
+  const host = document.createElement('style')
+  host.textContent = '.ui_sidebar__footArea__h1{display:flex;flex-direction:column}'
+    + '.ui_sidebar__settingsArea__h1{width:100%}'
+    + '.settings__triggerRow__h1{position:relative;display:flex;align-items:center;gap:8px}'
+    + '.settings__trigger__h1{display:flex;align-items:center;flex:1;gap:8px;height:44px}'
+  document.head.append(host)
   const frame = document.createElement('div')
   frame.className = 'ui_layout__frame__h1'
   frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
@@ -333,25 +339,30 @@ it('places settings before panel shortcuts beside the sidebar toggle with equal 
     expect(headerShadow).toContain('var(--dsh-sidebar-inline-padding,12px) 0 0 var(--dsw-specific-sidebar-fill)')
     expect(headerShadow).toContain('calc(-1 * var(--dsh-sidebar-inline-padding,12px)) 0 0 var(--dsw-specific-sidebar-fill)')
     expect(style('.ui_sidebar__brand__h1').gridColumn).toBe('1')
-    expect(style('.ui_sidebar__toggle__h1').gridColumn).toBe('4')
-    expect(style('.ui_sidebar__panelList__h1').gridColumn).toBe('3')
-    expect(style('.ui_sidebar__footArea__h1').display).toBe('contents')
-    expect(style('.ui_sidebar__settingsArea__h1').display).toBe('contents')
-    expect(style('.settings__triggerRow__h1').gridColumn).toBe('2')
-    expect(style('.settings__triggerRow__h1').width).toBe('auto')
-    expect(style('.settings__triggerLabel__h1').display).toBe('none')
+    expect(style('.ui_sidebar__toggle__h1').gridColumn).toBe('3')
+    expect(style('.ui_sidebar__panelList__h1').gridColumn).toBe('2')
+    expect(style('.ui_sidebar__footArea__h1').display).toBe('flex')
+    expect(style('.ui_sidebar__footArea__h1').gridRow).toBe('4')
+    expect(style('.ui_sidebar__footArea__h1').position).toBe('sticky')
+    expect(style('.ui_sidebar__footArea__h1').bottom).toBe('0px')
+    expect(style('.ui_sidebar__settingsArea__h1').display).not.toBe('contents')
+    expect(style('.ui_sidebar__settingsArea__h1').width).toBe('100%')
+    expect(style('.settings__triggerRow__h1').position).not.toBe('sticky')
+    expect(style('.settings__triggerRow__h1').width).toBe('100%')
+    expect(style('.settings__triggerRow__h1').gap).toBe('8px')
+    expect(style('.settings__triggerLabel__h1').display).not.toBe('none')
     expect(style('[data-connection-indicator]').display).not.toBe('none')
-    expect(style('[data-connection-indicator]').order).toBe('-1')
+    expect(style('[data-connection-indicator]').order).not.toBe('-1')
     const indicator = frame.querySelector<HTMLElement>('[data-connection-indicator]')!
     indicator.dataset.phase = 'connecting'
-    expect(style('[data-connection-indicator]').order).toBe('-1')
+    expect(style('[data-connection-indicator]').order).not.toBe('-1')
     indicator.removeAttribute('data-phase')
     indicator.setAttribute('role', 'status')
-    expect(style('[data-connection-indicator]').order).toBe('-1')
+    expect(style('[data-connection-indicator]').order).not.toBe('-1')
     expect(style('[data-update-indicator]').order).not.toBe('-1')
-    // The project track grows with its content while the settings control shares the header.
+    // The project track grows with its content above the pinned footer.
     expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('auto')
-    for (const selector of ['.ui_sidebar__logoRow__h1', '.ui_sidebar__panelList__h1', '.settings__triggerRow__h1']) {
+    for (const selector of ['.ui_sidebar__logoRow__h1', '.ui_sidebar__panelList__h1']) {
       expect(style(selector).gridRow).toBe('1')
       expect(style(selector).position).toBe('sticky')
       expect(style(selector).top).toBe('0px')
@@ -360,11 +371,17 @@ it('places settings before panel shortcuts beside the sidebar toggle with equal 
     expect(style('.ui_sidebar__panelList__h1').flexDirection).toBe('row')
     expect(style('.ui_sidebar__panelTitle__h1').display).toBe('none')
     for (const button of buttons) {
-      expect(getComputedStyle(button).width).toBe('40px')
-      expect(getComputedStyle(button).height).toBe('40px')
-      expect(getComputedStyle(button).boxSizing).toBe('border-box')
-      expect(getComputedStyle(button.querySelector('svg')!).width).toBe('18px')
-      expect(getComputedStyle(button.querySelector('svg')!).height).toBe('18px')
+      if (button.closest('.ui_sidebar__logoRow__h1,.ui_sidebar__panelList__h1')) {
+        expect(getComputedStyle(button).width).toBe('40px')
+        expect(getComputedStyle(button).height).toBe('40px')
+        expect(getComputedStyle(button).boxSizing).toBe('border-box')
+        expect(getComputedStyle(button.querySelector('svg')!).width).toBe('18px')
+        expect(getComputedStyle(button.querySelector('svg')!).height).toBe('18px')
+      } else {
+        expect(getComputedStyle(button).height).toBe('44px')
+        expect(getComputedStyle(button).gap).toBe('8px')
+        expect(getComputedStyle(button).width).not.toBe('40px')
+      }
       button.click()
     }
     expect(picked).toEqual(['收起侧边栏', '插件', '自动化任务', '设置'])
@@ -372,14 +389,37 @@ it('places settings before panel shortcuts beside the sidebar toggle with equal 
     expect(style('.ui_sidebar__root__h1').display).not.toBe('grid')
     expect(style('.ui_sidebar__panelTitle__h1').display).not.toBe('none')
     expect(style('.settings__triggerRow__h1').gridColumn).not.toBe('2')
-    expect(style('.settings__triggerLabel__h1').display).not.toBe('none')
+    expect(style('.settings__triggerRow__h1').width).not.toBe('100%')
     expect(style('[data-connection-indicator]').order).not.toBe('-1')
     frame.removeAttribute('data-sidebar-collapsed')
     dispose()
     expect(style('.ui_sidebar__footArea__h1').display).not.toBe('contents')
     expect(style('.settings__triggerRow__h1').gridRow).not.toBe('1')
     expect(style('[data-connection-indicator]').order).not.toBe('-1')
-  } finally { dispose(); frame.remove() }
+  } finally { dispose(); frame.remove(); host.remove() }
+})
+
+it('fades the scrolling list into the footer without blocking controls or clipping the last row', () => {
+  const dispose = applyDrawerSelection()
+  try {
+    const rules = Array.from(sheet()!.sheet!.cssRules).filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule)
+    const fade = rules.find(rule => rule.selectorText === `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]::before`)
+    expect(fade).toBeDefined()
+    expect(fade!.style.position).toBe('absolute')
+    expect(fade!.style.top).toBe('-32px')
+    expect(fade!.style.bottom).toBe('0px')
+    expect(fade!.style.zIndex).toBe('-1')
+    expect(fade!.style.pointerEvents).toBe('none')
+    // jsdom drops gradient shorthands containing a CSS variable; browser QA checks the paint.
+    expect(sheet()!.textContent).toContain('background:linear-gradient(to bottom,transparent,var(--dsw-specific-sidebar-fill) 32px);pointer-events:none')
+    const region = rules.find(rule => rule.selectorText === `${DRAWER_SCROLL_ROOT} > [class*="_regionArea"]`)
+    expect(region!.style.paddingBottom).toBe('32px')
+    const phone = Array.from(sheet()!.sheet!.cssRules).find(rule => rule instanceof CSSMediaRule
+      && rule.conditionText === '(max-width: 720px)') as CSSMediaRule
+    const inset = Array.from(phone.cssRules).find(rule => rule instanceof CSSStyleRule
+      && rule.selectorText === fade!.selectorText) as CSSStyleRule
+    expect(inset.style.bottom).toBe('calc(-1 * var(--dsh-remote-bottom-clearance,0px))')
+  } finally { dispose() }
 })
 
 it('keeps automation headings, actions and summaries on one line with long text reachable', () => {

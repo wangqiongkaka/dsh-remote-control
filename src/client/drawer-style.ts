@@ -39,7 +39,7 @@ export const DRAWER_SCROLL_ROOT = '[class*="_frame"]:has([class*="_sidebarCol"])
 /** Share the sticky top row with the shell's existing panel navigation, without moving its DOM. */
 const DRAWER_HEADER = `${DRAWER_SCROLL_ROOT}:has(> [class*="_panelList"])`
 
-const HEADER_BUTTON = `${DRAWER_HEADER} :is(button[class*="_toggle"],button[class*="_panelRow"],button[class*="_trigger"])`
+const HEADER_BUTTON = `${DRAWER_HEADER} :is(button[class*="_toggle"],button[class*="_panelRow"])`
 
 /** The task catalog's own root keeps these phone text rules out of other panels. */
 const TASKS = '[data-testid="task-manager-page"]'
@@ -87,33 +87,34 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + 'height:66px;padding-top:14px;background:var(--dsw-specific-sidebar-fill);'
   + 'box-shadow:var(--dsh-sidebar-inline-padding,12px) 0 0 var(--dsw-specific-sidebar-fill),'
   + 'calc(-1 * var(--dsh-sidebar-inline-padding,12px)) 0 0 var(--dsw-specific-sidebar-fill)}'
-  + `${DRAWER_HEADER}{display:grid;grid-template-columns:minmax(0,1fr) auto auto 40px;grid-template-rows:66px auto 1fr auto;column-gap:8px}`
+  + `${DRAWER_HEADER}{display:grid;grid-template-columns:minmax(0,1fr) auto 40px;grid-template-rows:66px auto 1fr auto;column-gap:8px}`
   // Paint one full-width sticky header; its subgrid leaves the middle track to panel shortcuts.
   + `${DRAWER_HEADER} > [class*="_logoRow"]{grid-column:1 / -1;grid-row:1;display:grid;grid-template-columns:subgrid;`
   + 'gap:8px;min-width:0;padding:14px 0 12px 4px;margin-bottom:0}'
   + `${DRAWER_HEADER} > [class*="_logoRow"] [class*="_brand"]{grid-column:1}`
-  + `${DRAWER_HEADER} > [class*="_logoRow"] button[class*="_toggle"]{grid-column:4}`
+  + `${DRAWER_HEADER} > [class*="_logoRow"] button[class*="_toggle"]{grid-column:3}`
   + `${HEADER_BUTTON}{width:40px;height:40px;min-width:40px;min-height:40px;box-sizing:border-box;`
   + 'flex:none;margin:0;padding:0;display:inline-flex;align-items:center;justify-content:center}'
   + `${HEADER_BUTTON} svg{width:18px;height:18px;flex:none}`
-  + `${DRAWER_HEADER} > [class*="_panelList"]{grid-column:3;grid-row:1;position:sticky;top:0;z-index:4;`
+  + `${DRAWER_HEADER} > [class*="_panelList"]{grid-column:2;grid-row:1;position:sticky;top:0;z-index:4;`
   + 'display:flex;flex-direction:row;align-items:center;align-self:start;gap:8px;height:66px;box-sizing:border-box;'
   + 'padding:14px 0 12px;margin:0;background:var(--dsw-specific-sidebar-fill)}'
   + `${DRAWER_HEADER} > [class*="_panelList"] [class*="_panelTitle"]{display:none}`
-  // Flatten only the settings wrappers so the native trigger shares the sticky header.
-  + `${DRAWER_HEADER} > [class*="_footArea"],${DRAWER_HEADER} > [class*="_footArea"] > [class*="_settingsArea"]{display:contents}`
-  + `${DRAWER_HEADER} [class*="_settingsArea"] [class*="_triggerRow"]{grid-column:2;grid-row:1;position:sticky;top:0;z-index:4;`
-  + 'display:flex;align-items:center;align-self:start;gap:8px;width:auto;height:66px;box-sizing:border-box;'
-  + 'padding:14px 0 12px;margin:0;background:var(--dsw-specific-sidebar-fill)}'
-  + `${DRAWER_HEADER} [class*="_settingsArea"] [class*="_triggerRow"] > :is([data-phase],[role="status"]){order:-1}`
-  + `${DRAWER_HEADER} [class*="_triggerLabel"]{display:none}`
+  + `${DRAWER_HEADER} [class*="_settingsArea"] [class*="_triggerRow"]{display:flex;align-items:center;gap:8px;`
+  + 'width:100%;min-height:44px;box-sizing:border-box;margin:0}'
   + `${DRAWER_HEADER} > [data-remote-control-agents]{grid-column:1 / -1;grid-row:2;min-width:0}`
   + `${DRAWER_HEADER} > [class*="_regionArea"]{grid-column:1 / -1;grid-row:3;min-width:0;min-height:auto}`
   + `${DRAWER_HEADER} > [class*="_footArea"]{grid-column:1 / -1;grid-row:4}`
-  + `${DRAWER_HEADER} [class*="_footerActions"]{grid-column:1 / -1;grid-row:4}`
   + `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]{position:sticky;bottom:0;z-index:3;margin-top:auto;`
-  + 'padding:6px 0 max(32px,env(safe-area-inset-bottom));background:var(--dsw-specific-sidebar-fill)}'
-  + `${DRAWER_SCROLL_ROOT} > [class*="_regionArea"]{flex:none;overflow:visible}`
+  + 'padding:6px 0 max(32px,env(safe-area-inset-bottom));background:var(--dsw-specific-sidebar-fill);'
+  + 'box-shadow:var(--dsh-sidebar-inline-padding,12px) 0 0 var(--dsw-specific-sidebar-fill),'
+  + 'calc(-1 * var(--dsh-sidebar-inline-padding,12px)) 0 0 var(--dsw-specific-sidebar-fill)}'
+  // Fade above the foot and cover the scrollport's safe-area padding below it without catching taps.
+  + `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]::before{content:"";position:absolute;top:-32px;`
+  + 'bottom:0;z-index:-1;'
+  + 'left:calc(-1 * var(--dsh-sidebar-inline-padding,12px));right:calc(-1 * var(--dsh-sidebar-inline-padding,12px));'
+  + 'background:linear-gradient(to bottom,transparent,var(--dsw-specific-sidebar-fill) 32px);pointer-events:none}'
+  + `${DRAWER_SCROLL_ROOT} > [class*="_regionArea"]{flex:none;overflow:visible;padding-bottom:32px}`
   + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] :is([class*="_root"],[class*="_list"],[class*="_treeBody"])`
   + '{flex:none;overflow:visible;overflow-y:visible;scrollbar-gutter:auto}'
   + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] [class*="_fade"]{display:none}`
@@ -164,6 +165,7 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + '[data-composer-card] ~ [class*="_dock"]:empty{display:none}'
   // The scrollport reserves the shared home-indicator inset.
   + `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]{padding-bottom:0}`
+  + `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]::before{bottom:calc(-1 * var(--dsh-remote-bottom-clearance,0px))}`
   // Task modes share one phone layout. A bounded dock leaves room for the draft and transcript
   // when the keyboard opens; full-width model picks cannot push their neighbours off-screen.
   + `${TASK_MODE}{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 8px;align-content:start;`
