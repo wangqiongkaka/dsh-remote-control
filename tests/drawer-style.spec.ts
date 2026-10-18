@@ -281,6 +281,11 @@ it('scrolls the whole drawer while the brand and settings stay pinned', () => {
   const style = (selector: string): CSSStyleDeclaration => getComputedStyle(frame.querySelector(selector)!)
   try {
     expect(style('.ui_sidebar__root__h1').overflowY).toBe('auto')
+    expect(style('.ui_sidebar__root__h1').scrollbarWidth).toBe('none')
+    expect(style('.ui_sidebar__root__h1').scrollbarGutter).toBe('auto')
+    const scrollbar = Array.from(sheet()!.sheet!.cssRules).find(rule => rule instanceof CSSStyleRule
+      && rule.selectorText === `${DRAWER_SCROLL_ROOT}::-webkit-scrollbar`) as CSSStyleRule
+    expect(scrollbar.style.display).toBe('none')
     expect(style('.ui_sidebar__root__h1').overscrollBehaviorY).toBe('none')
     expect(style('.ui_sidebar__logoRow__h1').position).toBe('sticky')
     expect(style('.ui_sidebar__logoRow__h1').top).toBe('0px')
@@ -399,21 +404,58 @@ it('pins settings at the bottom and preserves the header button sizes and spacin
   } finally { dispose(); frame.remove(); host.remove() }
 })
 
-it('fades the scrolling list into the footer without blocking controls or clipping the last row', () => {
+it('keeps the account launcher transparent after hover and opening its menu', () => {
+  const host = document.createElement('style')
+  host.textContent = '.account_trigger[data-hover],.account_trigger[aria-expanded="true"]{background:rgb(44,44,46)}'
+    + '.account_avatar,.account_menu{background:rgb(44,44,46)}'
+  document.head.append(host)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  const button = '<button class="account_trigger" aria-haspopup="menu" aria-expanded="true" data-hover>'
+    + '<span class="account_avatar">头像</span>Mr W</button>'
+  frame.innerHTML = '<aside class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
+    + '<header class="ui_sidebar__logoRow__h1">品牌</header><footer class="ui_sidebar__footArea__h1">'
+    + `<div class="ui_sidebar__settingsArea__h1">${button}</div></footer></div></aside>`
+    + `<div class="account_menu" role="menu">设置</div>${button}`
+  document.body.append(frame)
+  const dispose = applyDrawerSelection()
+  const account = frame.querySelector<HTMLButtonElement>('.account_trigger')!
+  try {
+    for (const expanded of [false, true]) {
+      account.setAttribute('aria-expanded', String(expanded))
+      expect(getComputedStyle(account).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+    }
+    for (const selector of ['.account_avatar', '.account_menu', ':scope > .account_trigger']) {
+      expect(getComputedStyle(frame.querySelector(selector)!).backgroundColor).toBe('rgb(44, 44, 46)')
+    }
+    frame.setAttribute('data-sidebar-collapsed', '')
+    expect(getComputedStyle(account).backgroundColor).toBe('rgb(44, 44, 46)')
+    frame.removeAttribute('data-sidebar-collapsed')
+    dispose()
+    expect(getComputedStyle(account).backgroundColor).toBe('rgb(44, 44, 46)')
+  } finally { dispose(); frame.remove(); host.remove() }
+})
+
+it('fades the scrolling list into a slightly translucent footer without fading its controls', () => {
   const dispose = applyDrawerSelection()
   try {
     const rules = Array.from(sheet()!.sheet!.cssRules).filter((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule)
     const fade = rules.find(rule => rule.selectorText === `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]::before`)
+    const footer = rules.find(rule => rule.selectorText === `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]`)
+    expect(footer!.style.background).toBe('transparent')
+    expect(footer!.style.boxShadow).toBe('')
+    expect(footer!.style.opacity).toBe('')
     expect(fade).toBeDefined()
     expect(fade!.style.position).toBe('absolute')
-    expect(fade!.style.top).toBe('-32px')
+    expect(fade!.style.top).toBe('-16px')
     expect(fade!.style.bottom).toBe('0px')
     expect(fade!.style.zIndex).toBe('-1')
+    expect(fade!.style.opacity).toBe('0.9')
     expect(fade!.style.pointerEvents).toBe('none')
     // jsdom drops gradient shorthands containing a CSS variable; browser QA checks the paint.
-    expect(sheet()!.textContent).toContain('background:linear-gradient(to bottom,transparent,var(--dsw-specific-sidebar-fill) 32px);pointer-events:none')
+    expect(sheet()!.textContent).toContain('background:linear-gradient(to bottom,transparent,var(--dsw-specific-sidebar-fill) 16px);pointer-events:none')
     const region = rules.find(rule => rule.selectorText === `${DRAWER_SCROLL_ROOT} > [class*="_regionArea"]`)
-    expect(region!.style.paddingBottom).toBe('32px')
+    expect(region!.style.paddingBottom).toBe('')
     const phone = Array.from(sheet()!.sheet!.cssRules).find(rule => rule instanceof CSSMediaRule
       && rule.conditionText === '(max-width: 720px)') as CSSMediaRule
     const inset = Array.from(phone.cssRules).find(rule => rule instanceof CSSStyleRule

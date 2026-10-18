@@ -77,9 +77,10 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   // The Agent card takes New Session's seat; a Workspace row's own New Session button stays.
   + '[class*="_sidebarCol"] button[class*="_newSession"]{display:none !important}'
   // One scrollport lets the Agent card leave room for projects instead of squeezing their list.
-  + `${DRAWER_SCROLL_ROOT}{overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:none;scrollbar-width:thin;`
-  + 'scrollbar-gutter:stable;padding-top:0 !important;padding-bottom:0 !important;'
+  + `${DRAWER_SCROLL_ROOT}{overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:none;scrollbar-width:none;`
+  + 'scrollbar-gutter:auto;padding-top:0 !important;padding-bottom:0 !important;'
   + '--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2)}'
+  + `${DRAWER_SCROLL_ROOT}::-webkit-scrollbar{display:none}`
   + `${DRAWER_SCROLL_ROOT} > *{flex-shrink:0}`
   // Workspace negative margins reach past the header box; paint over both side insets
   // without widening its grid or shifting the controls.
@@ -102,19 +103,19 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${DRAWER_HEADER} > [class*="_panelList"] [class*="_panelTitle"]{display:none}`
   + `${DRAWER_HEADER} [class*="_settingsArea"] [class*="_triggerRow"]{display:flex;align-items:center;gap:8px;`
   + 'width:100%;min-height:44px;box-sizing:border-box;margin:0}'
+  // Touch hover can latch after the account menu opens.
+  + `${DRAWER_SCROLL_ROOT} [class*="_settingsArea"] button[class*="_trigger"][aria-haspopup="menu"]{background:transparent !important}`
   + `${DRAWER_HEADER} > [data-remote-control-agents]{grid-column:1 / -1;grid-row:2;min-width:0}`
   + `${DRAWER_HEADER} > [class*="_regionArea"]{grid-column:1 / -1;grid-row:3;min-width:0;min-height:auto}`
   + `${DRAWER_HEADER} > [class*="_footArea"]{grid-column:1 / -1;grid-row:4}`
   + `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]{position:sticky;bottom:0;z-index:3;margin-top:auto;`
-  + 'padding:6px 0 max(32px,env(safe-area-inset-bottom));background:var(--dsw-specific-sidebar-fill);'
-  + 'box-shadow:var(--dsh-sidebar-inline-padding,12px) 0 0 var(--dsw-specific-sidebar-fill),'
-  + 'calc(-1 * var(--dsh-sidebar-inline-padding,12px)) 0 0 var(--dsw-specific-sidebar-fill)}'
+  + 'padding:6px 0 max(32px,env(safe-area-inset-bottom));background:transparent}'
   // Fade above the foot and cover the scrollport's safe-area padding below it without catching taps.
-  + `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]::before{content:"";position:absolute;top:-32px;`
-  + 'bottom:0;z-index:-1;'
+  + `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]::before{content:"";position:absolute;top:-16px;`
+  + 'bottom:0;z-index:-1;opacity:.9;'
   + 'left:calc(-1 * var(--dsh-sidebar-inline-padding,12px));right:calc(-1 * var(--dsh-sidebar-inline-padding,12px));'
-  + 'background:linear-gradient(to bottom,transparent,var(--dsw-specific-sidebar-fill) 32px);pointer-events:none}'
-  + `${DRAWER_SCROLL_ROOT} > [class*="_regionArea"]{flex:none;overflow:visible;padding-bottom:32px}`
+  + 'background:linear-gradient(to bottom,transparent,var(--dsw-specific-sidebar-fill) 16px);pointer-events:none}'
+  + `${DRAWER_SCROLL_ROOT} > [class*="_regionArea"]{flex:none;overflow:visible}`
   + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] :is([class*="_root"],[class*="_list"],[class*="_treeBody"])`
   + '{flex:none;overflow:visible;overflow-y:visible;scrollbar-gutter:auto}'
   + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] [class*="_fade"]{display:none}`
