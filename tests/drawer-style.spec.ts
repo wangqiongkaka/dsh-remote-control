@@ -142,17 +142,18 @@ it('separates the current session from a latched hover in the drawer', () => {
 })
 
 // WebKit treats a tap that first produces a hover-only layout change as the hover, so a row that
-// grows its action strip or drops its timestamp on that tap needs a second one to open.
-it('keeps session and search rows at their resting shape on a touch device', () => {
+// grows its action strip or drops its timestamp on that tap needs a second one to open. A Session
+// row instead always wears its hover shape on touch, its actions showing; search rows keep resting.
+it('always shows session row actions on a touch device, and keeps search rows at rest', () => {
   const dispose = applyDrawerSelection()
   const css = sheet()?.textContent ?? ''
-  expect(css).toContain('[class*="_rowActions"]{display:none !important}')
-  expect(css).toContain('[class*="_time"]{display:revert !important}')
-  expect(css).toContain('[class*="_pinIndicator"]{display:inline-flex !important}')
+  const touch = css.slice(css.indexOf('@media (hover: none){'))
+  expect(touch).toContain('[class*="_sessionRow"] [class*="_rowActions"]{display:inline-flex !important}')
+  expect(touch).toContain('[class*="_sessionRow"] [class*="_time"],[class*="_sessionRow"] [class*="_pinIndicator"]{display:none !important}')
+  expect(css).not.toContain('[class*="_sessionRow"]:hover:not([class*="_menuOpen"])')
+  expect(css).toContain('[class*="_searchResultRow"]:hover:not([class*="_menuOpen"]) [class*="_rowActions"]{display:none !important}')
   expect(css).toContain('[class*="_chevron"]{display:none !important}')
   expect(css).toContain('[class*="_folder"]{display:inline-flex !important}')
-  // An open row menu is the user's own state and keeps its revealed actions.
-  expect(css).toContain(':hover:not([class*="_menuOpen"])')
   // With the latched fill gone, the pressed fill is what answers the finger.
   expect(css).toContain('[class*="_sessionRow"]:active')
   expect(css).toContain('var(--dsw-alias-interactive-bg-active)')

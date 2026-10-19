@@ -1211,9 +1211,9 @@ it.each(['invalid JSON', 'invalid area', 'missing panel', 'blocked storage'])('h
   }
 })
 
-// A touch screen never shows a Session row's hover strip, so a long press is the phone's way to its
-// "…" menu (pin, rename, fork, archive), and the lift that ends it must not also open the row.
-it('opens a drawer Session row menu with a long press on the phone', () => {
+// The phone shows a Session row's action strip outright (see drawer-style), so a long press is no
+// longer a way to its "…" menu: it stays an ordinary press that neither opens a menu nor eats the lift.
+it('leaves a long press on a drawer Session row alone', () => {
   vi.useFakeTimers()
   const proxy = document.createElement('style')
   proxy.setAttribute('data-dsh-remote-control', '')
@@ -1245,33 +1245,9 @@ it('opens a drawer Session row menu with a long press on the phone', () => {
   try {
     apply(context(slots(), disposers))
     touch(title, 'touchstart')
-    vi.advanceTimersByTime(500)
-    expect(menus).toBe(1)
-    expect(touch(title, 'touchend').defaultPrevented).toBe(true)
-
-    // A tap stays a tap.
-    touch(title, 'touchstart')
-    vi.advanceTimersByTime(200)
+    vi.advanceTimersByTime(1000)
+    expect(menus).toBe(0)
     expect(touch(title, 'touchend').defaultPrevented).toBe(false)
-    vi.advanceTimersByTime(1000)
-    expect(menus).toBe(1)
-
-    // A scroll or swipe is not a press, and the strip's own buttons keep their taps.
-    touch(title, 'touchstart')
-    touch(title, 'touchmove', 100, 130)
-    vi.advanceTimersByTime(1000)
-    touch(frame.querySelector('[data-archive]')!, 'touchstart')
-    vi.advanceTimersByTime(1000)
-    expect(menus).toBe(1)
-
-    const menu = new Event('contextmenu', { bubbles: true, cancelable: true })
-    title.dispatchEvent(menu)
-    expect(menu.defaultPrevented).toBe(true)
-
-    for (const dispose of disposers.splice(0)) dispose()
-    touch(title, 'touchstart')
-    vi.advanceTimersByTime(1000)
-    expect(menus).toBe(1)
   } finally {
     for (const dispose of disposers) dispose()
     vi.useRealTimers()

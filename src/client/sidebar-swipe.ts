@@ -166,16 +166,13 @@ export function followLastPage(ctx: Context): () => void {
   }
 }
 
-const SESSION_ROW = '[class*="_sidebarCol"] [class*="_sessionRow"]'
 const HOLD = 500
 const HOLD_SLOP = 10
 
 /**
- * Long-press a drawer Session row to open its "…" menu (pin, rename, fork, archive). A touch screen
- * never shows the row's hover strip (see drawer-style), so this is the phone's way to those actions.
- * The row's trigger is the strip's first button; the lift that ends the press is kept from also
- * tapping the row open. Git history labels use the same hold to reveal the full commit details;
- * the rest of a history row keeps its own diff click and Git context menu.
+ * Long-press a Git history label to reveal the full commit details; the lift that ends the press is
+ * kept from also tapping the row, and the rest of a history row keeps its own diff click and Git
+ * context menu. (Session rows show their action strip outright on the phone, see drawer-style.)
  */
 export function followRowHolds(): () => void {
   let hold: { x: number; y: number; timer: ReturnType<typeof setTimeout> } | undefined
@@ -231,19 +228,15 @@ export function followRowHolds(): () => void {
     fired = false
     heldRow = undefined
     const touch = event.touches[0]
-    if (event.touches.length !== 1 || touch === undefined || !(event.target instanceof Element)
-      || event.target.closest('[class*="_rowActions"]')) return
-    const trigger = event.target.closest(SESSION_ROW)?.querySelector<HTMLButtonElement>('[class*="_rowActions"] button')
+    if (event.touches.length !== 1 || touch === undefined || !(event.target instanceof Element)) return
     const row = event.target.closest(GIT_HISTORY_REF)?.closest<HTMLElement>('[class*="_gitLogRow"]')
-    if (!trigger && !row) return
+    if (!row) return
     hold = { x: touch.clientX, y: touch.clientY, timer: setTimeout(() => {
       hold = undefined
-      if (!(row ?? trigger)?.isConnected) return
+      if (!row.isConnected) return
       fired = true
-      if (row) {
-        heldRow = row
-        showDetails(row)
-      } else trigger?.click()
+      heldRow = row
+      showDetails(row)
     }, HOLD) }
   }
   const onMove = (event: TouchEvent): void => {
@@ -271,7 +264,7 @@ export function followRowHolds(): () => void {
       fired = true
       heldRow = row
       showDetails(row)
-    } else if (event.target.closest(SESSION_ROW)) event.preventDefault()
+    }
   }
   const onClick = (event: Event): void => {
     if (event.target instanceof Node && heldRow?.contains(event.target)) {

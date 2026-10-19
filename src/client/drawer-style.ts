@@ -10,8 +10,10 @@
  * The same latch also costs a tap. A row changes shape on hover — it grows its trailing action
  * strip, drops the timestamp, swaps the folder icon for a chevron — and WebKit reads a tap that
  * first produces such a change as the hover, so opening a session took two taps. On a touch device
- * session and search rows therefore keep their resting shape. Project actions must instead stay
- * visible because they contain the button that creates a session in that project.
+ * a session row therefore always wears its hover shape — action strip shown, timestamp and pin
+ * marker gone — so a tap changes nothing and the strip needs no hover to reach; search rows keep
+ * their resting shape. Project actions stay visible because they hold the button that creates a
+ * session in that project.
  *
  * The drawer also groups the list into one outlined card per top-level Workspace, and at phone
  * width (where the proxy opens the drawer full screen) gives its rows touch-sized heights.
@@ -130,16 +132,16 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + '[class*="_sessionRow"]:hover:not([aria-selected="true"]),'
   + '[class*="_searchResultRow"]:hover:not([aria-selected="true"]),'
   + '[class*="_projectRow"]:hover{background:transparent !important}'
-  // No latched layout on session/search rows. Project actions include New Session, so keep them visible.
-  + '[class*="_sessionRow"]:hover:not([class*="_menuOpen"]) [class*="_rowActions"],'
+  // No latched layout: session rows always wear their hover shape, search rows their resting one.
+  // Project actions include New Session, so keep them visible.
+  + '[class*="_sessionRow"] [class*="_rowActions"]{display:inline-flex !important}'
+  + '[class*="_sessionRow"] [class*="_time"],[class*="_sessionRow"] [class*="_pinIndicator"]{display:none !important}'
   + '[class*="_searchResultRow"]:hover:not([class*="_menuOpen"]) [class*="_rowActions"]{display:none !important}'
   + '[class*="_projectRow"] [class*="_rowActions"]{display:inline-flex !important}'
-  + '[class*="_sessionRow"]:hover:not([class*="_menuOpen"]) [class*="_time"]{display:revert !important}'
-  + '[class*="_sessionRow"]:hover:not([class*="_menuOpen"]) [class*="_pinIndicator"]{display:inline-flex !important}'
   + '[class*="_projectRow"]:hover [class*="_chevron"]{display:none !important}'
   // Preserve the host's flex slot: worktree decorations paint a sized ::before inside it.
   + '[class*="_projectRow"]:hover [class*="_folder"]{display:inline-flex !important}'
-  // A long press opens a Session row's menu (see followRowHolds): no text selection or callout on it.
+  // A Session row is a tap target: no text selection or callout when a finger rests on it.
   + '[class*="_sessionRow"]{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}'
   // With the hover fill gone, the finger needs the answer while it is still down: the pressed fill
   // is what tells a thumb the tap landed, and it is the only feedback a phone row has left.
