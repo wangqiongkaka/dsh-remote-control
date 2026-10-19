@@ -1,6 +1,8 @@
 /**
  * The phone drawer's Agent card in New Session's seat, with selectable status tiles and inline
- * Session details, including recent completion history. A row opens its Session.
+ * Session details, including recent completion history. A row opens its Session; its trailing "…"
+ * button opens the sidebar row's actions (pin, rename, fork, archive, copy ID). The host's own row
+ * menu is a slot only its Workspace browser may render, so these call the same host operations.
  *
  * The sidebar shell declares no seat between New Session and its panel rows, so the card renders
  * through a portal into a host element placed right after that (phone-hidden, see drawer-style)
@@ -12,7 +14,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  relativeTime, StateDot, type StateDotState,
+  Button, IconArchiveOutlineRegular, IconBranchOutlineRegular, IconCopyOutlineRegular, IconEditOutlineRegular,
+  IconEllipsisOutlineRegular, IconPinFillRegular, IconPinOutlineRegular, Menu, Modal, relativeTime, StateDot, Toast,
+  writeClipboard, type MenuItem, type StateDotState,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
@@ -48,6 +52,12 @@ export interface AgentBoardInjected {
   openSession: (sessionId: SessionId) => void
   /** Each Session's harness (dsh, codex, claude-code…) and liveness; empty where harness-provider is absent. */
   harnesses: (sessionIds: SessionId[]) => Promise<Readonly<Record<string, HarnessMark>>>
+  pinSession: (sessionId: SessionId) => Promise<void>
+  unpinSession: (sessionId: SessionId) => Promise<void>
+  renameSession: (sessionId: SessionId, title: string) => Promise<void>
+  forkSession: (sessionId: SessionId) => Promise<unknown>
+  /** Rejects with the host's `WorkspaceArchiveError` while the Session still has work running. */
+  archiveSession: (sessionId: SessionId, options?: { stopActivity: true }) => Promise<void>
 }
 
 /** The harness-provider Remote call the board reads harnesses from. */
@@ -62,6 +72,20 @@ export type AgentBoardProps = PropsRuntime<'shell.overlay'> & PropsLocale<typeof
 type Translate = AgentBoardProps['t']
 
 const DOT: Record<AgentState, StateDotState> = { pending: 'warning', running: 'ongoing', done: 'done', resident: 'idle' }
+
+/** Row menu actions, in the host row menu's order. */
+type RowAction = 'pin' | 'unpin' | 'rename' | 'fork' | 'archive' | 'copyId'
+
+const ACTION_ICONS: Record<RowAction, React.JSX.Element> = {
+  pin: <IconPinOutlineRegular />, unpin: <IconPinFillRegular />, rename: <IconEditOutlineRegular />,
+  fork: <IconBranchOutlineRegular />, archive: <IconArchiveOutlineRegular size={14} />, copyId: <IconCopyOutlineRegular />,
+}
+
+/** Whether the host refused an archive because the Session still has work running (ui-workspace's own test). */
+function activeRefusal(reason: unknown): boolean {
+  return reason instanceof Error && reason.name === 'WorkspaceArchiveError'
+    && (reason as Error & { rpcError?: { code?: string } }).rpcError?.code === 'workspace/session-active'
+}
 
 /** Most Session ids one harness-provider `harnesses` call accepts. */
 const MARK_BATCH = 1000
@@ -81,9 +105,16 @@ const STYLE = ''
   + '.rc-agents-tile[data-state="done"]{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 14%,transparent) !important}'
   + '.rc-agents-tile span{display:flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap;color:var(--dsw-alias-label-secondary)}'
   + '.rc-agents-tile b{font-size:20px;font-weight:700;line-height:24px}'
-  + '.rc-agents-row{width:100%;height:48px;min-height:48px;border-radius:10px;padding:6px 8px !important;box-sizing:border-box;'
+  + '.rc-agents-item{height:48px;min-height:48px;border-radius:10px;display:flex;align-items:center}'
+  + '.rc-agents-item:has(.rc-agents-row:active){background:var(--dsw-alias-interactive-bg-active)}'
+  + '.rc-agents-row{flex:1;min-width:0;height:100%;padding:6px 0 6px 8px !important;box-sizing:border-box;'
   + 'display:flex;align-items:center;gap:10px}'
-  + '.rc-agents-row:active{background:var(--dsw-alias-interactive-bg-active) !important}'
+  + '.rc-agents-more{width:36px;height:40px;flex:none;display:flex !important;align-items:center;justify-content:center;'
+  + 'color:var(--dsw-alias-label-secondary) !important}'
+  + '.rc-agents-input{width:100%;box-sizing:border-box;height:40px;padding:0 12px;border-radius:10px;font:inherit;font-size:16px;'
+  + 'color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major,transparent);'
+  + 'border:0.5px solid var(--dsw-alias-border-l3);outline:none}'
+  + '.rc-agents-error{margin-top:8px;font-size:13px;color:var(--dsw-alias-state-error-primary)}'
   + '.rc-agents-lead{width:16px;flex:none;display:flex;justify-content:center}'
   + '.rc-agents-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}'
   + '.rc-agents-title{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}'
@@ -182,27 +213,112 @@ function stateLabel(row: AgentRow<SessionId>, t: Translate): string {
   return row.pending === undefined ? t(`agents.${row.state}`) : t(`agents.pending.${row.pending}`)
 }
 
-function Row({ row, harness, now, t, open }: {
-  row: AgentRow<SessionId>; harness: string | undefined; now: number; t: Translate; open: (id: SessionId) => void
+function Row({ row, harness, pinned, now, t, open, act }: {
+  row: AgentRow<SessionId>; harness: string | undefined; pinned: boolean; now: number; t: Translate
+  open: (id: SessionId) => void; act: (action: RowAction, row: AgentRow<SessionId>) => void
 }) {
+  const [menuOpen, setMenuOpen] = useState(false)
   const meta = [stateLabel(row, t), row.workspace].filter(Boolean).join(' · ')
+  const actions: RowAction[] = [pinned ? 'unpin' : 'pin', 'rename', 'fork', 'archive', 'copyId']
+  const items: MenuItem[] = actions.map(id => ({ id, icon: ACTION_ICONS[id], label: t(`agents.menu.${id}`) }))
   return (
-    <button
-      type="button"
-      className="rc-agents-row"
-      // harness-provider's sidebar mark sheet draws the logo into the first span, breathing while it runs.
-      data-hp-harness={harness}
-      data-hp-running={harness !== undefined && row.state === 'running' ? '' : undefined}
-      {...{ [DRAWER_PICK_ATTRIBUTE]: '' }}
-      onClick={() => { open(row.id) }}
+    <div className="rc-agents-item">
+      <button
+        type="button"
+        className="rc-agents-row"
+        // harness-provider's sidebar mark sheet draws the logo into the first span, breathing while it runs.
+        data-hp-harness={harness}
+        data-hp-running={harness !== undefined && row.state === 'running' ? '' : undefined}
+        {...{ [DRAWER_PICK_ATTRIBUTE]: '' }}
+        onClick={() => { open(row.id) }}
+      >
+        <span className="rc-agents-lead">{harness === undefined && <StateDot state={DOT[row.state]} />}</span>
+        <span className="rc-agents-text">
+          <span className="rc-agents-title">{row.title}</span>
+          <span className="rc-agents-meta" data-state={row.state}>{meta}</span>
+        </span>
+        <span className="rc-agents-time">{timeLabel(row.updatedAt, now, t)}</span>
+      </button>
+      <Menu
+        open={menuOpen}
+        onClose={() => { setMenuOpen(false) }}
+        portal
+        align="end"
+        items={items}
+        onSelect={(id) => { setMenuOpen(false); act(id as RowAction, row) }}
+        anchor={(
+          <button
+            type="button"
+            className="rc-agents-more"
+            aria-label={t('agents.menu.more', { title: row.title })}
+            onClick={() => { setMenuOpen(value => !value) }}
+          >
+            <IconEllipsisOutlineRegular />
+          </button>
+        )}
+      />
+    </div>
+  )
+}
+
+/** A rename or stop-and-archive request; `draft` is present for rename. */
+interface ActionDialog {
+  title: string
+  description?: string
+  draft?: string
+  confirm: string
+  run: (value: string) => Promise<void>
+}
+
+/** One request's dialog: the draft, in-flight and error state die with it. */
+function ActionDialogView({ dialog, t, close }: { dialog: ActionDialog; t: Translate; close: () => void }) {
+  const [draft, setDraft] = useState(dialog.draft ?? '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const composing = useRef(false)
+  const value = draft.trim()
+  const blocked = busy || (dialog.draft !== undefined && value === '')
+  const dismiss = (): void => { if (!busy) close() }
+  const confirm = (): void => {
+    if (blocked) return
+    setBusy(true)
+    setError(null)
+    dialog.run(value).then(close, (reason: unknown) => {
+      setBusy(false)
+      setError(reason instanceof Error ? reason.message : String(reason))
+    })
+  }
+  return (
+    <Modal
+      open
+      onClose={dismiss}
+      closeLabel={t('close')}
+      title={dialog.title}
+      {...(dialog.description === undefined ? {} : { description: dialog.description })}
+      footer={(
+        <>
+          <Button variant="outline" disabled={busy} onClick={dismiss}>{t('agents.dialog.cancel')}</Button>
+          <Button variant="primary" disabled={blocked} onClick={confirm}>{dialog.confirm}</Button>
+        </>
+      )}
     >
-      <span className="rc-agents-lead">{harness === undefined && <StateDot state={DOT[row.state]} />}</span>
-      <span className="rc-agents-text">
-        <span className="rc-agents-title">{row.title}</span>
-        <span className="rc-agents-meta" data-state={row.state}>{meta}</span>
-      </span>
-      <span className="rc-agents-time">{timeLabel(row.updatedAt, now, t)}</span>
-    </button>
+      {dialog.draft !== undefined && (
+        <input
+          className="rc-agents-input"
+          value={draft}
+          aria-label={t('agents.rename.field')}
+          data-modal-autofocus
+          disabled={busy}
+          onChange={(event) => { setDraft(event.target.value); setError(null) }}
+          onCompositionStart={() => { composing.current = true }}
+          onCompositionEnd={() => { composing.current = false }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !composing.current) { event.preventDefault(); confirm() }
+          }}
+        />
+      )}
+      {error !== null && <div className="rc-agents-error" role="alert">{error}</div>}
+    </Modal>
   )
 }
 
@@ -263,7 +379,37 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
   const marks = useMarks(candidates, props.harnesses)
   const resident = useMemo(() => residentRows(list, statuses, marks), [list, statuses, marks])
   const [filter, setFilter] = useState<AgentState>('running')
+  const [dialog, setDialog] = useState<ActionDialog | null>(null)
+  const [toast, setToast] = useState<{ text: string; seq: number } | null>(null)
   if (host === null) return null
+
+  const pinned = new Set<string>(workspaces.pinnedSessionIds)
+  const say = (key: Parameters<Translate>[0]): void => {
+    setToast(previous => ({ text: t(key), seq: (previous?.seq ?? 0) + 1 }))
+  }
+  const failed = (): void => { say('agents.toast.failed') }
+  const act = (action: RowAction, row: AgentRow<SessionId>): void => {
+    switch (action) {
+      case 'pin': props.pinSession(row.id).catch(failed); break
+      case 'unpin': props.unpinSession(row.id).catch(failed); break
+      case 'fork': props.forkSession(row.id).then(() => { say('agents.toast.forked') }, failed); break
+      case 'copyId':
+        void writeClipboard(row.id).then((copied) => { say(copied ? 'agents.toast.copied' : 'agents.toast.copyFailed') })
+        break
+      case 'rename':
+        setDialog({ title: t('agents.rename.title'), draft: row.title, confirm: t('agents.rename.confirm'),
+          run: title => props.renameSession(row.id, title) })
+        break
+      case 'archive':
+        props.archiveSession(row.id).then(() => { say('agents.toast.archived') }, (reason: unknown) => {
+          if (!activeRefusal(reason)) { failed(); return }
+          setDialog({ title: t('agents.archive.title'), description: t('agents.archive.desc', { title: row.title }),
+            confirm: t('agents.archive.confirm'),
+            run: () => props.archiveSession(row.id, { stopActivity: true }).then(() => { say('agents.toast.archived') }) })
+        })
+        break
+    }
+  }
 
   const all = [...rows, ...resident]
   const counts = { pending: 0, running: 0, done: 0, resident: 0 }
@@ -287,17 +433,19 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
           {shown.length > 0 && (
             <section className="rc-agents-group">
               <h3><StateDot state={DOT[filter]} size={filter === 'running' ? 12 : 10} />{t(`agents.${filter}`)}</h3>
-              <div>{shown.map(row => <Row key={row.id} row={row} harness={marks.get(row.id)?.harness} now={now} t={t} open={openSession} />)}</div>
+              <div>{shown.map(row => <Row key={row.id} row={row} harness={marks.get(row.id)?.harness} pinned={pinned.has(row.id)} now={now} t={t} open={openSession} act={act} />)}</div>
             </section>
           )}
           {showHistory && (
             <section className="rc-agents-group rc-agents-history">
               <h3><StateDot state="done" size={10} />{t('agents.history')}</h3>
-              <div>{completed.map(row => <Row key={row.id} row={row} harness={marks.get(row.id)?.harness} now={now} t={t} open={openSession} />)}</div>
+              <div>{completed.map(row => <Row key={row.id} row={row} harness={marks.get(row.id)?.harness} pinned={pinned.has(row.id)} now={now} t={t} open={openSession} act={act} />)}</div>
             </section>
           )}
         </div>
       </section>
+      {dialog !== null && <ActionDialogView dialog={dialog} t={t} close={() => { setDialog(null) }} />}
+      {toast !== null && <Toast key={toast.seq} text={toast.text} onDone={() => { setToast(null) }} />}
     </>,
     host,
   )

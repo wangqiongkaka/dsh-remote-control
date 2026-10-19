@@ -1,10 +1,23 @@
 // @vitest-environment jsdom
-import { createElement } from 'react'
+import { createElement, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { AGENTS_ATTRIBUTE, AgentBoard } from '../dist/client/AgentBoard.js'
 
+// The host's hook-based primitives resolve to the host checkout's own React; stand-ins keep their contracts.
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', async importOriginal => ({
+  ...await importOriginal<object>(),
+  Menu: ({ open, anchor, items, onSelect }: {
+    open: boolean; anchor: ReactNode; items: { id: string; label: string }[]; onSelect(id: string): void
+  }) => createElement('span', null, anchor, open && createElement('div', { role: 'menu' },
+    items.map(item => createElement('button', { key: item.id, role: 'menuitem', onClick: () => { onSelect(item.id) } }, item.label)))),
+  Modal: ({ children, title, description, footer }: { children: ReactNode; title: string; description?: string; footer: ReactNode }) =>
+    createElement('div', { role: 'dialog', 'aria-label': title }, createElement('h2', null, title),
+      description && createElement('p', null, description), children, footer),
+  Button: (props: object) => createElement('button', props),
+  Toast: ({ text }: { text: string }) => createElement('div', { role: 'alert' }, text),
+}))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 const list = {
@@ -25,12 +38,14 @@ const statuses = new Map<string, {
   ['ask', { running: undefined, pendingInteraction: { kind: 'approval' }, completionUnread: false }],
   ['done', { running: false, pendingInteraction: undefined, completionUnread: true }],
 ])
-const workspaces = { phase: 'ready' as 'pending' | 'ready', archivedSessionIds: [] as string[] }
+const workspaces = { phase: 'ready' as 'pending' | 'ready', archivedSessionIds: [] as string[], pinnedSessionIds: [] as string[] }
 
 let root: Root
 let mount: HTMLElement
 let opened: string[]
 let asked: string[][]
+let calls: unknown[][]
+let fail: Partial<Record<string, unknown>>
 let proxy: HTMLStyleElement
 
 /** The shell's sidebar column, with New Session between the logo row and the panel list. */
@@ -66,6 +81,12 @@ function render(
       openSession: (id: string) => {
         opened.push(id)
       },
+      ...Object.fromEntries(['pinSession', 'unpinSession', 'renameSession', 'forkSession', 'archiveSession'].map(name =>
+        [name, async (...args: unknown[]) => {
+          calls.push([name, ...args])
+          const reason = fail[name]
+          if (reason !== undefined) { delete fail[name]; throw reason }
+        }])),
       harnesses: async (ids: string[]) => {
         asked.push(ids)
         return Object.fromEntries(ids.flatMap(id => marks[id] ? [[id, { running: false, ...marks[id] }]] : []))
@@ -92,6 +113,8 @@ beforeEach(() => {
   setNarrow(true)
   opened = []
   asked = []
+  calls = []
+  fail = {}
   mount = document.createElement('div')
   document.body.append(mount)
   root = createRoot(mount)
@@ -306,7 +329,7 @@ it.each(['pending', 'running', 'done'] as const)('keeps more than five %s rows i
   expect(getComputedStyle(scroller).maxHeight).toBe('248px')
   expect(getComputedStyle(scroller).overflowY).toBe('auto')
   expect(getComputedStyle(scroller.firstElementChild!).height).toBe('48px')
-  click(scroller.lastElementChild)
+  click(scroller.lastElementChild?.querySelector('[data-remote-control-pick]'))
   expect(opened).toEqual(['session0'])
 })
 
@@ -323,7 +346,7 @@ it('restores and opens saved history beyond the first five rows', async () => {
   const scroller = host()!.querySelector('.rc-agents-history > div')!
   expect(scroller.querySelectorAll('.rc-agents-row')).toHaveLength(7)
   expect(JSON.parse(localStorage.getItem('dsh-remote-control.agent-history.v1') ?? '[]')).toEqual(entries)
-  click(scroller.lastElementChild)
+  click(scroller.lastElementChild?.querySelector('[data-remote-control-pick]'))
   expect(opened).toEqual(['session6'])
 })
 
@@ -447,4 +470,124 @@ it('asks harness marks in batches the Remote call accepts', async () => {
   render(sessions, {}, new Map())
   await act(async () => { await Promise.resolve() })
   expect(asked.map(batch => batch.length)).toEqual([1000, 1])
+})
+
+function openMenu(title: string): void {
+  const item = [...host()!.querySelectorAll('.rc-agents-item')]
+    .find(element => element.querySelector('.rc-agents-title')?.textContent === title)
+  click(item?.querySelector('.rc-agents-more'))
+}
+
+function menuLabels(): string[] {
+  return [...document.querySelectorAll('[role="menuitem"]')].map(item => item.textContent?.trim() ?? '')
+}
+
+function pickMenu(label: string): void {
+  click([...document.querySelectorAll('[role="menuitem"]')].find(item => item.textContent?.trim() === label))
+}
+
+function dialogButton(label: string): HTMLElement | undefined {
+  return [...document.querySelectorAll<HTMLElement>('[role="dialog"] button')].find(button => button.textContent === label)
+}
+
+async function settle(): Promise<void> {
+  await act(async () => { await Promise.resolve() })
+}
+
+it('opens a row menu from its trailing button without opening the Session, then pins or unpins it', () => {
+  column()
+  render()
+  openMenu('运行中')
+  expect(opened).toEqual([])
+  expect(host()?.querySelector('.rc-agents-more')?.hasAttribute('data-remote-control-pick')).toBe(false)
+  expect(menuLabels()).toEqual([
+    'agents.menu.pin', 'agents.menu.rename', 'agents.menu.fork', 'agents.menu.archive', 'agents.menu.copyId',
+  ])
+  pickMenu('agents.menu.pin')
+  expect(calls).toEqual([['pinSession', 'run']])
+  expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(0)
+
+  render(list, {}, statuses, { ...workspaces, pinnedSessionIds: ['run'] })
+  openMenu('运行中')
+  expect(menuLabels()[0]).toBe('agents.menu.unpin')
+  pickMenu('agents.menu.unpin')
+  expect(calls.at(-1)).toEqual(['unpinSession', 'run'])
+})
+
+it('renames a Session from a dialog seeded with its title, keeping the dialog on failure', async () => {
+  column()
+  render()
+  openMenu('运行中')
+  pickMenu('agents.menu.rename')
+  const input = document.querySelector<HTMLInputElement>('[role="dialog"] input')!
+  expect(input.value).toBe('运行中')
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, '  新标题 ')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  fail.renameSession = new Error('host down')
+  click(dialogButton('agents.rename.confirm'))
+  await settle()
+  expect(calls).toEqual([['renameSession', 'run', '新标题']])
+  expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toBe('host down')
+  click(dialogButton('agents.rename.confirm'))
+  await settle()
+  expect(calls).toHaveLength(2)
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
+})
+
+it('archives a quiet Session directly and asks before stopping a running one', async () => {
+  column()
+  render()
+  click(host()?.querySelector('.rc-agents-tile[data-state="done"]'))
+  openMenu('完成了')
+  pickMenu('agents.menu.archive')
+  await settle()
+  expect(calls).toEqual([['archiveSession', 'done']])
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
+  expect(document.body.textContent).toContain('agents.toast.archived')
+
+  click(host()?.querySelector('.rc-agents-tile[data-state="running"]'))
+  fail.archiveSession = Object.assign(new Error('active'), {
+    name: 'WorkspaceArchiveError', rpcError: { code: 'workspace/session-active', details: { activity: [{ kind: 'turn' }] } },
+  })
+  openMenu('运行中')
+  pickMenu('agents.menu.archive')
+  await settle()
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain('agents.archive.title')
+  click(dialogButton('agents.archive.confirm'))
+  await settle()
+  expect(calls.at(-1)).toEqual(['archiveSession', 'run', { stopActivity: true }])
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
+})
+
+it('forks a Session and reports a failed fork', async () => {
+  column()
+  render()
+  openMenu('运行中')
+  pickMenu('agents.menu.fork')
+  await settle()
+  expect(calls).toEqual([['forkSession', 'run']])
+  expect(document.body.textContent).toContain('agents.toast.forked')
+  fail.forkSession = new Error('migration required')
+  openMenu('运行中')
+  pickMenu('agents.menu.fork')
+  await settle()
+  expect(document.body.textContent).toContain('agents.toast.failed')
+})
+
+it('copies the Session ID', async () => {
+  const writeText = vi.fn(async () => {})
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+  try {
+    column()
+    render()
+    openMenu('运行中')
+    pickMenu('agents.menu.copyId')
+    await settle()
+    expect(writeText).toHaveBeenCalledWith('run')
+    expect(document.body.textContent).toContain('agents.toast.copied')
+  } finally {
+    Reflect.deleteProperty(navigator, 'clipboard')
+  }
 })
