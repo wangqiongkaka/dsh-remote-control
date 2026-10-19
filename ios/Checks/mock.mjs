@@ -9,7 +9,9 @@ createServer((req, res) => {
   const url = new URL(req.url, 'http://x')
   const paired = /dsh-remote-control=t/.test(req.headers.cookie ?? '')
   console.log(req.method, req.headers.host, req.url, paired ? 'cookie' : 'no-cookie')
-  if (url.pathname === '/startup-retry' && !/startup-retry=t/.test(req.headers.cookie ?? '')) {
+  if (url.pathname === '/server-error') {
+    res.writeHead(502).end()
+  } else if (url.pathname === '/startup-retry' && !/startup-retry=t/.test(req.headers.cookie ?? '')) {
     res.writeHead(502, { 'set-cookie': 'startup-retry=t; Path=/' }).end()
   } else if (url.pathname === '/flaky' && flaky++ === 0) {
     // What the server's reverse proxy sends while DSH or its tunnel is down: an empty 502.

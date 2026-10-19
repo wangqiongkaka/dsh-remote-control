@@ -34,9 +34,33 @@ final class LaunchCheck: UIResponder, UIApplicationDelegate {
     timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [self] _ in
       let elapsed = Date().timeIntervalSince(started)
       precondition(elapsed < 12, "启动动画未能结束")
-      let retry = controller.view.subviews.compactMap { $0 as? UIStackView }.first?
-        .arrangedSubviews.compactMap { $0 as? UIStackView }.flatMap { $0.arrangedSubviews }
-        .compactMap { $0 as? UIButton }.first { $0.currentTitle == "重试" }
+      let retry = button(in: controller.view, title: "重试")
+      if mode == "server", let retry {
+        precondition(splash!.isHidden, "错误页被启动动画遮挡")
+        let failure = controller.view.subviews.first { $0.accessibilityIdentifier == "connection-failure" }
+        precondition(failure != nil && !failure!.isHidden, "HTTP 502 未显示完整连接失败页")
+        let detail = descendant(in: failure!, identifier: "connection-detail") as? UILabel
+        precondition(detail?.text == "HTTP 502", "错误页未显示真实 HTTP 状态")
+        let paste = button(in: failure!, title: "粘贴链接")!
+        let main = retry.convert(retry.bounds, to: controller.view)
+        let secondary = paste.convert(paste.bounds, to: controller.view)
+        precondition(main.maxY < secondary.minY, "重试主按钮必须位于配对操作上方")
+        precondition(main.height >= 52 && secondary.height >= 44, "错误页按钮触摸区过小")
+        precondition(main.width >= secondary.width, "重试主按钮宽度不正确")
+        if !retried {
+          retried = true
+          retry.sendActions(for: .primaryActionTriggered)
+          precondition(!splash!.isHidden, "HTTP 错误重试未显示加载动画")
+          return
+        }
+        guard !web.isLoading else { return }
+        precondition(web.url?.path == "/server-error", "重试未重复原失败地址")
+        paste.sendActions(for: .primaryActionTriggered)
+        precondition((controller.presentedViewController as? UIAlertController)?.textFields?.count == 1,
+                     "粘贴链接未打开原配对输入框")
+        complete(mode)
+        return
+      }
       if mode == "offline", let retry, !retry.superview!.superview!.isHidden {
         precondition(splash!.isHidden, "连接失败提示被启动动画遮挡")
         complete(mode)
@@ -78,5 +102,16 @@ final class LaunchCheck: UIResponder, UIApplicationDelegate {
   private func image(in view: UIView) -> UIImageView? {
     if let image = view as? UIImageView { return image }
     return view.subviews.lazy.compactMap { self.image(in: $0) }.first
+  }
+
+  private func button(in view: UIView, title: String) -> UIButton? {
+    if view.isHidden { return nil }
+    if let button = view as? UIButton, (button.configuration?.title ?? button.currentTitle) == title { return button }
+    return view.subviews.lazy.compactMap { self.button(in: $0, title: title) }.first
+  }
+
+  private func descendant(in view: UIView, identifier: String) -> UIView? {
+    if view.accessibilityIdentifier == identifier { return view }
+    return view.subviews.lazy.compactMap { self.descendant(in: $0, identifier: identifier) }.first
   }
 }

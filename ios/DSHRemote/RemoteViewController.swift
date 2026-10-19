@@ -33,6 +33,10 @@ final class RemoteViewController: UIViewController {
   private let startup = StartupView()
   private let notice = UILabel()
   private let actions = UIStackView()
+  private lazy var failure = ConnectionFailureView(
+    retry: UIAction { [weak self] _ in self?.retry() },
+    scan: DataScannerViewController.isSupported ? UIAction { [weak self] _ in self?.scan() } : nil,
+    paste: UIAction { [weak self] _ in self?.paste() })
   private var downloads: [WKDownload: URL] = [:]
   /// The page that failed, so 重试 repeats it (an unused pairing link included) rather than going home.
   private var failed: URL?
@@ -88,6 +92,9 @@ final class RemoteViewController: UIViewController {
       panel.trailingAnchor.constraint(equalTo: guide.trailingAnchor, constant: -16),
       panel.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -16),
     ])
+    failure.frame = view.bounds
+    failure.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    view.addSubview(failure)
 
     if origin == nil {
       showPanel("在电脑的 DSH 里点击左侧栏底部的手机图标，扫描二维码完成配对。\n配对后，之前配对的手机浏览器会断开。")
@@ -99,6 +106,7 @@ final class RemoteViewController: UIViewController {
   private func open() {
     guard let origin else { return }
     panel.isHidden = true
+    failure.isHidden = true
     startup.start()
     webView.load(URLRequest(url: origin))
   }
@@ -123,6 +131,7 @@ final class RemoteViewController: UIViewController {
     guard let url = failed ?? origin else { return }
     failed = nil
     panel.isHidden = true
+    failure.isHidden = true
     startup.start()
     webView.load(URLRequest(url: url))
   }
@@ -135,6 +144,7 @@ final class RemoteViewController: UIViewController {
     }
     self.origin = origin
     panel.isHidden = true
+    failure.isHidden = true
     startup.start()
     webView.load(URLRequest(url: url))
   }
@@ -142,10 +152,15 @@ final class RemoteViewController: UIViewController {
   /// The way back to pairing; `message` is nil when the page already explains what happened.
   private func showPanel(_ message: String?, retry: Bool = false) {
     startup.finish(animated: false)
+    if retry {
+      panel.isHidden = true
+      failure.show(message ?? "连接失败")
+      return
+    }
+    failure.isHidden = true
     notice.text = message
     notice.isHidden = message == nil
     actions.arrangedSubviews.forEach { $0.removeFromSuperview() }
-    if retry { actions.addArrangedSubview(button("重试") { [weak self] in self?.retry() }) }
     if DataScannerViewController.isSupported {
       actions.addArrangedSubview(button("扫码配对") { [weak self] in self?.scan() })
     }
@@ -237,9 +252,10 @@ extension RemoteViewController: WKNavigationDelegate {
       } else if status >= 500 {
         // The server's reverse proxy answers with an empty page while DSH or its tunnel is down.
         failed = response.response.url
-        showPanel("电脑上的 DSH 没有响应（HTTP \(status)）。请确认 DSH 正在运行、远程控制已开启。", retry: true)
+        showPanel("HTTP \(status)", retry: true)
       } else {
         panel.isHidden = true
+        failure.isHidden = true
       }
     }
     decisionHandler(response.canShowMIMEType ? .allow : .download)
@@ -271,7 +287,7 @@ extension RemoteViewController: WKNavigationDelegate {
       return
     }
     failed = error.userInfo[NSURLErrorFailingURLErrorKey] as? URL
-    showPanel("无法连接电脑上的 DSH：\(error.localizedDescription)\n请确认电脑在线并已开启远程控制。", retry: true)
+    showPanel(error.localizedDescription, retry: true)
   }
 
   func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {

@@ -12,18 +12,19 @@ xcrun --sdk iphonesimulator swiftc -parse-as-library \
   -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
   -target "$(uname -m)-apple-ios17.0-simulator" \
   ios/DSHRemote/RemoteViewController.swift ios/DSHRemote/PairingLink.swift \
-  ios/DSHRemote/StartupView.swift ios/Checks/Launch.swift -o "$app/LaunchCheck"
+  ios/DSHRemote/StartupView.swift ios/DSHRemote/ConnectionFailureView.swift ios/Checks/Launch.swift -o "$app/LaunchCheck"
 cp "$product/Assets.car" "$app/Assets.car"
 cat > "$app/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>io.github.wangqiong.dsh-launch-check</string><key>CFBundleExecutable</key><string>LaunchCheck</string><key>CFBundlePackageType</key><string>APPL</string><key>UILaunchScreen</key><dict/></dict></plist>
 PLIST
-for mode in slow fast script retry refused offline unpaired; do
+for mode in ${3:-slow fast script retry refused offline unpaired server}; do
   xcrun simctl uninstall "$device" "$bundle" >/dev/null 2>&1 || true
   xcrun simctl install "$device" "$app"
   case "$mode" in
     slow) path='/startup?pair=ok';;
     script) path='/startup-script?pair=ok';;
     retry) path='/startup-retry?pair=ok';;
+    server) path='/server-error';;
     refused) path='/';;
     *) path='/?pair=ok';;
   esac

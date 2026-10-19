@@ -1,7 +1,7 @@
 import UIKit
 import WebKit
 
-// Simulator-only check app; compile with RemoteViewController.swift and PairingLink.swift.
+// Simulator-only check app; compile with the production controller and its views.
 @main
 final class KeyboardCheck: UIResponder, UIApplicationDelegate {
   var window: UIWindow?
