@@ -107,7 +107,8 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + 'width:100%;min-height:44px;box-sizing:border-box;margin:0}'
   // Touch hover can latch after the account menu opens.
   + `${DRAWER_SCROLL_ROOT} [class*="_settingsArea"] button[class*="_trigger"][aria-haspopup="menu"]{background:transparent !important}`
-  + `${DRAWER_HEADER} > [data-remote-control-agents]{grid-column:1 / -1;grid-row:2;min-width:0}`
+  // harness-provider's Agent card takes the seat New Session leaves.
+  + `${DRAWER_HEADER} > [data-hp-agents]{grid-column:1 / -1;grid-row:2;min-width:0}`
   + `${DRAWER_HEADER} > [class*="_regionArea"]{grid-column:1 / -1;grid-row:3;min-width:0;min-height:auto}`
   + `${DRAWER_HEADER} > [class*="_footArea"]{grid-column:1 / -1;grid-row:4}`
   + `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]{position:sticky;bottom:0;z-index:3;margin-top:auto;`
@@ -121,7 +122,7 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] :is([class*="_root"],[class*="_list"],[class*="_treeBody"])`
   + '{flex:none;overflow:visible;overflow-y:visible;scrollbar-gutter:auto}'
   + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] [class*="_fade"]{display:none}`
-  + `${DRAWER_SCROLL_ROOT} .rc-agents-list{max-height:none;overflow:visible}`
+  + `${DRAWER_SCROLL_ROOT} .hp-agents-list{max-height:none;overflow:visible}`
   + `${TASKS}{white-space:nowrap}`
   + `${TASKS} :is(h1,h2,h3,button,[class*="_rowSummary"],[class*="_metadata"],[class*="_nextRun"] p){white-space:nowrap}`
   + `${TASKS} :is([class*="_pageHeading"],[class*="_rowSummary"],[class*="_readonlyName"],[class*="_nextRun"] p,[class*="_empty"]){overflow-x:auto}`
@@ -155,6 +156,14 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${CARD}{padding:4px;border-radius:16px;box-shadow:inset 0 0 0 0.5px var(--dsw-alias-border-l3)}`
   + `${CARD} + [class*="_groupSection"]{margin-top:8px !important}`
   + `${CARD} > [class*="_projectRow"] [class*="_title"]{font-weight:600}`
+  // dsh-git-sidebar folds Worktree sections under their main checkout; an unfolded main checkout and its
+  // Worktrees share one card, closing the 4px gap of that plugin's Worktree list.
+  + '[data-git-worktree-open],[data-git-worktree-child]{box-shadow:none !important;'
+  + 'border:.5px solid var(--dsw-alias-border-l3);border-bottom:0;box-sizing:border-box}'
+  + '[data-git-worktree-open]{border-radius:16px 16px 0 0 !important}'
+  // As specific as the card gap above, so they win over it by coming later.
+  + `${CARD}[data-git-worktree-child]{margin-top:-4px !important;border-top:0;border-radius:0 !important}`
+  + `${CARD}[data-git-worktree-last]{border-bottom:.5px solid var(--dsw-alias-border-l3);border-radius:0 0 16px 16px !important}`
   // At phone width the drawer is the whole screen: rows grow to thumb size, and so does the logo
   // row's collapse control, which is the drawer's only way back there.
   + '@media (max-width: 1023px){' + PHONE_SAFE_AREA_STYLE + '}'

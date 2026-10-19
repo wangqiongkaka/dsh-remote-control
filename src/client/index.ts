@@ -10,7 +10,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { RemoteControlAction, type RemoteControlInjected } from './RemoteControlAction.tsx'
 import { NARROW, SidebarToggle, proxiedFrame, type SidebarToggleInjected } from './SidebarToggle.tsx'
 import { SidebarDismiss, drawerOpen } from './SidebarDismiss.tsx'
-import { AgentBoard, type AgentBoardInjected, type HarnessRemote } from './AgentBoard.tsx'
 import { followKeyboard } from './keyboard.ts'
 import { applyDrawerSelection } from './drawer-style.ts'
 import { compactChatDefaults } from './chat-defaults.ts'
@@ -21,7 +20,6 @@ import { registerComputerDirectories, registerComputerFiles } from './ComputerFi
 import { registerClearProgress } from './ClearProgress.tsx'
 import { registerFileLineLinks } from './file-line-links.ts'
 import { registerSessionLoading } from './session-loading.ts'
-import { registerWorktreeGroups } from './worktree-groups.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -34,14 +32,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 export const inject = ['slots', 'locale', 'layout']
-
-/** The Session Controller call ui-workspace's rename dialog makes. */
-interface RenamingSessions {
-  using: (sessionId: string, options: { source: 'workspaceOperation' },
-    operation: (reference: { binding: { session: { rename: (title: string) => Promise<RenameResult> } } }) => Promise<RenameResult>,
-  ) => Promise<RenameResult>
-}
-type RenameResult = { ok: true } | { ok: false; error: { message: string } }
 
 async function command(action: 'start' | 'stop' | 'refresh', workspaceId?: string): Promise<object> {
   const response = await fetch('/api/remote-control', {
@@ -57,7 +47,6 @@ async function command(action: 'start' | 'stop' | 'refresh', workspaceId?: strin
 
 export function apply(ctx: Context): void {
   registerSessionLoading(ctx)
-  registerWorktreeGroups(ctx)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'remote-control: dictionaries')
   registerComputerFiles(ctx)
   registerComputerDirectories(ctx)
@@ -186,44 +175,6 @@ export function apply(ctx: Context): void {
       toggleSidebar: () => { ctx.layout.toggleSidebar() },
     }),
   }, SidebarToggle))
-  const workspace = (): UiWorkspace => {
-    const service = ctx.get('uiWorkspace') as UiWorkspace | undefined
-    if (service === undefined) throw new Error('uiWorkspace is not mounted')
-    return service
-  }
-  // The sidebar's Agent card and inline details, right after New Session (every frame).
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
-    id: 'remote-control.agents',
-    locale: NS,
-    inject: (): AgentBoardInjected => ({
-      openSession: (sessionId) => {
-        (ctx.get('uiWorkspace') as UiWorkspace | undefined)?.openSession(sessionId)
-      },
-      // The host row menu's own operations (ui-workspace), reached through its services.
-      pinSession: sessionId => workspace().pinSession(sessionId),
-      unpinSession: sessionId => workspace().unpinSession(sessionId),
-      archiveSession: (sessionId, options) => workspace().archiveSession(sessionId, options),
-      forkSession: sessionId => workspace().forkSession(sessionId),
-      renameSession: async (sessionId, title) => {
-        const sessions = ctx.get('sessions') as RenamingSessions | undefined
-        if (sessions === undefined) throw new Error('sessions is not mounted')
-        const result = await sessions.using(sessionId, { source: 'workspaceOperation' },
-          reference => reference.binding.session.rename(title))
-        if (!result.ok) throw new Error(result.error.message)
-      },
-      harnesses: async (sessionIds) => {
-        // harness-provider's Remote namespace. Declaring it in `inject` would hold this whole plugin
-        // back without that plugin, and cordis refuses `ctx.remote.harness` undeclared, so read it
-        // through `ctx.get`. Until it answers the board keeps its status dots and asks again later.
-        const remote = ctx.get('remote.harness') as HarnessRemote | undefined
-        if (remote === undefined) throw new Error('harness-provider is not mounted')
-        const result = await remote.harnesses({ sessionIds })
-        if (!result.ok) throw new Error(result.error.message)
-        return result.value
-      },
-    }),
-  }, AgentBoard))
   // The drawer's dismissal layer: session picks and the blank scrim beside the
   // drawer both fold it back onto the Conversation (proxy narrow frames only).
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({

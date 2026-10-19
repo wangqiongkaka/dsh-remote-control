@@ -172,6 +172,23 @@ it('draws each top-level workspace section as an outlined card', () => {
   dispose()
 })
 
+// dsh-git-sidebar marks an unfolded main checkout and its Worktree sections; on the phone they read as one card.
+it('joins an unfolded main checkout and its Worktrees into one outlined card', () => {
+  const dispose = applyDrawerSelection()
+  const css = sheet()?.textContent ?? ''
+  expect(css).toContain('[data-git-worktree-open],[data-git-worktree-child]{box-shadow:none !important;'
+    + 'border:.5px solid var(--dsw-alias-border-l3);border-bottom:0;box-sizing:border-box}')
+  expect(css).toContain('[data-git-worktree-open]{border-radius:16px 16px 0 0 !important}')
+  // Closes dsh-git-sidebar's 4px gap between the sections of one card, outranking the 8px card gap by order.
+  const card = '[class*="_sidebarCol"] [role="tree"] > [class*="_groupSection"]'
+  const gap = css.indexOf(`${card} + [class*="_groupSection"]{margin-top:8px !important}`)
+  const joined = css.indexOf(`${card}[data-git-worktree-child]{margin-top:-4px !important;border-top:0;border-radius:0 !important}`)
+  expect(gap).toBeGreaterThan(-1)
+  expect(joined).toBeGreaterThan(gap)
+  expect(css).toContain(`${card}[data-git-worktree-last]{border-bottom:.5px solid var(--dsw-alias-border-l3);border-radius:0 0 16px 16px !important}`)
+  dispose()
+})
+
 // The full-screen phone drawer gives every row a thumb-sized target, the only way back included.
 it('raises the drawer rows to touch height at phone width', () => {
   const dispose = applyDrawerSelection()
@@ -272,7 +289,7 @@ it('scrolls the whole drawer while the brand and settings stay pinned', () => {
   frame.className = 'ui_layout__frame__h1'
   frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
     + '<div class="ui_sidebar__logoRow__h1">品牌</div>'
-    + '<div data-remote-control-agents><div class="rc-agents-list">Agent</div></div>'
+    + '<div data-hp-agents><div class="hp-agents-list">Agent</div></div>'
     + '<div class="ui_sidebar__regionArea__h1"><div class="ui_workspace__root__h1">'
     + '<div class="ui_workspace__listArea__h1"><div class="ui_workspace__treeBody__h1">'
     + '<div class="ui_workspace__list__h1" role="tree">项目</div></div></div></div></div>'
@@ -298,8 +315,8 @@ it('scrolls the whole drawer while the brand and settings stay pinned', () => {
     )
     expect(style('.ui_sidebar__regionArea__h1').overflow).toBe('visible')
     expect(style('.ui_workspace__list__h1').overflowY).toBe('visible')
-    expect(style('.rc-agents-list').overflow).toBe('visible')
-    expect(style('.rc-agents-list').maxHeight).toBe('none')
+    expect(style('.hp-agents-list').overflow).toBe('visible')
+    expect(style('.hp-agents-list').maxHeight).toBe('none')
   } finally { dispose(); frame.remove() }
 })
 
@@ -315,7 +332,7 @@ it('pins settings at the bottom and preserves the header button sizes and spacin
   frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
     + '<div class="ui_sidebar__logoRow__h1"><button class="ui_sidebar__brand__h1">品牌</button>'
     + '<button class="ui_sidebar__iconButton__h1 ui_sidebar__toggle__h1" aria-label="收起侧边栏"><svg width="16" height="16"></svg></button></div>'
-    + '<button class="ui_sidebar__newSession__h1">新会话</button><div data-remote-control-agents>Agent</div>'
+    + '<button class="ui_sidebar__newSession__h1">新会话</button><div data-hp-agents>Agent</div>'
     + '<nav class="ui_sidebar__panelList__h1" aria-label="导航">'
     + '<button class="ui_sidebar__panelRow__h1" aria-label="插件"><span class="ui_sidebar__panelGlyph__h1"><svg width="16" height="16"></svg></span><span class="ui_sidebar__panelTitle__h1">插件</span></button>'
     + '<button class="ui_sidebar__panelRow__h1" aria-label="自动化任务"><span class="ui_sidebar__panelGlyph__h1"><svg width="20" height="20"></svg></span><span class="ui_sidebar__panelTitle__h1">自动化任务</span></button></nav>'

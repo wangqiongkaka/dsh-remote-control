@@ -13,7 +13,8 @@ import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import { proxiedFrame, useNarrow, type SidebarToggleInjected } from './SidebarToggle.tsx'
 
 /** Marks this plugin's own drawer rows that open a Session (the Agent board's). */
-export const DRAWER_PICK_ATTRIBUTE = 'data-remote-control-pick'
+// harness-provider's Agent card marks its Session rows with this attribute.
+export const DRAWER_PICK_ATTRIBUTE = 'data-hp-agents-pick'
 
 /** Drawer picks that navigate away from the current page. */
 const NAVIGATION_PICK = '[data-row-key^="session:"], [class*="_searchResultRow"], [class*="_newSession"], '

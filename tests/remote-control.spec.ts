@@ -78,15 +78,14 @@ else if (args[0] === 'funnel') {
 `)
   await chmod(binary, 0o700)
   let filesRoute: ConnectionFetchRoute | undefined
-  let groupsRoute: ConnectionFetchRoute | undefined
   backend = createServer((req, res) => {
     if (req.url === '/?token=launch') {
       res.writeHead(303, { location: '/', 'set-cookie': 'dsh-session=signed; Path=/; HttpOnly' }).end()
       return
     }
     if (req.headers.cookie !== 'dsh-session=signed') { res.writeHead(401).end(); return }
-    if (req.url?.startsWith('/api/remote-control/files') || req.url === '/api/remote-control/worktree-groups') {
-      const handler = req.url === '/api/remote-control/worktree-groups' ? groupsRoute : filesRoute
+    if (req.url?.startsWith('/api/remote-control/files')) {
+      const handler = filesRoute
       if (!handler) { res.writeHead(404).end(); return }
       void Promise.resolve(handler.fetch(new Request('http://localhost' + req.url)))
         .then(async response => {
@@ -139,7 +138,6 @@ else if (args[0] === 'funnel') {
       authenticatedUrl: (url: string) => url + '?token=launch',
       fetch: { register(value: ConnectionFetchRoute) {
         if (value.path === '/api/remote-control/files') filesRoute = value
-        else if (value.path === '/api/remote-control/worktree-groups') groupsRoute = value
         else route = value
         return async () => {}
       } },
@@ -259,13 +257,6 @@ else if (args[0] === 'funnel') {
   // Before the desktop polls a new QR, the paired browser can reopen the code it just scanned.
   expect((await request('/api/echo', { cookie: cookie ?? '' })).status).toBe(200)
   const filesPath = '/api/remote-control/files?' + new URLSearchParams({ path: directory })
-  const groupsPath = '/api/remote-control/worktree-groups'
-  expect((await request(groupsPath)).status).toBe(401)
-  expect((await request(groupsPath, { cookie: cookie ?? '', 'sec-fetch-site': 'cross-site' })).status).toBe(403)
-  const groups = await request(groupsPath, { cookie: cookie ?? '' })
-  expect(groups.status).toBe(200)
-  expect(groups.headers.get('cache-control')).toBe('no-store')
-  expect(await groups.json()).toEqual({})
   const files = await request(filesPath, { cookie: cookie ?? '' })
   expect(files.status).toBe(200)
   expect((await files.json() as { entries: { name: string }[] }).entries.some(file => file.name === 'tailscale')).toBe(true)

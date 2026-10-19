@@ -312,7 +312,6 @@ it('wires the file-source picker and renamed copy without a separate command', (
     commandUi: { register }, sessions: {},
     conversation: { input: { pickFiles: () => {}, canPickFiles: () => true } },
     sidebarRight: { openResource: () => {} },
-    workspaces: { list: { getSnapshot: () => ({ items: [] }), subscribe: () => () => {} } },
   }
   Object.assign(ctx, {
     inject: (_names: string[], run: (scope: Context) => void) => { run(ctx) },
@@ -383,56 +382,9 @@ it('adds the drawer dismissal layer to the frame-wide overlay list', () => {
   try {
     apply(context(core, disposers))
     expect(core.entries('shell.overlay').map(entry => entry.options.id))
-      .toEqual(expect.arrayContaining(['remote-control.dismiss', 'remote-control.agents']))
-  } finally {
-    for (const dispose of disposers) dispose()
-  }
-})
-
-it('opens an Agent board Session through the Workspace UI navigation', () => {
-  const core = slots()
-  const disposers: (() => void)[] = []
-  const opened: string[] = []
-  const ctx = context(core, disposers)
-  Object.assign(ctx, {
-    get: (name: string) => name === 'uiWorkspace' ? { openSession: (id: string) => { opened.push(id) } } : undefined,
-  })
-  try {
-    apply(ctx)
-    const entry = core.entries('shell.overlay').find(item => item.options.id === 'remote-control.agents')
-    const inject = entry?.inject as (() => { openSession: (id: string) => void }) | undefined
-    inject?.().openSession('session-1')
-    expect(opened).toEqual(['session-1'])
-  } finally {
-    for (const dispose of disposers) dispose()
-  }
-})
-
-// This plugin injects `remote` only, and cordis refuses `ctx.remote.harness` without its own inject
-// ("cannot get property ... without inject"): the namespace is read through `ctx.get`, and a lookup
-// that cannot answer yet rejects so the board asks again instead of settling on no logo.
-it('reads Agent board harnesses from harness-provider without injecting it', async () => {
-  const core = slots()
-  const disposers: (() => void)[] = []
-  const ctx = context(core, disposers)
-  const asked: string[][] = []
-  let reply: unknown = { ok: true, value: { s1: { harness: 'codex', delegated: false, running: true } } }
-  let service: unknown
-  Object.assign(ctx, {
-    remote: { get harness(): never { throw new Error('cannot get property "remote.harness" without inject') } },
-    get: (name: string) => name === 'remote.harness' ? service : undefined,
-  })
-  try {
-    apply(ctx)
-    const entry = core.entries('shell.overlay').find(item => item.options.id === 'remote-control.agents')
-    const harnesses = () => (entry?.inject as () => { harnesses: (ids: string[]) => Promise<unknown> })().harnesses
-    // harness-provider not mounted yet.
-    await expect(harnesses()(['s1'])).rejects.toThrow()
-    service = { harnesses: async ({ sessionIds }: { sessionIds: string[] }) => { asked.push(sessionIds); return reply } }
-    expect(await harnesses()(['s1'])).toEqual({ s1: { harness: 'codex', delegated: false, running: true } })
-    expect(asked).toEqual([['s1']])
-    reply = { ok: false, error: { message: 'offline' } }
-    await expect(harnesses()(['s1'])).rejects.toThrow('offline')
+      .toEqual(expect.arrayContaining(['remote-control.dismiss']))
+    // The Agent card moved to harness-provider.
+    expect(core.entries('shell.overlay').map(entry => entry.options.id)).not.toContain('remote-control.agents')
   } finally {
     for (const dispose of disposers) dispose()
   }
@@ -1693,7 +1645,7 @@ it('rebounds the whole drawer at either edge without moving its pinned header or
   frame.className = 'ui_layout__frame__h1'
   frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
     + '<div class="ui_sidebar__logoRow__h1"><button>收起</button></div>'
-    + '<div data-remote-control-agents><button>Agent</button></div>'
+    + '<div data-hp-agents><button>Agent</button></div>'
     + '<nav class="ui_sidebar__panelList__h1"><button>插件</button><button>自动化任务</button></nav>'
     + '<div class="ui_sidebar__regionArea__h1"><div class="ui_workspace__list__h1">'
     + '<button data-project>项目</button><input><div role="dialog">菜单</div></div></div>'
@@ -1706,7 +1658,7 @@ it('rebounds the whole drawer at either edge without moving its pinned header or
       addEventListener: () => {}, removeEventListener: () => {} }),
   })
   const scroller = frame.querySelector<HTMLElement>('.ui_sidebar__root__h1')!
-  const agents = frame.querySelector<HTMLElement>('[data-remote-control-agents]')!
+  const agents = frame.querySelector<HTMLElement>('[data-hp-agents]')!
   const projects = frame.querySelector<HTMLElement>('.ui_sidebar__regionArea__h1')!
   const target = frame.querySelector('[data-project]')!
   Object.defineProperties(scroller, { scrollHeight: { value: 900 }, clientHeight: { value: 400 } })
