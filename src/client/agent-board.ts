@@ -6,10 +6,13 @@
  * precedence is the Workspace browser's own: a pending interaction
  * outranks activity, which outranks the completion reminder. Like that browser, the board skips
  * subagent children and blank Sessions.
+ *
+ * Apart from those groups, the board lists unreleased Sessions: idle Codex / Claude Code Sessions
+ * whose native process harness-provider still keeps alive.
  */
 
 /** Board groups, in the order the board shows them. */
-export const AGENT_STATES = ['pending', 'running', 'done'] as const
+export const AGENT_STATES = ['pending', 'running', 'done', 'resident'] as const
 
 /** Which board group a Session is in. */
 export type AgentState = typeof AGENT_STATES[number]
@@ -32,6 +35,13 @@ interface StatusFacts {
   running: boolean | undefined
   pendingInteraction: { kind: string } | undefined
   completionUnread: boolean
+}
+
+/** harness-provider's mark for a Session: its Harness and whether that Harness is still loaded. */
+export interface HarnessMark {
+  harness: string
+  /** An external Harness has a live process; a DSH Session is loaded as an agent. */
+  running: boolean
 }
 
 /** One Session on the board. */
@@ -124,4 +134,24 @@ export function historyRows<Id extends string>(
       || status?.completionUnread || status?.pendingInteraction || (status?.running ?? summary.running)) return []
     return [{ id, title: summary.displayTitle, workspace: basename(summary.cwd), updatedAt: completedAt, state: 'done' as const }]
   })
+}
+
+/**
+ * Pick idle Codex / Claude Code Sessions whose native process is still alive.
+ * @param marks - harness-provider's marks by Session identity; unknown Sessions stay off.
+ * @returns unreleased rows, most recently updated first.
+ */
+export function residentRows<Id extends string>(
+  list: { readonly ids: readonly Id[]; readonly byId: Readonly<Record<Id, SummaryFacts>> },
+  statuses: ReadonlyMap<Id, StatusFacts>,
+  marks: ReadonlyMap<string, HarnessMark>,
+): AgentRow<Id>[] {
+  return list.ids.flatMap((id) => {
+    const summary = list.byId[id]
+    const status = statuses.get(id)
+    const mark = marks.get(id)
+    if (summary.origin === 'subagent' || summary.blank || mark === undefined || mark.harness === 'dsh' || !mark.running
+      || pendingKind(status?.pendingInteraction?.kind) !== undefined || (status?.running ?? summary.running)) return []
+    return [{ id, title: summary.displayTitle, workspace: basename(summary.cwd), updatedAt: summary.updatedAt, state: 'resident' as const }]
+  }).sort((a, b) => b.updatedAt - a.updatedAt)
 }

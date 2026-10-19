@@ -2,7 +2,7 @@
 import { createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
-import { afterEach, beforeEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { AGENTS_ATTRIBUTE, AgentBoard } from '../dist/client/AgentBoard.js'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -30,6 +30,7 @@ const workspaces = { phase: 'ready' as 'pending' | 'ready', archivedSessionIds: 
 let root: Root
 let mount: HTMLElement
 let opened: string[]
+let asked: string[][]
 let proxy: HTMLStyleElement
 
 /** The shell's sidebar column, with New Session between the logo row and the panel list. */
@@ -52,7 +53,7 @@ function setNarrow(matches: boolean): void {
 
 function render(
   sessions: typeof list = list,
-  marks: Record<string, { harness: string }> = {},
+  marks: Record<string, { harness: string; running?: boolean }> = {},
   snapshot: typeof statuses = statuses,
   workspaceSnapshot: typeof workspaces = workspaces,
 ): void {
@@ -65,7 +66,10 @@ function render(
       openSession: (id: string) => {
         opened.push(id)
       },
-      harnesses: async (ids: string[]) => Object.fromEntries(ids.flatMap(id => marks[id] ? [[id, marks[id]]] : [])),
+      harnesses: async (ids: string[]) => {
+        asked.push(ids)
+        return Object.fromEntries(ids.flatMap(id => marks[id] ? [[id, { running: false, ...marks[id] }]] : []))
+      },
     }))
   })
 }
@@ -87,6 +91,7 @@ beforeEach(() => {
   document.head.append(proxy)
   setNarrow(true)
   opened = []
+  asked = []
   mount = document.createElement('div')
   document.body.append(mount)
   root = createRoot(mount)
@@ -177,7 +182,7 @@ it('removes archived Sessions from card counts, rows and saved history', () => {
   const archived = { ...workspaces, archivedSessionIds: ['ask', 'run', 'done'] }
   render(list, {}, statuses, archived)
   expect([...host()!.querySelectorAll('.rc-agents-card .rc-agents-tile')].map(tile => tile.textContent))
-    .toEqual(['agents.pending0', 'agents.running0', 'agents.done0'])
+    .toEqual(['agents.pending0', 'agents.running0', 'agents.done0', 'agents.resident0'])
   expect(host()?.querySelectorAll('[data-remote-control-pick]')).toHaveLength(0)
   expect(JSON.parse(localStorage.getItem('dsh-remote-control.agent-history.v1') ?? '[]')).toEqual([])
 })
@@ -234,14 +239,14 @@ afterEach(() => {
   setNarrow(false)
 })
 
-it('defaults to running details below three tiles without a view-all entry or overlay', () => {
+it('defaults to running details below four tiles without a view-all entry or overlay', () => {
   column()
   render()
   const card = host()
   expect(card?.previousElementSibling?.textContent).toBe('新会话')
   expect(card?.nextElementSibling?.tagName).toBe('NAV')
   expect([...card!.querySelectorAll('.rc-agents-tile')].map(tile => tile.textContent))
-    .toEqual(['agents.pending1', 'agents.running1', 'agents.done1'])
+    .toEqual(['agents.pending1', 'agents.running1', 'agents.done1', 'agents.resident0'])
   expect(card?.querySelector('.rc-agents-head')?.tagName).toBe('DIV')
   expect(card?.textContent).not.toContain('agents.viewAll')
   expect(card?.querySelector('[data-state="all"]')).toBeNull()
@@ -258,7 +263,7 @@ it('switches details inline and opens the chosen Session without navigating on a
   render()
   click(host()?.querySelector('.rc-agents-tile[data-state="pending"]'))
   expect(host()?.querySelector('[role="dialog"]')).toBeNull()
-  expect(host()?.querySelectorAll('.rc-agents-tile')).toHaveLength(3)
+  expect(host()?.querySelectorAll('.rc-agents-tile')).toHaveLength(4)
   expect(host()?.querySelector('[aria-pressed="true"]')?.getAttribute('data-state')).toBe('pending')
   expect([...host()!.querySelectorAll('.rc-agents-title')].map(row => row.textContent)).toEqual(['等回答'])
   expect(host()?.querySelector('.rc-agents-meta')?.textContent).toBe('agents.pending.approval · dsh-remote-control')
@@ -338,7 +343,7 @@ it('shows unread completions and read history only under the completed tile', ()
 it('shows an empty message for the selected group without falling back to other groups', () => {
   column()
   render({ ...list, ids: ['idle'] })
-  for (const state of ['running', 'pending', 'done']) {
+  for (const state of ['running', 'pending', 'done', 'resident']) {
     click(host()?.querySelector(`.rc-agents-tile[data-state="${state}"]`))
     expect(host()?.querySelector('.rc-agents-empty')?.textContent).toBe(`agents.empty.${state}`)
     expect(host()?.querySelectorAll('[data-remote-control-pick]')).toHaveLength(0)
@@ -397,4 +402,49 @@ it('stays out of frames that did not come through the proxy', () => {
   proxy.remove()
   render()
   expect(host()).toBeNull()
+})
+
+it('lists idle Codex and Claude Code Sessions whose process is still alive under the unreleased tile', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  try {
+    column()
+    const marks: Record<string, { harness: string; running: boolean }> = {
+      ask: { harness: 'codex', running: true },
+      run: { harness: 'claude-code', running: true },
+      done: { harness: 'claude-code', running: true },
+      idle: { harness: 'codex', running: true },
+    }
+    render(list, marks)
+    await act(async () => { await Promise.resolve() })
+    // Every listed Session is asked, not only the rows already on the board.
+    expect(asked[0]).toEqual(['ask', 'run', 'done', 'idle'])
+    const tile = host()?.querySelector('.rc-agents-tile[data-state="resident"]')
+    expect(tile?.textContent).toBe('agents.resident2')
+    click(tile)
+    const rows = [...host()!.querySelectorAll<HTMLElement>('[data-remote-control-pick]')]
+    expect(rows.map(row => row.querySelector('.rc-agents-title')?.textContent)).toEqual(['空闲', '完成了'])
+    expect(rows[0]?.dataset.hpHarness).toBe('codex')
+    expect(rows[0]?.hasAttribute('data-hp-running')).toBe(false)
+    expect(rows[0]?.querySelector('.rc-agents-meta')?.textContent).toBe('agents.resident · x')
+    click(rows[0])
+    expect(opened).toEqual(['idle'])
+
+    // A reclaimed process leaves the tile on the next refresh.
+    marks.idle = { harness: 'codex', running: false }
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000) })
+    expect(asked.length).toBeGreaterThan(1)
+    expect(host()?.querySelector('.rc-agents-tile[data-state="resident"]')?.textContent).toBe('agents.resident1')
+    expect([...host()!.querySelectorAll('.rc-agents-title')].map(row => row.textContent)).toEqual(['完成了'])
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('asks harness marks in batches the Remote call accepts', async () => {
+  column()
+  const ids = Array.from({ length: 1001 }, (_, index) => `s${index}`)
+  const sessions = { ...list, ids, byId: { ...list.byId, ...Object.fromEntries(ids.map(id => [id, { ...list.byId.idle, displayTitle: id }])) } }
+  render(sessions, {}, new Map())
+  await act(async () => { await Promise.resolve() })
+  expect(asked.map(batch => batch.length)).toEqual([1000, 1])
 })

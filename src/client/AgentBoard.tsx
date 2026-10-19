@@ -18,7 +18,10 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { AGENT_STATES, agentRows, completionHistory, historyRows, type AgentRow, type AgentState, type CompletionRecord } from './agent-board.ts'
+import {
+  AGENT_STATES, agentRows, completionHistory, historyRows, residentRows,
+  type AgentRow, type AgentState, type CompletionRecord, type HarnessMark,
+} from './agent-board.ts'
 import { proxiedFrame, useNarrow } from './SidebarToggle.tsx'
 import { DRAWER_PICK_ATTRIBUTE } from './SidebarDismiss.tsx'
 import { NS } from './locales.ts'
@@ -43,14 +46,14 @@ function savedHistory(): CompletionRecord<SessionId>[] {
 /** Host commands passed through the slot injection face. */
 export interface AgentBoardInjected {
   openSession: (sessionId: SessionId) => void
-  /** Each Session's harness (dsh, codex, claude-code…); empty where harness-provider is absent. */
-  harnesses: (sessionIds: SessionId[]) => Promise<Readonly<Record<string, { harness: string }>>>
+  /** Each Session's harness (dsh, codex, claude-code…) and liveness; empty where harness-provider is absent. */
+  harnesses: (sessionIds: SessionId[]) => Promise<Readonly<Record<string, HarnessMark>>>
 }
 
 /** The harness-provider Remote call the board reads harnesses from. */
 export interface HarnessRemote {
   harnesses: (request: { sessionIds: string[] }) => Promise<
-    { ok: true; value: Record<string, { harness: string }> } | { ok: false; error: { message: string } }>
+    { ok: true; value: Record<string, HarnessMark> } | { ok: false; error: { message: string } }>
 }
 
 /** Overlay props supplied by the slot renderer. */
@@ -58,7 +61,10 @@ export type AgentBoardProps = PropsRuntime<'shell.overlay'> & PropsLocale<typeof
 
 type Translate = AgentBoardProps['t']
 
-const DOT: Record<AgentState, StateDotState> = { pending: 'warning', running: 'ongoing', done: 'done' }
+const DOT: Record<AgentState, StateDotState> = { pending: 'warning', running: 'ongoing', done: 'done', resident: 'idle' }
+
+/** Most Session ids one harness-provider `harnesses` call accepts. */
+const MARK_BATCH = 1000
 
 const STYLE = ''
   + `[${AGENTS_ATTRIBUTE}] button{font:inherit;color:inherit;background:none;border:0;padding:0;text-align:left;`
@@ -67,13 +73,13 @@ const STYLE = ''
   + 'box-shadow:inset 0 0 0 0.5px var(--dsw-alias-border-l3);display:flex;flex-direction:column;gap:6px}'
   + '.rc-agents-head{height:32px;display:flex;align-items:center;padding:0 6px}'
   + '.rc-agents-head b{font-size:15px;font-weight:600}'
-  + '.rc-agents-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}'
+  + '.rc-agents-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}'
   + '.rc-agents-tile{height:60px;border-radius:12px;padding:8px 10px !important;box-sizing:border-box;display:flex;'
   + 'flex-direction:column;justify-content:space-between;background:var(--dsw-alias-interactive-bg-hover) !important}'
   + '.rc-agents-tile[aria-pressed="true"]{box-shadow:inset 0 0 0 1.5px var(--dsw-alias-label-tertiary)}'
   + '.rc-agents-tile[data-state="pending"]{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 16%,transparent) !important}'
   + '.rc-agents-tile[data-state="done"]{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 14%,transparent) !important}'
-  + '.rc-agents-tile span{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dsw-alias-label-secondary)}'
+  + '.rc-agents-tile span{display:flex;align-items:center;gap:6px;font-size:12px;white-space:nowrap;color:var(--dsw-alias-label-secondary)}'
   + '.rc-agents-tile b{font-size:20px;font-weight:700;line-height:24px}'
   + '.rc-agents-row{width:100%;height:48px;min-height:48px;border-radius:10px;padding:6px 8px !important;box-sizing:border-box;'
   + 'display:flex;align-items:center;gap:10px}'
@@ -125,25 +131,34 @@ function useCardHost(active: boolean): HTMLElement | null {
 }
 
 /**
- * Look up each shown Session's harness once; a failed lookup is asked again with the next rows.
- * @returns harness by Session identity, as far as known.
+ * Read harness-provider's marks for the listed Sessions, and again every 30 seconds so a reclaimed
+ * process leaves the unreleased group; a failed batch waits for the next round.
+ * @returns mark by Session identity, as far as known.
  */
-function useHarnesses(rows: readonly AgentRow<SessionId>[], lookup: AgentBoardInjected['harnesses']): ReadonlyMap<string, string> {
-  const [known, setKnown] = useState<ReadonlyMap<string, string>>(() => new Map())
-  const [asked] = useState(() => new Set<string>())
+function useMarks(ids: readonly string[], lookup: AgentBoardInjected['harnesses']): ReadonlyMap<string, HarnessMark> {
+  const [marks, setMarks] = useState<ReadonlyMap<string, HarnessMark>>(() => new Map())
+  const latest = useRef(lookup)
+  latest.current = lookup
+  const key = ids.join('\n')
   useEffect(() => {
-    const missing = rows.map(row => row.id).filter(id => !asked.has(id))
-    if (missing.length === 0) return
-    for (const id of missing) asked.add(id)
-    lookup(missing).then((marks) => {
-      setKnown((previous) => {
-        const next = new Map(previous)
-        for (const [id, mark] of Object.entries(marks)) next.set(id, mark.harness)
-        return next
-      })
-    }, () => { for (const id of missing) asked.delete(id) })
-  }, [rows, lookup, asked])
-  return known
+    if (key === '') return
+    const all = key.split('\n') as SessionId[]
+    const ask = (): void => {
+      for (let start = 0; start < all.length; start += MARK_BATCH) {
+        latest.current(all.slice(start, start + MARK_BATCH)).then((batch) => {
+          setMarks((previous) => {
+            const next = new Map(previous)
+            for (const [id, mark] of Object.entries(batch)) next.set(id, mark)
+            return next
+          })
+        }, () => {})
+      }
+    }
+    ask()
+    const timer = window.setInterval(ask, 30_000)
+    return () => { window.clearInterval(timer) }
+  }, [key])
+  return marks
 }
 
 /** A clock for relative times that ticks while the board is shown. */
@@ -243,14 +258,17 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
     try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)) } catch { /* Storage may be disabled. */ }
   }, [history])
   const completed = useMemo(() => historyRows(list, statuses, history), [list, statuses, history])
-  const markedRows = useMemo(() => [...rows, ...completed], [rows, completed])
-  const harnessOf = useHarnesses(host === null ? [] : markedRows, props.harnesses)
+  const candidates = useMemo(() => host === null ? []
+    : list.ids.filter(id => list.byId[id]?.blank === false && list.byId[id]?.origin !== 'subagent'), [host, list])
+  const marks = useMarks(candidates, props.harnesses)
+  const resident = useMemo(() => residentRows(list, statuses, marks), [list, statuses, marks])
   const [filter, setFilter] = useState<AgentState>('running')
   if (host === null) return null
 
-  const counts = { pending: 0, running: 0, done: 0 }
-  for (const row of rows) counts[row.state] += 1
-  const shown = rows.filter(row => row.state === filter)
+  const all = [...rows, ...resident]
+  const counts = { pending: 0, running: 0, done: 0, resident: 0 }
+  for (const row of all) counts[row.state] += 1
+  const shown = all.filter(row => row.state === filter)
   const showHistory = filter === 'done' && completed.length > 0
 
   return createPortal(
@@ -269,13 +287,13 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
           {shown.length > 0 && (
             <section className="rc-agents-group">
               <h3><StateDot state={DOT[filter]} size={filter === 'running' ? 12 : 10} />{t(`agents.${filter}`)}</h3>
-              <div>{shown.map(row => <Row key={row.id} row={row} harness={harnessOf.get(row.id)} now={now} t={t} open={openSession} />)}</div>
+              <div>{shown.map(row => <Row key={row.id} row={row} harness={marks.get(row.id)?.harness} now={now} t={t} open={openSession} />)}</div>
             </section>
           )}
           {showHistory && (
             <section className="rc-agents-group rc-agents-history">
               <h3><StateDot state="done" size={10} />{t('agents.history')}</h3>
-              <div>{completed.map(row => <Row key={row.id} row={row} harness={harnessOf.get(row.id)} now={now} t={t} open={openSession} />)}</div>
+              <div>{completed.map(row => <Row key={row.id} row={row} harness={marks.get(row.id)?.harness} now={now} t={t} open={openSession} />)}</div>
             </section>
           )}
         </div>

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { agentRows, completionHistory } from '../dist/client/agent-board.js'
+import { agentRows, completionHistory, residentRows } from '../dist/client/agent-board.js'
 
 interface Summary {
   displayTitle: string
@@ -106,4 +106,31 @@ it('retains all completions newest first after their unread reminders clear', ()
   expect(completionHistory(list, awaiting, running, history)).toEqual(history)
   expect(completionHistory({ ...list, ids: list.ids.filter(id => id !== 's6') }, read, undefined, history)
     .map(entry => entry.id)).not.toContain('s6')
+})
+
+it('lists idle external Harness Sessions whose native process is still alive, newest first', () => {
+  const byId: Record<string, Summary> = {
+    idleOld: summary('旧驻留', 1),
+    idleNew: summary('新驻留', 5),
+    finished: summary('完成未读', 4),
+    run: summary('运行中', 6, { running: true }),
+    ask: summary('等回答', 7),
+    reclaimed: summary('已回收', 8),
+    native: summary('DSH 原生', 9),
+    child: summary('子 agent', 10, { origin: 'subagent' }),
+    unknown: summary('未查到', 11),
+  }
+  const statuses = new Map<string, Status>([
+    ['finished', status({ running: false, completionUnread: true })],
+    ['ask', status({ pendingInteraction: { kind: 'question' } })],
+  ])
+  const live = { harness: 'claude-code', running: true }
+  const marks = new Map(Object.keys(byId).filter(id => id !== 'unknown').map(id => [id, live]))
+  marks.set('reclaimed', { harness: 'codex', running: false })
+  marks.set('native', { harness: 'dsh', running: true })
+  const rows = residentRows({ ids: Object.keys(byId), byId }, statuses, marks)
+  expect(rows.map(row => [row.id, row.state])).toEqual([
+    ['idleNew', 'resident'], ['finished', 'resident'], ['idleOld', 'resident'],
+  ])
+  expect(rows[0]).toMatchObject({ title: '新驻留', workspace: 'dsh-remote-control', updatedAt: 5 })
 })
