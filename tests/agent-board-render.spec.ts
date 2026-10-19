@@ -68,7 +68,7 @@ function setNarrow(matches: boolean): void {
 
 function render(
   sessions: typeof list = list,
-  marks: Record<string, { harness: string; running?: boolean }> = {},
+  marks: Record<string, { harness: string; running?: boolean; delegated?: boolean }> = {},
   snapshot: typeof statuses = statuses,
   workspaceSnapshot: typeof workspaces = workspaces,
 ): void {
@@ -418,6 +418,19 @@ it('leads a row with its harness logo, breathing while it runs', async () => {
   click(host()?.querySelector('.rc-agents-tile[data-state="pending"]'))
   expect(row('等回答').hasAttribute('data-hp-harness')).toBe(false)
   expect(row('等回答').firstElementChild?.querySelector('[data-state="warning"]')).not.toBeNull()
+})
+
+it('marks delegated Sessions so harness-provider badges their logo', async () => {
+  column()
+  render(list, { run: { harness: 'codex', delegated: true }, done: { harness: 'claude-code', delegated: false } })
+  await act(async () => { await Promise.resolve() })
+  const row = (title: string) => [...host()!.querySelectorAll<HTMLElement>('[data-remote-control-pick]')]
+    .find(item => item.querySelector('.rc-agents-title')?.textContent === title)!
+  expect(row('运行中').hasAttribute('data-hp-delegated')).toBe(true)
+  // The badge is drawn into the empty leading cell.
+  expect(row('运行中').firstElementChild?.innerHTML).toBe('')
+  click(host()?.querySelector('.rc-agents-tile[data-state="done"]'))
+  expect(row('完成了').hasAttribute('data-hp-delegated')).toBe(false)
 })
 
 it('stays out of frames that did not come through the proxy', () => {

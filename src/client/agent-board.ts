@@ -42,6 +42,8 @@ export interface HarnessMark {
   harness: string
   /** An external Harness has a live process; a DSH Session is loaded as an agent. */
   running: boolean
+  /** The Session was delegated from another one; harness-provider badges its logo. */
+  delegated?: boolean
 }
 
 /** One Session on the board. */

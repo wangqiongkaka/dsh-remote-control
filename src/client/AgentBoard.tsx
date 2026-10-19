@@ -213,11 +213,12 @@ function stateLabel(row: AgentRow<SessionId>, t: Translate): string {
   return row.pending === undefined ? t(`agents.${row.state}`) : t(`agents.pending.${row.pending}`)
 }
 
-function Row({ row, harness, pinned, now, t, open, act }: {
-  row: AgentRow<SessionId>; harness: string | undefined; pinned: boolean; now: number; t: Translate
+function Row({ row, mark, pinned, now, t, open, act }: {
+  row: AgentRow<SessionId>; mark: HarnessMark | undefined; pinned: boolean; now: number; t: Translate
   open: (id: SessionId) => void; act: (action: RowAction, row: AgentRow<SessionId>) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const harness = mark?.harness
   const meta = [stateLabel(row, t), row.workspace].filter(Boolean).join(' · ')
   const actions: RowAction[] = [pinned ? 'unpin' : 'pin', 'rename', 'fork', 'archive', 'copyId']
   const items: MenuItem[] = actions.map(id => ({ id, icon: ACTION_ICONS[id], label: t(`agents.menu.${id}`) }))
@@ -226,8 +227,10 @@ function Row({ row, harness, pinned, now, t, open, act }: {
       <button
         type="button"
         className="rc-agents-row"
-        // harness-provider's sidebar mark sheet draws the logo into the first span, breathing while it runs.
+        // harness-provider's sidebar mark sheet draws the logo into the first span, breathing while it runs,
+        // with a corner badge on delegated Sessions.
         data-hp-harness={harness}
+        data-hp-delegated={mark?.delegated === true ? '' : undefined}
         data-hp-running={harness !== undefined && row.state === 'running' ? '' : undefined}
         {...{ [DRAWER_PICK_ATTRIBUTE]: '' }}
         onClick={() => { open(row.id) }}
@@ -433,13 +436,13 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
           {shown.length > 0 && (
             <section className="rc-agents-group">
               <h3><StateDot state={DOT[filter]} size={filter === 'running' ? 12 : 10} />{t(`agents.${filter}`)}</h3>
-              <div>{shown.map(row => <Row key={row.id} row={row} harness={marks.get(row.id)?.harness} pinned={pinned.has(row.id)} now={now} t={t} open={openSession} act={act} />)}</div>
+              <div>{shown.map(row => <Row key={row.id} row={row} mark={marks.get(row.id)} pinned={pinned.has(row.id)} now={now} t={t} open={openSession} act={act} />)}</div>
             </section>
           )}
           {showHistory && (
             <section className="rc-agents-group rc-agents-history">
               <h3><StateDot state="done" size={10} />{t('agents.history')}</h3>
-              <div>{completed.map(row => <Row key={row.id} row={row} harness={marks.get(row.id)?.harness} pinned={pinned.has(row.id)} now={now} t={t} open={openSession} act={act} />)}</div>
+              <div>{completed.map(row => <Row key={row.id} row={row} mark={marks.get(row.id)} pinned={pinned.has(row.id)} now={now} t={t} open={openSession} act={act} />)}</div>
             </section>
           )}
         </div>
