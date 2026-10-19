@@ -13,18 +13,19 @@ let nextId = 0
 const STYLE = '[data-rc-worktree-tree]{display:flex !important;flex-direction:column}'
   + '[data-rc-worktree-section]{order:var(--rc-worktree-order)}'
   + '[data-rc-worktree-child][hidden]{display:none !important}'
-  + '[data-rc-worktree-open],[data-rc-worktree-child]{box-shadow:none !important;'
+  + '[data-rc-worktree-child]{--dsh-workspace-indent:12px !important}'
+/** The phone drawer draws each top-level Workspace as a card (drawer-style); an open folder and its worktrees share one. */
+const CARD_STYLE = '[data-rc-worktree-open],[data-rc-worktree-child]{box-shadow:none !important;'
   + 'border:.5px solid var(--dsw-alias-border-l3);border-bottom:0;box-sizing:border-box}'
   + '[data-rc-worktree-open]{border-radius:16px 16px 0 0 !important}'
-  + '[data-rc-worktree-child]{margin-top:0 !important;border-top:0;border-radius:0 !important;'
-  + '--dsh-workspace-indent:12px !important}'
+  + '[data-rc-worktree-child]{margin-top:0 !important;border-top:0;border-radius:0 !important}'
   + '[data-rc-worktree-last]{border-bottom:.5px solid var(--dsw-alias-border-l3);border-radius:0 0 16px 16px !important}'
 
 /** Keep React's rows in place; CSS order and ARIA ownership share the same Git-derived tree. */
-export function followWorktreeGroups(workspaces: WorkspaceList): () => void {
+export function followWorktreeGroups(workspaces: WorkspaceList, cards = true): () => void {
   // shortcut: the host has no Git grouping hook; recheck this seam if workspace row markup changes.
   const sheet = document.createElement('style')
-  sheet.textContent = STYLE
+  sheet.textContent = cards ? STYLE + CARD_STYLE : STYLE
   document.head.append(sheet)
   const initialized = new Set<string>()
   const attributes = new Map<HTMLElement, Map<string, string | null>>()
@@ -169,19 +170,23 @@ export function followWorktreeGroups(workspaces: WorkspaceList): () => void {
   }
 }
 
+/** Fold worktrees under their main folder on every page; only the phone drawer outlines the group as a card. */
 export function registerWorktreeGroups(ctx: Context): void {
   ctx.inject(['workspaces'], scope => {
     scope.effect(() => {
       const query = window.matchMedia(NARROW)
       let dispose: (() => void) | undefined
+      let phone: boolean | undefined
       const sync = (): void => {
+        const next = query.matches && proxiedFrame()
+        if (next === phone) return
+        phone = next
         dispose?.()
-        dispose = query.matches && proxiedFrame()
-          ? followWorktreeGroups((scope.get('workspaces') as { list: WorkspaceList }).list) : undefined
+        dispose = followWorktreeGroups((scope.get('workspaces') as { list: WorkspaceList }).list, next)
       }
       sync()
       query.addEventListener('change', sync)
       return () => { query.removeEventListener('change', sync); dispose?.() }
-    }, 'remote-control: phone worktree folders')
+    }, 'remote-control: worktree folders')
   })
 }

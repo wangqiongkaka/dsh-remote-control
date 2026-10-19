@@ -148,27 +148,32 @@ it('ignores stale identities and cyclic or self-parent relations', async () => {
   expect([...rows.values()].every(row => row.getAttribute('aria-expanded') === 'true')).toBe(true)
 })
 
-it('enables grouping only in narrow remote pages and restores the wide view', async () => {
+it('groups on every page, outlining the folder as a card only in narrow remote pages', async () => {
   const fetcher = vi.fn(async () => Response.json({ child: 'main' }))
   vi.stubGlobal('fetch', fetcher)
   const { source, rows } = fixture()
   let changed = (): void => {}
-  const query = { matches: true, addEventListener: (_: string, listener: () => void) => { changed = listener }, removeEventListener: vi.fn() }
+  const query = { matches: false, addEventListener: (_: string, listener: () => void) => { changed = listener }, removeEventListener: vi.fn() }
   vi.stubGlobal('matchMedia', () => query)
   const scope = {
     get: () => ({ list: source }),
     effect: (install: () => () => void) => { dispose = install() },
   }
+  const sheet = (): string => [...document.head.querySelectorAll('style')].map(style => style.textContent).join('')
   registerWorktreeGroups({ inject: (_: string[], install: (ctx: unknown) => void) => { install(scope) } } as unknown as Context)
-  expect(fetcher).not.toHaveBeenCalled()
+  await settle()
+  expect(rows.get('child')!.parentElement!.hidden).toBe(true)
+  expect(sheet()).toContain('[data-rc-worktree-child]{--dsh-workspace-indent:12px !important}')
+  expect(sheet()).not.toContain('border-radius:16px 16px 0 0')
+  rows.get('main')!.click()
+  await settle()
+  expect(rows.get('child')!.parentElement!.hidden).toBe(false)
   const proxy = document.createElement('style')
   proxy.setAttribute('data-dsh-remote-control', '')
   document.head.append(proxy)
+  query.matches = true
   changed()
   await settle()
-  expect(rows.get('child')!.parentElement!.hidden).toBe(true)
-  query.matches = false
-  changed()
-  expect(rows.get('child')!.parentElement!.hidden).toBe(false)
-  expect(document.querySelector('[data-rc-worktree-tree]')).toBeNull()
+  expect(sheet()).toContain('border-radius:16px 16px 0 0')
+  expect(fetcher).toHaveBeenCalledTimes(2)
 })

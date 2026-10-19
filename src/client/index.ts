@@ -191,7 +191,7 @@ export function apply(ctx: Context): void {
     if (service === undefined) throw new Error('uiWorkspace is not mounted')
     return service
   }
-  // The drawer's Agent card and inline details, in New Session's seat (proxy narrow frames only).
+  // The sidebar's Agent card and inline details, right after New Session (every frame).
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay',
     id: 'remote-control.agents',

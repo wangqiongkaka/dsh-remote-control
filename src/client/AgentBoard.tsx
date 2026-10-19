@@ -1,14 +1,14 @@
 /**
- * The phone drawer's Agent card in New Session's seat, with selectable status tiles and inline
+ * The sidebar's Agent card right after New Session, with selectable status tiles and inline
  * Session details, including recent completion history. A row opens its Session; its trailing "…"
  * button opens the sidebar row's actions (pin, rename, fork, archive, copy ID). The host's own row
  * menu is a slot only its Workspace browser may render, so these call the same host operations.
  *
  * The sidebar shell declares no seat between New Session and its panel rows, so the card renders
  * through a portal into a host element placed right after that (phone-hidden, see drawer-style)
- * button, and is placed again whenever the shell rebuilds the column. Rows carry the drawer's
- * navigation-pick attribute, so SidebarDismiss folds the drawer on the same tap that opens the
- * Session.
+ * button, and is placed again whenever the shell rebuilds the column. It shows on every frame: the
+ * phone drawer and the computer's own sidebar alike. Rows carry the drawer's navigation-pick
+ * attribute, so SidebarDismiss folds a phone drawer on the same tap that opens the Session.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -26,7 +26,6 @@ import {
   AGENT_STATES, agentRows, completionHistory, historyRows, residentRows,
   type AgentRow, type AgentState, type CompletionRecord, type HarnessMark,
 } from './agent-board.ts'
-import { proxiedFrame, useNarrow } from './SidebarToggle.tsx'
 import { DRAWER_PICK_ATTRIBUTE } from './SidebarDismiss.tsx'
 import { NS } from './locales.ts'
 
@@ -93,13 +92,15 @@ const MARK_BATCH = 1000
 const STYLE = ''
   + `[${AGENTS_ATTRIBUTE}] button{font:inherit;color:inherit;background:none;border:0;padding:0;text-align:left;`
   + 'cursor:pointer;-webkit-tap-highlight-color:transparent}'
-  + '.rc-agents-card{margin:4px 0 8px;padding:8px;border-radius:16px;'
+  + '.rc-agents-card{margin:4px 0 8px;padding:8px;border-radius:16px;container-type:inline-size;'
   + 'box-shadow:inset 0 0 0 0.5px var(--dsw-alias-border-l3);display:flex;flex-direction:column;gap:6px}'
   + '.rc-agents-head{height:32px;display:flex;align-items:center;padding:0 6px}'
   + '.rc-agents-head b{font-size:15px;font-weight:600}'
   + '.rc-agents-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}'
   + '.rc-agents-tile{height:60px;border-radius:12px;padding:8px 10px !important;box-sizing:border-box;display:flex;'
   + 'flex-direction:column;justify-content:space-between;background:var(--dsw-alias-interactive-bg-hover) !important}'
+  // A desktop sidebar (264px and up) leaves a quarter too narrow for a tile's label: two rows of two there.
+  + '@container (max-width:308px){.rc-agents-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}'
   + '.rc-agents-tile[aria-pressed="true"]{box-shadow:inset 0 0 0 1.5px var(--dsw-alias-label-tertiary)}'
   + '.rc-agents-tile[data-state="pending"]{background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 16%,transparent) !important}'
   + '.rc-agents-tile[data-state="done"]{background:color-mix(in srgb,var(--dsw-alias-state-success-primary) 14%,transparent) !important}'
@@ -130,10 +131,10 @@ const STYLE = ''
   + 'overscroll-behavior-y:contain;scrollbar-width:thin;border-radius:16px;box-shadow:inset 0 0 0 0.5px var(--dsw-alias-border-l3)}'
 
 /**
- * Keep a host element right after New Session in the sidebar column while `active`.
- * @returns the placed host, or null while inactive or before the column exists.
+ * Keep a host element right after New Session in the sidebar column.
+ * @returns the placed host, or null before the column exists.
  */
-function useCardHost(active: boolean): HTMLElement | null {
+function useCardHost(): HTMLElement | null {
   const [host] = useState(() => {
     const element = document.createElement('div')
     element.setAttribute(AGENTS_ATTRIBUTE, '')
@@ -141,7 +142,6 @@ function useCardHost(active: boolean): HTMLElement | null {
   })
   const [placed, setPlaced] = useState(false)
   useEffect(() => {
-    if (!active) return
     const place = (): void => {
       if (host.isConnected && host.previousElementSibling?.matches(ANCHOR) === true) return
       const anchor = document.querySelector(ANCHOR)
@@ -157,8 +157,8 @@ function useCardHost(active: boolean): HTMLElement | null {
       host.remove()
       setPlaced(false)
     }
-  }, [active, host])
-  return active && placed ? host : null
+  }, [host])
+  return placed ? host : null
 }
 
 /**
@@ -345,13 +345,12 @@ function Tile({ state, count, selected, t, pick }: {
 }
 
 /**
- * Render the drawer's Agent card and inline details into the sidebar column.
- * @returns the portal, or null off a proxied narrow frame and before the column exists.
+ * Render the Agent card and inline details into the sidebar column.
+ * @returns the portal, or null before the column exists.
  */
 export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
   const { t, useSessions, useSessionStatus, useWorkspaces, openSession } = props
-  const active = useNarrow() && proxiedFrame()
-  const host = useCardHost(active)
+  const host = useCardHost()
   const now = useNow(host !== null)
   const sessions = useSessions(value => value)
   const workspaces = useWorkspaces(value => value)
@@ -364,7 +363,7 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
   const [history, setHistory] = useState(savedHistory)
   const previous = useRef<typeof statuses>()
   useEffect(() => {
-    if (!active || list.phase !== 'ready' || workspaces.phase !== 'ready') { previous.current = undefined; return }
+    if (list.phase !== 'ready' || workspaces.phase !== 'ready') { previous.current = undefined; return }
     const before = previous.current
     previous.current = statuses
     setHistory(current => {
@@ -372,7 +371,7 @@ export function AgentBoard(props: AgentBoardProps): React.JSX.Element | null {
       return next.length === current.length && next.every((entry, index) =>
         entry.id === current[index]?.id && entry.completedAt === current[index]?.completedAt) ? current : next
     })
-  }, [active, list, statuses, workspaces.phase])
+  }, [list, statuses, workspaces.phase])
   useEffect(() => {
     try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history)) } catch { /* Storage may be disabled. */ }
   }, [history])

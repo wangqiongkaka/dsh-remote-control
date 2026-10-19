@@ -433,11 +433,16 @@ it('marks delegated Sessions so harness-provider badges their logo', async () =>
   expect(row('完成了').hasAttribute('data-hp-delegated')).toBe(false)
 })
 
-it('stays out of frames that did not come through the proxy', () => {
+it('shows in the computer sidebar too, keeping New Session and folding tiles on a narrow card', () => {
   column()
   proxy.remove()
+  setNarrow(false)
   render()
-  expect(host()).toBeNull()
+  expect(host()?.previousElementSibling?.textContent).toBe('新会话')
+  expect([...host()!.querySelectorAll('.rc-agents-tile')].map(tile => tile.textContent))
+    .toEqual(['agents.pending1', 'agents.running1', 'agents.done1', 'agents.resident0'])
+  expect(host()?.querySelector('style')?.textContent)
+    .toMatch(/@container \(max-width:\d+px\)\{\.rc-agents-tiles\{grid-template-columns:repeat\(2,/)
 })
 
 it('lists idle Codex and Claude Code Sessions whose process is still alive under the unreleased tile', async () => {

@@ -312,6 +312,7 @@ it('wires the file-source picker and renamed copy without a separate command', (
     commandUi: { register }, sessions: {},
     conversation: { input: { pickFiles: () => {}, canPickFiles: () => true } },
     sidebarRight: { openResource: () => {} },
+    workspaces: { list: { getSnapshot: () => ({ items: [] }), subscribe: () => () => {} } },
   }
   Object.assign(ctx, {
     inject: (_names: string[], run: (scope: Context) => void) => { run(ctx) },
