@@ -25,6 +25,13 @@ final class LaunchCheck: UIResponder, UIApplicationDelegate {
       return true
     }
     precondition(splash != nil && !splash!.isHidden, "开始加载时未显示启动动画")
+    controller.view.layoutIfNeeded()
+    let wordmark = descendant(in: splash!, identifier: "startup-wordmark") as? UIImageView
+    precondition(wordmark?.image != nil, "启动页未使用本地 deepseek 矢量字标")
+    let dots = descendant(in: splash!, identifier: "startup-dots") as? UIStackView
+    precondition(dots?.arrangedSubviews.count == 3, "启动页缺少三颗连接光点")
+    let status = descendant(in: splash!, identifier: "startup-status") as? UILabel
+    precondition(status?.text == "正在连接你的电脑", "启动连接状态不正确")
     let whale = image(in: splash!)
     precondition(whale?.image != nil, "启动鲸鱼图片未加载")
     precondition((whale!.layer.animationKeys()?.isEmpty ?? true) == UIAccessibility.isReduceMotionEnabled,
@@ -77,6 +84,9 @@ final class LaunchCheck: UIResponder, UIApplicationDelegate {
       if mode == "refused" { complete(mode); return }
       if web.isLoading {
         precondition(!splash!.isHidden, "页面加载结束前启动动画已消失")
+        if mode == "script", elapsed > 1 {
+          precondition(status?.text == "正在打开工作区", "慢脚本加载时未切换打开工作区状态")
+        }
         return
       }
       if finished == nil { finished = Date() }

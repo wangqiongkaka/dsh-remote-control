@@ -184,7 +184,7 @@ npm run dev -- --host 0.0.0.0
 - 网络错误或 HTTP 5xx 时显示原生连接失败页：真实错误信息、独立的「重试」主按钮，以及「扫码配对 / 粘贴链接」次操作。重试加载原失败地址；不支持扫描的设备只显示粘贴入口。页面适配深浅色和动态字体，紧凑尺寸下错误说明可滚动。此项属于原生 App，修改后需重新构建安装；设计来源与原生布局验证见 `ios/DESIGN.md`、`ios/Checks/connection.sh`。
 - 网页输入框不显示系统的表单辅助栏（上下箭头和完成按钮），收起键盘使用输入法自身的按钮。此项属于原生 App，修改后需重新构建安装。
 - 启动加载网页时，WebView 的空白画布使用原生系统背景，避免深色模式等待首个网络响应时白闪。此项属于原生 App，修改后需重新构建安装。
-- 已配对的 App 启动时显示鲸鱼浮动与水波动画，收到页面后切换到「正在打开工作区」，网页及其脚本加载完成后淡出（约 0.25 秒）。加载多久就显示多久，没有强制最短播放时间；连接失败时显示原有重试与配对入口。首次未配对、后台返回不播放，系统开启「减少动态效果」时使用静态画面。
+- 已配对的 App 启动时显示鲸鱼与全小写 `deepseek` 矢量字标，入场约 0.55 秒，等待时鲸鱼轻浮、三颗蓝色光点错峰明暗变化。收到页面后切换到「正在打开工作区」，网页及其脚本加载完成后淡出（约 0.24 秒）。加载多久就显示多久，没有强制最短播放时间；连接失败时立即显示重试与配对入口。首次未配对、后台返回不播放，系统开启「减少动态效果」时使用静态画面。支持深浅色与动态字体；此项需重新构建安装 iOS App。
 - 主屏幕名称为 DeepSeek，图标为黑灰底白色鲸鱼，源文件是 `ios/AppIcon.svg`（鲸鱼路径取自 DSH 的 `FishLogo`），修改后用浏览器按 1024×1024 渲染并替换 `ios/DSHRemote/Assets.xcassets/AppIcon.appiconset/AppIcon.png`。
 - 点击下文 Bark 通知会打开 App 并切到对应会话（手机抽屉打开时自动收起）。
 - 未提供：App 自身的系统推送（需要付费开发者账号）、App Store 发布。
@@ -210,6 +210,12 @@ python3 ios/Checks/startup.py booted /tmp/dsh-startup-build/Build/Products/Debug
 
 ```sh
 sh ios/Checks/launch.sh booted /tmp/dsh-startup-build/Build/Products/Debug-iphonesimulator/DSHRemote.app
+```
+
+启动页布局与动效检查使用生产 `StartupView` 和构建后的矢量资产，覆盖深浅色、大字体、小屏、横屏、小屏大字体、减少动态效果、退出与立即重播，并保存截图；结束时恢复模拟器的外观、字号和减少动态设置：
+
+```sh
+sh ios/Checks/startup.sh booted /tmp/dsh-startup-build/Build/Products/Debug-iphonesimulator/DSHRemote.app /tmp/dsh-startup-layout
 ```
 
 连接失败页的布局检查覆盖深浅色、最大辅助字体、320×568 紧凑布局和 740×320 横向布局，并验证三个按钮的标题、触摸区与回调。模拟器不支持实际扫描，检查 App 使用完整按钮状态验证生产视图，不改正式 App 的能力判断：
