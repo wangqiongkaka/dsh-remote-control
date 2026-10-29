@@ -44,6 +44,65 @@ const MODAL = 'body > [role="presentation"]:has(> [role="dialog"])'
 const SETTINGS = '[data-shortcut-modal="settings"]'
 const SETTING_CHOICE = `${SETTINGS} [data-slot="settings.general.item"] [class*="_row"]:has(> [class*="_rowText"] [class*="_desc"]):has([class*="_selector"])`
 
+const PLUGINS = '[data-plugin-panel]'
+// Install, recovery and uninstall dialogs have no shortcut scope; settings keeps its own sheet.
+const PLUGIN_MODAL = `body:has(${PLUGINS}) > [role="presentation"]:has(> [role="dialog"]:not([data-shortcut-modal]))`
+const PLUGIN_DIALOG = `${PLUGIN_MODAL} > [role="dialog"]`
+const PLUGIN_REGISTRY = 'body:has([data-plugin-panel]) [class*="_registry"]:has(> [class*="_registryOption"])'
+
+/** Shared by fresh proxy documents and client reloads; every rule lives inside the phone query. */
+export const PHONE_PLUGIN_STYLE = `${PLUGINS}{min-width:0;padding:0 16px 24px;gap:20px;overscroll-behavior-y:contain}`
+  + `${PLUGINS} > *{min-width:0;flex-shrink:0}`
+  + `${PLUGINS} :is(header[class*="_pageHead"],[class*="_detailTop"],[class*="_moreHead"]){padding-top:16px}`
+  + `${PLUGINS} [class*="_toolbar"]:not([hidden]){flex-wrap:wrap;flex-basis:100%;gap:8px}`
+  + `${PLUGINS} [class*="_pageTabs"]{margin-top:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}`
+  + `${PLUGINS} [class*="_pageTabList"]{min-width:0;flex-shrink:0}`
+  + `${PLUGINS} [role="tab"]{min-height:44px;white-space:nowrap}`
+  + `${PLUGINS} [class*="_installedPanel"]{gap:24px}`
+  + `${PLUGINS} [class*="_cards"]{gap:8px}`
+  + `${PLUGINS} [class*="_cards"] > [class*="_card"]{margin:0;box-shadow:inset 0 0 0 .5px var(--dsw-alias-border-l3)}`
+  + `${PLUGINS} [class*="_cardHead"]{gap:10px;padding:12px 8px;align-items:flex-start}`
+  + `${PLUGINS} [class*="_cardEnd"]{min-height:48px}`
+  + `${PLUGINS} :is([class*="_cardTitle"],[class*="_detailTitle"]){white-space:normal;overflow-wrap:anywhere;overflow:visible}`
+  + `${PLUGINS} [class*="_cardDesc"]{display:block;overflow:visible;overflow-wrap:anywhere;-webkit-line-clamp:unset;line-height:20px}`
+  + `${PLUGINS} :is([class*="_iconButton"],[class*="_infoButton"],[class*="_moreBack"],[class*="_deleteButton"],[class*="_addMore"]){width:44px;height:44px}`
+  + `${PLUGINS} :is([class*="_addPrimary"],[class*="_addButton"],[class*="_groupMore"],[class*="_crumb"],[class*="_rowOpen"]){min-height:44px}`
+  // Expand only the hit area: the shared switch's track and thumb retain their native geometry.
+  + `${PLUGINS} [role="switch"]::after{content:"";position:absolute;inset:-12px -4px}`
+  + `${PLUGINS} [class*="_detailHead"]{margin-top:16px;flex-wrap:wrap}`
+  + `${PLUGINS} [class*="_detailActions"]{min-width:0;max-width:100%;flex-wrap:wrap;gap:8px}`
+  + `${PLUGINS} [class*="_detailActions"] button:not([role="switch"]){min-height:44px}`
+  + `${PLUGINS} [class*="_sectionHead"]{flex-wrap:wrap;gap:4px 8px}`
+  + `${PLUGINS} [class*="_partsFilter"]{box-sizing:border-box;width:100%;min-height:44px}`
+  + `${PLUGINS} [class*="_rowLine"]{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:4px 10px}`
+  + `${PLUGINS} [class*="_rowIcon"]{grid-column:1;grid-row:1 / span 2}`
+  + `${PLUGINS} [class*="_rowMain"]{grid-column:2;grid-row:1}`
+  + `${PLUGINS} [class*="_rowState"]{grid-column:2;grid-row:2;white-space:normal;overflow-wrap:anywhere}`
+  + `${PLUGINS} [class*="_rowLine"] > [role="switch"]{grid-column:3;grid-row:1 / span 2}`
+  + `${PLUGINS} [class*="_rowFailure"]{margin-left:50px}`
+  + `${PLUGIN_MODAL}{align-items:flex-end;padding: max(8px,var(--dsh-remote-top-clearance)) 8px 0 !important}`
+  + `${PLUGIN_DIALOG}{width:100%;max-width:none;max-height:100%;gap:12px;padding-bottom:16px;border-radius:20px}`
+  + `${PLUGIN_DIALOG} > [class*="_content"]{min-height:0;overflow-y:auto;overscroll-behavior-y:contain}`
+  + `${PLUGIN_DIALOG} [class*="_header"]{padding:8px 8px 8px 16px}`
+  + `${PLUGIN_DIALOG} :is([class*="_body"],[class*="_description"]){padding-inline:16px;overflow-wrap:anywhere}`
+  + `${PLUGIN_DIALOG} [class*="_title"]{overflow-wrap:anywhere}`
+  + `${PLUGIN_DIALOG} > [class*="_footer"]{flex-shrink:0;flex-wrap:wrap;padding-inline:16px}`
+  + `${PLUGIN_DIALOG} button{min-height:44px}`
+  + `${PLUGIN_DIALOG} :is([class*="_close"],[class*="_wizardClose"]){width:44px;height:44px;flex-shrink:0}`
+  + `${PLUGIN_DIALOG} input{min-width:0;min-height:44px;box-sizing:border-box}`
+  + `${PLUGIN_DIALOG} [class*="_installFooter"]{gap:12px}`
+  + `${PLUGIN_DIALOG} [class*="_wizard"]{padding:8px 16px 0}`
+  + `${PLUGIN_DIALOG} [class*="_wizardScroll"]{min-height:0;overflow-y:auto;overscroll-behavior-y:contain}`
+  + `${PLUGIN_DIALOG} [class*="_wizardFoot"]{flex-direction:column;align-items:stretch}`
+  + `${PLUGIN_DIALOG} [class*="_wizardActions"]{flex-wrap:wrap;justify-content:flex-end}`
+  + `${PLUGIN_DIALOG} [class*="_registryToggle"]{max-width:100%;height:auto;white-space:normal;overflow-wrap:anywhere}`
+  // The host clamps to innerHeight, which stays tall behind the iOS keyboard.
+  + `${PLUGIN_REGISTRY}{top:auto !important;left:12px !important;right:12px;width:auto;`
+  + 'bottom:calc(100dvh - var(--dsh-remote-keyboard-height,100dvh) - var(--dsh-remote-keyboard-shift,0px) + var(--dsh-remote-bottom-clearance,8px) + 8px);'
+  + 'max-height:min(400px,calc(var(--dsh-remote-keyboard-height,100dvh) - var(--dsh-remote-top-clearance,0px) - var(--dsh-remote-bottom-clearance,8px) - 24px));overflow-y:auto;overscroll-behavior-y:contain}'
+  + `${PLUGIN_REGISTRY} [class*="_registryOption"]{box-sizing:border-box;min-height:44px}`
+  + `${PLUGIN_REGISTRY} [class*="_registryCustomField"]{min-width:0;min-height:44px;box-sizing:border-box;font-size:16px}`
+
 /** Share the compact settings layout with already-open pages when the client reloads. */
 export const PHONE_SETTINGS_STYLE = `${MODAL}:has(> ${SETTINGS}){height:var(--dsh-remote-keyboard-height,100dvh) !important;bottom:auto !important;align-items:flex-end;`
   + 'padding:max(8px,var(--dsh-remote-top-clearance)) 0 0 !important}'
@@ -120,6 +179,7 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '@media (max-width: 720px){'
   + PHONE_HERO_COMPOSER_STYLE
   + PHONE_SETTINGS_STYLE
+  + PHONE_PLUGIN_STYLE
   // Only the conversation scrollport moves. At its ends, stop a pull from panning the page and
   // carrying the composer and its context meter with the whole shell.
   + 'html,body{overflow:hidden;overscroll-behavior-y:none}'

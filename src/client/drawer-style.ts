@@ -24,7 +24,7 @@
  * styling); this module only owns the sheet.
  */
 
-import { PHONE_DRAWER_BOTTOM_STYLE, PHONE_HERO_COMPOSER_STYLE, PHONE_SAFE_AREA_STYLE, PHONE_SETTINGS_STYLE } from '../narrow-style.ts'
+import { PHONE_DRAWER_BOTTOM_STYLE, PHONE_HERO_COMPOSER_STYLE, PHONE_PLUGIN_STYLE, PHONE_SAFE_AREA_STYLE, PHONE_SETTINGS_STYLE } from '../narrow-style.ts'
 import { phoneViewport } from '../phone-document.ts'
 import { followSettingsSheet } from './settings-sheet.ts'
 
@@ -171,6 +171,7 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + PHONE_DRAWER_BOTTOM_STYLE
   + PHONE_HERO_COMPOSER_STYLE
   + PHONE_SETTINGS_STYLE
+  + PHONE_PLUGIN_STYLE
   // Client reloads do not replace the proxy HTML; keep live composer layout in this sheet.
   // Installed hosts lack data-composer-dock; the card's dock sibling exists in both versions.
   + '[data-composer-card] ~ [class*="_dock"]{order:-1;padding-top:0 !important;padding-bottom:4px}'
