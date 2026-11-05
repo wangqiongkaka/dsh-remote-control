@@ -4,6 +4,13 @@ export const NS = 'remote-control'
 
 /** Chinese UI copy for pairing and tunnel control. */
 export const zh = {
+  'notifications.disable': '关闭完成和错误通知',
+  'notifications.enable': '开启完成和错误通知',
+  'notifications.loading': '正在读取通知设置…',
+  'notifications.saving': '正在保存…',
+  'notifications.retry': '重新读取通知设置',
+  'notifications.error': '通知设置未更新，请重试。',
+
   'clear.title': '清理上下文',
   'clear.loading': '正在清理上下文…',
   'clear.success': '上下文已清理',
@@ -56,6 +63,13 @@ export type RemoteControlKey = keyof typeof zh
 
 /** English UI copy for pairing and tunnel control. */
 export const en: Record<RemoteControlKey, string> = {
+  'notifications.disable': 'Mute completion and error notifications',
+  'notifications.enable': 'Enable completion and error notifications',
+  'notifications.loading': 'Loading notification settings…',
+  'notifications.saving': 'Saving…',
+  'notifications.retry': 'Reload notification settings',
+  'notifications.error': 'Notification settings were not updated. Please retry.',
+
   'clear.title': 'Clear context',
   'clear.loading': 'Clearing context…',
   'clear.success': 'Context cleared',

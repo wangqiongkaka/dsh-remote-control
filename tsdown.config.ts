@@ -41,6 +41,7 @@ export default [
       'client/ComputerFiles': 'src/client/ComputerFiles.tsx',
       'remote-files': 'src/remote-files.ts',
       notify: 'src/notify.ts',
+      'client/SessionNotifications': 'src/client/SessionNotifications.tsx',
       'phone-document': 'src/phone-document.ts',
     },
     outDir: 'dist', format: 'esm', platform: 'node', clean: false,

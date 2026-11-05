@@ -17,6 +17,7 @@ import { hideModelsSettings } from './settings-models.ts'
 import { followVerticalPulls, followSidebarSwipes, followRowHolds, followStripPulls, followLastPage } from './sidebar-swipe.ts'
 import { en, NS, zh, type RemoteControlKey } from './locales.ts'
 import { registerComputerDirectories, registerComputerFiles } from './ComputerFiles.tsx'
+import { registerSessionNotifications } from './SessionNotifications.tsx'
 import { registerClearProgress } from './ClearProgress.tsx'
 import { registerFileLineLinks } from './file-line-links.ts'
 import { registerSessionLoading } from './session-loading.ts'
@@ -51,6 +52,7 @@ export function apply(ctx: Context): void {
   registerComputerFiles(ctx)
   registerComputerDirectories(ctx)
   registerClearProgress(ctx)
+  registerSessionNotifications(ctx)
   registerFileLineLinks(ctx)
   // The iOS app queues Sessions tapped in notifications (ios/, `dshremote://session/<id>`) on
   // `window.__dshRemoteOpen` and fires `dsh-remote-open`; open each once the Workspace UI is up.

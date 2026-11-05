@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import { SlotCore } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { MenuOpenState } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { expect, it, vi } from 'vitest'
 import { apply } from '../dist/client/index.js'
@@ -44,6 +45,10 @@ function slots(): SlotCore {
       'conversation.header.leading': { kind: 'single', scope: 'root' },
       'conversation.input.dock': { kind: 'list', scope: 'session' },
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
+      'sidebar.workspaces.session.menu.item': { kind: 'list', scope: 'root', inject: { hooks: {
+        menuOpenState: (_standard: unknown, state: MenuOpenState) => () => state,
+        shortcuts: { getSnapshot: () => [], subscribe: () => () => {} },
+      } } },
       'sidebar.footer.action': { kind: 'list', scope: 'root' },
       'shell.overlay': { kind: 'list', scope: 'root' },
       'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' },

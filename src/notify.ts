@@ -4,6 +4,8 @@
  * the iOS app through its `dshremote://session/<id>` link.
  */
 
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 
 /** Bark device and server; the key comes from the Bark app. */
@@ -122,4 +124,57 @@ export function watchSessions(ctx: Context, notify: (notice: Notice) => void): v
     if (end.kind === 'error') report(session, 'error', end.error?.message)
     else report(session, 'done')
   })
+}
+
+/** Host-local preferences shared by desktop and paired phones. */
+export function notificationSettings(file: string) {
+  const read = (): Set<string> => {
+    let value: unknown
+    try { value = JSON.parse(readFileSync(file, 'utf8')) } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return new Set()
+      throw error
+    }
+    if (!Array.isArray(value) || !value.every(id => typeof id === 'string')) throw new Error('Invalid notification settings')
+    return new Set(value)
+  }
+  return {
+    allows(sessionId: string, kind: NoticeKind): boolean {
+      if (kind !== 'done' && kind !== 'error') return true
+      try { return !read().has(sessionId) } catch (error) {
+        console.warn('[dsh-remote-control] Cannot read notification settings:', error)
+        return false
+      }
+    },
+    async fetch(request: Request): Promise<Response> {
+      const sessionId = new URL(request.url).searchParams.get('sessionId')
+      if (!sessionId || sessionId.length > 512) return new Response('Invalid sessionId', { status: 400 })
+      if (request.method !== 'GET' && request.method !== 'POST') return new Response('Method not allowed', { status: 405 })
+      let muted: boolean | undefined
+      if (request.method === 'POST') {
+        let body: unknown
+        try { body = await request.json() } catch { return new Response('Invalid JSON', { status: 400 }) }
+        if (typeof body !== 'object' || body === null || !('muted' in body) || typeof body.muted !== 'boolean') {
+          return new Response('Invalid muted value', { status: 400 })
+        }
+        muted = body.muted
+      }
+      try {
+        const ids = read()
+        if (muted !== undefined) {
+          if (muted) ids.add(sessionId)
+          else ids.delete(sessionId)
+          mkdirSync(dirname(file), { recursive: true, mode: 0o700 })
+          const temporary = file + '.tmp'
+          try {
+            writeFileSync(temporary, JSON.stringify([...ids]), { mode: 0o600 })
+            renameSync(temporary, file)
+          } finally { rmSync(temporary, { force: true }) }
+        }
+        return Response.json({ muted: ids.has(sessionId) }, { headers: { 'cache-control': 'no-store' } })
+      } catch (error) {
+        console.warn('[dsh-remote-control] Cannot save/read notification settings:', error)
+        return new Response('无法读取或保存通知设置', { status: 500 })
+      }
+    },
+  }
 }

@@ -19,7 +19,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import { phoneDocument, remoteErrorDocument } from './phone-document.ts'
 import { computerFiles } from './remote-files.ts'
-import { pushBark, watchSessions, type BarkConfig } from './notify.ts'
+import { notificationSettings, pushBark, watchSessions, type BarkConfig } from './notify.ts'
 
 export const name = 'dsh-remote-control'
 export const inject = ['connection', 'webServer', 'workspaceRegistry']
@@ -753,7 +753,13 @@ export function apply(ctx: Context, config: Config): void {
     }
   }
   const bark = config.bark ?? undefined
-  if (bark !== undefined) watchSessions(ctx, (notice) => { void pushBark(bark, notice) })
+  const notifications = notificationSettings(join(dirname(pairingFile()), 'notifications.json'))
+  if (bark !== undefined) watchSessions(ctx, (notice) => {
+    if (notifications.allows(notice.sessionId, notice.kind)) void pushBark(bark, notice)
+  })
+  ctx.effect(() => ctx.connection.fetch.register({
+    path: '/api/remote-control/notifications', methods: ['GET', 'POST'], requestBody: 'buffered', fetch: notifications.fetch,
+  }), 'remote-control: session notifications')
   ctx.effect(() => ctx.connection.fetch.register({
     path: '/api/remote-control/files', methods: ['GET'], requestBody: 'buffered', fetch: computerFiles,
   }), 'remote-control: computer directory route')
