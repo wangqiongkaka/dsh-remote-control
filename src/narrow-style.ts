@@ -103,6 +103,49 @@ export const PHONE_PLUGIN_STYLE = `${PLUGINS}{min-width:0;padding:0 16px 24px;ga
   + `${PLUGIN_REGISTRY} [class*="_registryOption"]{box-sizing:border-box;min-height:44px}`
   + `${PLUGIN_REGISTRY} [class*="_registryCustomField"]{min-width:0;min-height:44px;box-sizing:border-box;font-size:16px}`
 
+// dsh-superagent appends its sheet after the proxy's at runtime: the `html` prefix out-specifies
+// its single-class rules whichever order they land in.
+const SA = 'html .dt-page'
+const SA_MODAL = 'html body > .dt-modal-root[role="presentation"]'
+
+/** dsh-superagent's panel, dialogs and toast; shared by fresh proxy documents and client reloads. */
+export const PHONE_SUPERAGENT_STYLE = `${SA}{padding:8px 16px 0;scroll-padding:16px 0 72px;scrollbar-gutter:auto;overscroll-behavior-y:contain}`
+  + `${SA} > .dt-column{gap:20px;padding-bottom:24px}`
+  // Title and actions share one row and the search takes the row below; no desktop window strip to clear.
+  + `${SA} .dt-head{align-items:center;gap:8px;padding-top:0 !important}`
+  + `${SA} .dt-toolbar{display:contents}`
+  + `${SA} .dt-head-title{flex:1 1 auto;min-width:0}`
+  + `${SA} .dt-head .dt-search{order:1;flex:1 1 100%;width:100%}`
+  + `${SA} .dt-tabs{overscroll-behavior-x:contain;scrollbar-width:none}`
+  + `${SA} .dt-tab{height:44px}`
+  + 'html :is(.dt-page,.dt-embedded,.dt-modal-root) .dt-btn{min-height:36px;border-radius:18px}'
+  + `${SA} .dt-segment{height:38px}`
+  + `${SA} .dt-pill{height:36px;padding:0 12px;border-radius:18px}`
+  + `${SA} :is(.dt-subtab,.dt-settings-link,.dt-nav-item,.dt-disclosure-row,.dt-more-link){min-height:44px}`
+  + `${SA} .dt-settings-link{padding:0 12px}`
+  + 'html :is(.dt-page,.dt-embedded) :is(.dt-input,.dt-select){height:44px}'
+  // Expand only the hit areas: the switch track and help glyphs keep their own geometry.
+  + 'html :is(.dt-page,.dt-embedded) :is(.dt-switch,.dt-info){position:relative}'
+  + 'html :is(.dt-page,.dt-embedded) .dt-switch::after{content:"";position:absolute;inset:-12px -4px}'
+  + 'html :is(.dt-page,.dt-embedded) .dt-info::after{content:"";position:absolute;inset:-14px}'
+  // Dialogs rise from the bottom like the plugin manager's, over a mask that also covers the home-indicator band.
+  + `${SA_MODAL}{align-items:flex-end;padding:max(8px,var(--dsh-remote-top-clearance)) 8px 0 !important}`
+  + `${SA_MODAL} > .dt-modal-mask{bottom:calc(0px - var(--dsh-remote-bottom-clearance,0px))}`
+  + `${SA_MODAL} > .dt-modal{box-sizing:border-box;width:100%;max-width:none;gap:12px;padding-bottom:16px;border-radius:20px}`
+  + `${SA_MODAL} .dt-modal-header{padding:8px 8px 0 16px}`
+  + `${SA_MODAL} .dt-modal-close{width:44px;height:44px;flex:none}`
+  + `${SA_MODAL} :is(.dt-modal-description,.dt-modal-body,.dt-modal-footer){padding-inline:16px;overflow-wrap:anywhere}`
+  + `${SA_MODAL} .dt-modal-description{margin-top:-4px}`
+  + `${SA_MODAL} .dt-modal-body{overscroll-behavior-y:contain}`
+  + `${SA_MODAL} .dt-modal-footer{flex-wrap:wrap}`
+  // The glossary's three columns become a term line with the meaning beneath it.
+  + 'html .dt-glossary tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:8px;border-bottom:.5px solid var(--dsw-alias-border-l2)}'
+  + 'html .dt-glossary :is(th,td){border-bottom:0;white-space:normal !important;overflow-wrap:anywhere}'
+  + 'html .dt-glossary td:nth-child(3){grid-column:1 / -1;padding-top:0;color:var(--dsw-alias-label-secondary)}'
+  + 'html .dt-glossary th.dt-glossary-group{grid-column:1 / -1}'
+  + 'html .dt-glossary thead th:nth-child(3){display:none}'
+  + 'html .dt-toast{top:calc(var(--dsh-remote-top-clearance,0px) + 8px);max-width:calc(100vw - 32px)}'
+
 /** Share the compact settings layout with already-open pages when the client reloads. */
 export const PHONE_SETTINGS_STYLE = `${MODAL}:has(> ${SETTINGS}){height:var(--dsh-remote-keyboard-height,100dvh) !important;bottom:auto !important;align-items:flex-end;`
   + 'padding:max(8px,var(--dsh-remote-top-clearance)) 0 0 !important}'
@@ -180,6 +223,7 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + PHONE_HERO_COMPOSER_STYLE
   + PHONE_SETTINGS_STYLE
   + PHONE_PLUGIN_STYLE
+  + PHONE_SUPERAGENT_STYLE
   // Only the conversation scrollport moves. At its ends, stop a pull from panning the page and
   // carrying the composer and its context meter with the whole shell.
   + 'html,body{overflow:hidden;overscroll-behavior-y:none}'
