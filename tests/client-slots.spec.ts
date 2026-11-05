@@ -691,13 +691,14 @@ it.each([[20, 140], [300, 180]])('keeps text selection drags out of sidebar swip
   }
 })
 
-it('closes an open phone sidebar with a reverse swipe inside that sidebar', () => {
+it.each([false, true])('closes an open phone sidebar with a reverse swipe inside that sidebar (native dialog: %s)', (native) => {
   const proxy = document.createElement('style')
   proxy.setAttribute('data-dsh-remote-control', '')
   document.head.append(proxy)
   const frame = document.createElement('div')
   frame.className = 'ui_layout__frame__h1'
-  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div data-left-content>左栏</div></div>'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div ' + (native ? 'role="dialog" data-shortcut-modal="sidebar"' : '')
+    + '><div data-left-content>左栏</div><div role="dialog" data-nested-dialog>弹窗</div><input data-left-input></div></div>'
     + '<main class="ui_layout__centerCol__h1"><div data-conversation-scroll>消息</div>'
     + '<button data-sidebar-right-expand>右栏</button></main>'
     + '<div data-rightbar-col><div data-sidebar-right-panel="fullscreen" data-sidebar-right-open>'
@@ -734,6 +735,10 @@ it('closes an open phone sidebar with a reverse swipe inside that sidebar', () =
   try {
     apply(ctx)
     swipe(frame.querySelector('[data-conversation-scroll]')!, 20, 140)
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(false)
+    swipe(frame.querySelector('[data-nested-dialog]')!, 140, 85)
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(false)
+    swipe(frame.querySelector('[data-left-input]')!, 140, 85)
     expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(false)
     swipe(frame.querySelector('[data-left-content]')!, 140, 85)
     expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)

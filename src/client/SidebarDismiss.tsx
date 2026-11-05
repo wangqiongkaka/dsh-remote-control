@@ -68,8 +68,10 @@ export function SidebarDismiss(props: SidebarDismissProps): React.JSX.Element | 
     // row the tap is still travelling to — before that handler ran, which cost the tap its session.
     // A macrotask lands the fold after the whole dispatch instead, still within the same touch.
     const onPick = (event: Event): void => {
-      if (!drawerNavigationPick(event.target)) return
-      setTimeout(() => { toggle.current() }, 0)
+      if (!(event.target instanceof Element) || !drawerNavigationPick(event.target)) return
+      const frame = event.target.closest('[class*="_frame"]')
+      // New hosts already dismiss on navigation; a second toggle would reopen the drawer.
+      setTimeout(() => { if (frame?.isConnected && drawerOpen(frame)) toggle.current() }, 0)
     }
     document.addEventListener('click', onPick, true)
     return () => { document.removeEventListener('click', onPick, true) }
