@@ -6,7 +6,8 @@ import { applyDrawerSelection } from '../dist/client/drawer-style.js'
 // dsh-superagent's own rules that the phone layer must override; the plugin appends them after the proxy's sheet.
 const SUPERAGENT = '.dt-page{padding:28px 24px 0}.dt-head{display:flex;flex-wrap:wrap}[data-platform] .dt-page .dt-head{padding-top:48px}'
   + '.dt-toolbar{display:flex}.dt-search{width:240px}.dt-page .dt-tab{height:34px}.dt-btn-sm{height:28px}.dt-input{height:32px}'
-  + '.dt-modal-root{position:fixed;inset:0;display:flex;align-items:center;padding:24px}.dt-modal{width:380px;border-radius:24px}'
+  + '.dt-ticket-meta{flex-wrap:nowrap;overflow:hidden;white-space:nowrap}.dt-row-quote{min-height:20px}'
+  + '.dt-prompt-team-item > .dt-info{position:absolute}.dt-modal-root{position:fixed;inset:0;display:flex;align-items:center;padding:24px}.dt-modal{width:380px;border-radius:24px}'
   + '.dt-modal.dt-glossary-modal{width:680px}.dt-modal-close{width:28px;height:28px}'
   + '.dt-glossary th:nth-child(-n+2),.dt-glossary td:nth-child(-n+2){white-space:nowrap}.dt-toast{position:fixed;top:40px}'
 
@@ -17,6 +18,11 @@ it.each(['proxy', 'reload'])('fits the Superagent panel, dialogs and toast to ph
   page.innerHTML = '<div class="dt-column"><header class="dt-head"><div class="dt-head-title"><h1 class="dt-title">Superagent</h1></div>'
     + '<div class="dt-toolbar"><form class="dt-search"><span class="dt-input"><input type="search"></span></form>'
     + '<button class="dt-btn dt-btn-sm">打开主 Session</button></div></header>'
+    + '<div class="dt-filters"><button class="dt-pill">进行中</button></div>'
+    + '<ul class="dt-list"><li class="dt-row dt-ticket"><div class="dt-row-quote dt-line"></div><div class="dt-row-meta dt-ticket-meta">'
+    + '<span class="dt-ticket-note">LlmError: no adapter registered</span></div></li></ul>'
+    + '<div class="dt-prompt-nav"><div class="dt-prompt-team-item"><button class="dt-nav-item">沟通方式</button><button class="dt-info">?</button></div></div>'
+    + '<button class="dt-info">?</button>'
     + '<div class="dt-tabs"><button role="tab" class="dt-tab">概览</button></div>'
     + '<button class="dt-switch" role="switch"><span class="dt-switch-thumb"></span></button></div>'
   const modal = document.createElement('div')
@@ -51,7 +57,16 @@ it.each(['proxy', 'reload'])('fits the Superagent panel, dialogs and toast to ph
     expect(style('.dt-search').width).toBe('100%')
     expect(style('.dt-tab').height).toBe('44px')
     expect(style('.dt-input').height).toBe('44px')
-    expect(style('.dt-page .dt-btn').minHeight).toBe('36px')
+    expect(style('.dt-head .dt-btn').width).toBe('44px')
+    expect(style('.dt-head .dt-btn').fontSize).toBe('0px')
+    expect(style('.dt-tabs').position).toBe('sticky')
+    expect(style('.dt-filters').flexWrap).toBe('nowrap')
+    expect(style('.dt-filters').overflowX).toBe('auto')
+    expect(style('.dt-ticket-meta').flexWrap).toBe('wrap')
+    expect(style('.dt-ticket-note').whiteSpace).toBe('normal')
+    expect(style('.dt-row-quote').display).toBe('none')
+    expect(style('.dt-prompt-team-item > .dt-info').position).toBe('absolute')
+    expect(style('.dt-column > .dt-info').position).toBe('relative')
     expect(phone.textContent).toContain('.dt-switch::after')
     expect(style('.dt-modal-root').alignItems).toBe('flex-end')
     expect(style('.dt-modal').width).toBe('100%')

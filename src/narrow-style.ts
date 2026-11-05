@@ -117,15 +117,39 @@ const SA = 'html .dt-page'
 const SA_MODAL = 'html body > .dt-modal-root[role="presentation"]'
 
 /** dsh-superagent's panel, dialogs and toast; shared by fresh proxy documents and client reloads. */
-export const PHONE_SUPERAGENT_STYLE = `${SA}{padding:8px 16px 0;scroll-padding:16px 0 72px;scrollbar-gutter:auto;overscroll-behavior-y:contain}`
-  + `${SA} > .dt-column{gap:20px;padding-bottom:24px}`
-  // Title and actions share one row and the search takes the row below; no desktop window strip to clear.
-  + `${SA} .dt-head{align-items:center;gap:8px;padding-top:0 !important}`
+export const PHONE_SUPERAGENT_STYLE = `${SA}{padding:8px 16px 0;scroll-padding:56px 0 72px;scrollbar-gutter:auto;overscroll-behavior-y:contain;-webkit-tap-highlight-color:transparent}`
+  + `${SA} > .dt-column{gap:16px;padding-bottom:24px}`
+  // A phone title bar: the page title, then its actions as icon buttons (their text stays the accessible
+  // name), and the search on the row below; no desktop window strip to clear.
+  + `${SA} .dt-head{align-items:center;gap:8px 4px;padding-top:0 !important}`
   + `${SA} .dt-toolbar{display:contents}`
   + `${SA} .dt-head-title{flex:1 1 auto;min-width:0}`
+  + `${SA} .dt-title{font-size:17px;line-height:24px;color:var(--dsw-alias-label-primary)}`
   + `${SA} .dt-head .dt-search{order:1;flex:1 1 100%;width:100%}`
-  + `${SA} .dt-tabs{overscroll-behavior-x:contain;scrollbar-width:none}`
+  + `${SA} .dt-head > .dt-toolbar > .dt-btn{flex:none;width:44px;height:44px;min-height:44px;padding:0;gap:0;border:0;border-radius:22px;font-size:0}`
+  + `${SA} .dt-head > .dt-toolbar > .dt-btn :is(.dt-btn-icon,svg){width:20px;height:20px}`
+  // The page tabs stay reachable through long pages, edge to edge like a phone's navigation bar.
+  // -8px cancels the page's top padding, which would otherwise leave a strip of scrolling content above them.
+  + `${SA} .dt-tabs{position:sticky;top:-8px;z-index:2;margin-inline:-16px;padding-inline:16px !important;`
+  + 'background:var(--dsw-alias-bg-base);overscroll-behavior-x:contain;scrollbar-width:none}'
   + `${SA} .dt-tab{height:44px}`
+  // Filters slide as one strip instead of wrapping into a second row of pills.
+  + `${SA} .dt-filters:not(:has(.dt-search)){flex-wrap:nowrap;overflow-x:auto;margin-inline:-16px;padding-inline:16px;`
+  + 'overscroll-behavior-x:contain;scrollbar-width:none}'
+  + `${SA} .dt-filters:not(:has(.dt-search)) > *{flex:none}`
+  // A ticket's note is what a phone glance is for: let it wrap below the chips instead of ending in an ellipsis.
+  + `${SA} .dt-ticket-meta{flex-wrap:wrap;white-space:normal;overflow:visible}`
+  + `${SA} .dt-ticket-note{flex:1 1 100%;white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}`
+  + `${SA} .dt-row-quote:empty{display:none}`
+  // The selected settings tab already names the group.
+  + `${SA} .dt-settings-title{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}`
+  // The prompt list scrolls in its own box so the editor stays near the first screen.
+  + `${SA} .dt-prompt-nav{max-height:min(320px,45dvh);overflow-y:auto;overscroll-behavior-y:contain;padding:4px;`
+  + 'border:.5px solid var(--dsw-alias-border-l3);border-radius:12px}'
+  + `${SA} .dt-prompt-nav .dt-nav-item{justify-content:center}`
+  // Touch has no hover: pressed rows and buttons answer with the active fill.
+  + `${SA} .dt-row.dt-link:active,html :is(.dt-page,.dt-modal-root) :is(.dt-btn-outline,.dt-btn-ghost,.dt-pill,.dt-nav-item,.dt-settings-link):active:not(:disabled){`
+  + 'background:var(--dsw-alias-interactive-bg-active,var(--dsw-alias-interactive-bg-hover))}'
   + 'html :is(.dt-page,.dt-embedded,.dt-modal-root) .dt-btn{min-height:36px;border-radius:18px}'
   + `${SA} .dt-segment{height:38px}`
   + `${SA} .dt-pill{height:36px;padding:0 12px;border-radius:18px}`
@@ -133,7 +157,8 @@ export const PHONE_SUPERAGENT_STYLE = `${SA}{padding:8px 16px 0;scroll-padding:1
   + `${SA} .dt-settings-link{padding:0 12px}`
   + 'html :is(.dt-page,.dt-embedded) :is(.dt-input,.dt-select){height:44px}'
   // Expand only the hit areas: the switch track and help glyphs keep their own geometry.
-  + 'html :is(.dt-page,.dt-embedded) :is(.dt-switch,.dt-info){position:relative}'
+  // The prompt list pins its team help glyph absolutely; that one already anchors its hit area.
+  + 'html :is(.dt-page,.dt-embedded) :is(.dt-switch,:not(.dt-prompt-team-item) > .dt-info){position:relative}'
   + 'html :is(.dt-page,.dt-embedded) .dt-switch::after{content:"";position:absolute;inset:-12px -4px}'
   + 'html :is(.dt-page,.dt-embedded) .dt-info::after{content:"";position:absolute;inset:-14px}'
   // Dialogs rise from the bottom like the plugin manager's, over a mask that also covers the home-indicator band.
