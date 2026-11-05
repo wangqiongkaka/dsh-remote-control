@@ -639,3 +639,15 @@ it('positions a newly opened task menu above its button and cleans up tracking',
     else Reflect.deleteProperty(window, 'visualViewport')
   }
 })
+
+it('overrides the native drawer width and mask after client reloads', () => {
+  const dispose = applyDrawerSelection()
+  try {
+    const text = sheet()!.textContent!
+    expect(text).toContain('[data-sidebar-drawer] [class*="_sidebarCol"]{width:min(84vw,320px) !important}')
+    expect(text).toContain('[data-sidebar-drawer] [data-sidebar-mask]{display:none !important}')
+    expect(text).toContain('[data-sidebar-drawer]:not([data-sidebar-collapsed]) [data-shell-leading]{display:none !important}')
+    expect(text).toContain('[data-sidebar-drawer] [data-shell-leading] [data-sidebar-opener]{display:none !important}')
+    expect(text).toContain('[data-sidebar-drawer] [class*="_sidebarCol"]{width:100vw !important}')
+  } finally { dispose() }
+})

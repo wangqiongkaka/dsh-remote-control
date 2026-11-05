@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
-import { beforeEach, expect, it } from 'vitest'
-import { drawerOpen, drawerNavigationPick } from '../dist/client/SidebarDismiss.js'
+import { createElement } from 'react'
+import { createRoot } from 'react-dom/client'
+import { act } from 'react-dom/test-utils'
+import { beforeEach, expect, it, vi } from 'vitest'
+import { SidebarDismiss, drawerOpen, drawerNavigationPick } from '../dist/client/SidebarDismiss.js'
 
 /**
  * Minimal drawer DOM: the frame carries data-sidebar-collapsed exactly as
@@ -90,4 +93,43 @@ it('reports the drawer open only while the frame has no collapse mark', () => {
   drawer(true)
   expect(drawerOpen(pick('[data-row-key="session:a"]'))).toBe(false)
   expect(drawerNavigationPick(pick('[data-row-key="session:a"]'))).toBe(false)
+})
+
+it.each([false, true])('keeps the drawer closed after selecting a session (host dismisses: %s)', (hostDismisses) => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  vi.useFakeTimers()
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }))
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = pick('.ui_layout__frame__h1')
+  const mount = document.createElement('div')
+  frame.append(mount)
+  const root = createRoot(mount)
+  const toggle = vi.fn(() => { frame.toggleAttribute('data-sidebar-collapsed') })
+  const navigate = vi.fn(() => {
+    if (hostDismisses) frame.setAttribute('data-sidebar-collapsed', '')
+  })
+  const row = pick('[data-row-key="session:a"]')
+  row.addEventListener('click', navigate)
+  try {
+    act(() => { root.render(createElement(SidebarDismiss, { toggleSidebar: toggle })) })
+    ;(row.firstElementChild as HTMLElement).click()
+    expect(navigate).toHaveBeenCalledOnce()
+    expect(toggle).not.toHaveBeenCalled()
+    act(() => { vi.runOnlyPendingTimers() })
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
+    expect(toggle).toHaveBeenCalledTimes(hostDismisses ? 0 : 1)
+    // Two picks queued before the delayed dismissal must not reopen the drawer either.
+    frame.removeAttribute('data-sidebar-collapsed')
+    ;(row.firstElementChild as HTMLElement).click()
+    ;(row.firstElementChild as HTMLElement).click()
+    act(() => { vi.runOnlyPendingTimers() })
+    expect(frame.hasAttribute('data-sidebar-collapsed')).toBe(true)
+  } finally {
+    act(() => { root.unmount() })
+    proxy.remove()
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  }
 })

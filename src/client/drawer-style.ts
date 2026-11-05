@@ -24,7 +24,7 @@
  * styling); this module only owns the sheet.
  */
 
-import { PHONE_DRAWER_BOTTOM_STYLE, PHONE_HERO_COMPOSER_STYLE, PHONE_PLUGIN_STYLE, PHONE_SAFE_AREA_STYLE, PHONE_SETTINGS_STYLE } from '../narrow-style.ts'
+import { PHONE_NATIVE_DRAWER_STYLE, PHONE_DRAWER_BOTTOM_STYLE, PHONE_HERO_COMPOSER_STYLE, PHONE_PLUGIN_STYLE, PHONE_SAFE_AREA_STYLE, PHONE_SETTINGS_STYLE } from '../narrow-style.ts'
 import { phoneViewport } from '../phone-document.ts'
 import { followSettingsSheet } from './settings-sheet.ts'
 
@@ -166,7 +166,7 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${CARD}[data-git-worktree-last]{border-bottom:.5px solid var(--dsw-alias-border-l3);border-radius:0 0 16px 16px !important}`
   // At phone width the drawer is the whole screen: rows grow to thumb size, and so does the logo
   // row's collapse control, which is the drawer's only way back there.
-  + '@media (max-width: 1023px){' + PHONE_SAFE_AREA_STYLE + '}'
+  + '@media (max-width: 1023px){' + PHONE_SAFE_AREA_STYLE + PHONE_NATIVE_DRAWER_STYLE + '}'
   + '@media (max-width: 720px){'
   + PHONE_DRAWER_BOTTOM_STYLE
   + PHONE_HERO_COMPOSER_STYLE

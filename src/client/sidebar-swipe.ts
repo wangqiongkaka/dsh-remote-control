@@ -20,7 +20,8 @@ function scrollsHorizontally(target: Element, center: Element): boolean {
  * Inside an open drawer a sideways drag never clicks the control under it, so only a field that
  * owns its own drag (and an open menu) keeps a closing swipe to itself.
  */
-const DRAWER_OWN_DRAG = 'input,textarea,select,[contenteditable], [role="dialog"]'
+// The native sidebar is itself a dialog; only nested dialogs keep their own gesture.
+const DRAWER_OWN_DRAG = 'input,textarea,select,[contenteditable], [role="dialog"]:not([data-shortcut-modal="sidebar"])'
 
 /**
  * Which ways the horizontal scrollers between a touch and its area can still scroll: a drag that

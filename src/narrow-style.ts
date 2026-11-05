@@ -10,6 +10,14 @@ const FRAME = '[class*="_frame"]:has([class*="_sidebarCol"])'
 /** The sidebar column as the phone drawer: always while it is open, and closed too while no right panel holds a track. */
 const DRAWER = `${FRAME}[data-rightbar-collapsed] [class*="_sidebarCol"],${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]`
 
+/** Native drawers added in 0.2.2 bring inline widths and a second mask; keep one mobile drawer owner. */
+export const PHONE_NATIVE_DRAWER_STYLE = `${FRAME}[data-sidebar-drawer] [class*="_sidebarCol"]{width:min(84vw,320px) !important}`
+  + `${FRAME}[data-sidebar-drawer] [data-sidebar-mask]{display:none !important}`
+  + `${FRAME}[data-sidebar-drawer] [data-shell-leading] [data-sidebar-opener]{display:none !important}`
+  + `${FRAME}[data-sidebar-drawer]:not([data-sidebar-collapsed]) [data-shell-leading]{display:none !important}`
+  + `${FRAME}[data-sidebar-drawer][data-sidebar-collapsed] [data-remote-control-scrim]{pointer-events:none}`
+  + `@media (max-width: 720px){${FRAME}[data-sidebar-drawer] [class*="_sidebarCol"]{width:100vw !important}}`
+
 /** Keep the home-indicator clearance inside the phone scrollport so no fixed strip clips its rows. */
 export const PHONE_DRAWER_BOTTOM_STYLE = `${DRAWER}{height:calc(var(--dsh-remote-keyboard-height,100dvh) - var(--dsh-remote-top-clearance)) !important}`
   + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"] [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important;`
@@ -322,6 +330,7 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   // track, where the shell's own three-track geometry still applies.
   + '<style data-dsh-remote-control-drawer>'
   + '@media (max-width: 1023px){'
+  + PHONE_NATIVE_DRAWER_STYLE
   + `${FRAME}[data-rightbar-collapsed]{grid-template-columns:0 minmax(0,1fr) 0 !important}`
   // The shell auto-places its three columns in order. A fixed drawer leaves that flow, and the
   // conversation would then take the zero-width first track and vanish: pin both to their own.
