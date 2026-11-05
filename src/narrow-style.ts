@@ -112,20 +112,22 @@ export const PHONE_PLUGIN_STYLE = `${PLUGINS}{min-width:0;padding:0 16px 24px;ga
   + `${PLUGIN_REGISTRY} [class*="_registryCustomField"]{min-width:0;min-height:44px;box-sizing:border-box;font-size:16px}`
 
 /** Share the compact settings layout with already-open pages when the client reloads. */
-export const PHONE_SETTINGS_STYLE = `${MODAL}:has(> ${SETTINGS}){height:var(--dsh-remote-keyboard-height,100dvh) !important;bottom:auto !important;align-items:flex-end;`
+export const PHONE_SETTINGS_STYLE = `${MODAL}:has(> ${SETTINGS}){height:var(--dsh-remote-keyboard-height,100dvh) !important;bottom:auto !important;align-items:flex-end;box-sizing:border-box;position:fixed !important;background:transparent !important;`
   + 'padding:max(8px,var(--dsh-remote-top-clearance)) 0 0 !important}'
-  + `${MODAL} > ${SETTINGS}{box-sizing:border-box;flex-direction:column !important;width:100% !important;max-width:none !important;`
+  + `${MODAL} > ${SETTINGS}{box-sizing:border-box;display:flex !important;flex-direction:column !important;width:100% !important;max-width:none !important;`
   + `height:min(calc(var(--dsh-settings-ratio,.5) * var(--dsh-remote-keyboard-height,100dvh)),100%) !important;padding-bottom:var(--dsh-remote-bottom-clearance);border-radius:24px 24px 0 0;animation:dsh-remote-settings-in ${SLOW} ${EASE}}`
   + `${SETTINGS} > [data-dsh-settings-resize]{display:flex;align-items:center;justify-content:center;flex:none;width:100%;height:44px;padding:0;border:0;background:none;`
   + 'color:var(--dsw-alias-label-tertiary);cursor:ns-resize;touch-action:none;user-select:none}'
   + `${SETTINGS} > [data-dsh-settings-resize]::before{content:"";width:36px;height:4px;border-radius:999px;background:currentColor}`
-  + `${SETTINGS}[data-dsh-settings-sheet] [class*="_header"]:has([class*="_close"]){top:52px}`
-  + `${SETTINGS} > nav{flex:none;width:auto !important;min-width:0;padding:8px 12px !important;gap:8px !important;border-bottom:.5px solid var(--dsw-alias-border-l2)}`
-  + `${SETTINGS} [class*="_navTitle"]{padding:8px 52px 8px 4px !important;font-size:20px;line-height:28px;font-weight:600}`
-  + `${SETTINGS} [class*="_navList"]{flex-direction:row !important;flex:none;gap:4px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:none}`
+  + `${SETTINGS}[data-dsh-settings-sheet] [class*="_header"]:has([class*="_close"]){top:44px}`
+  + `${SETTINGS} > nav{flex:none;width:auto !important;min-width:0;padding:0 12px 8px !important;gap:8px !important;border-bottom:.5px solid var(--dsw-alias-border-l2)}`
+  + `${SETTINGS} [class*="_navTitle"]{box-sizing:border-box;flex:none;min-height:44px;padding:8px 52px 8px 4px !important;font-size:20px;line-height:28px;font-weight:600}`
+  + `${SETTINGS} > [class*="_navTitle"]{width:100%;padding-left:16px !important}`
+  + `${SETTINGS} [class*="_navList"]{flex-direction:row !important;flex:none;gap:4px;padding:0 !important;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:none}`
   + `${SETTINGS} [class*="_navList"]::-webkit-scrollbar{display:none}`
   + `${SETTINGS} [class*="_navCell"]{flex:none;min-height:44px;height:44px !important;padding:0 10px !important;gap:6px}`
-  + `${SETTINGS} > [class*="_content"]{min-height:0;overflow:hidden !important;padding-bottom:0}`
+  + `${SETTINGS} > [class*="_content"],${SETTINGS} > [class*="_options"]{flex:1;min-width:0;min-height:0}`
+  + `${SETTINGS} > [class*="_content"]{overflow:hidden !important;padding-bottom:0}`
   + `${SETTINGS} [class*="_header"]:has([class*="_close"]){position:absolute;top:8px;right:8px;height:44px !important;padding:0 !important;align-items:center;z-index:2}`
   + `${SETTINGS} [class*="_header"] > [class*="_close"]{width:44px;height:44px}`
   + `${SETTINGS} [class*="_options"]{padding:0 16px 16px !important;overscroll-behavior-y:contain;mask-image:none}`

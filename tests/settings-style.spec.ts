@@ -3,7 +3,7 @@ import { expect, it } from 'vitest'
 import { phoneDocument } from '../dist/phone-document.js'
 import { applyDrawerSelection } from '../dist/client/drawer-style.js'
 
-it.each(['proxy', 'reload'])('adapts settings navigation, long rows and font controls on phones (%s)', source => {
+it.each([['proxy', false], ['reload', false], ['proxy', true], ['reload', true]] as const)('adapts settings navigation, long rows and font controls on phones (%s, grid: %s)', (source, grid) => {
   const host = document.createElement('style')
   host.textContent = '.pref_row{display:flex;align-items:center}.font_arrows{position:absolute;opacity:0}'
   const overlay = document.createElement('div')
@@ -18,6 +18,16 @@ it.each(['proxy', 'reload'])('adapts settings navigation, long rows and font con
     + '<div class="pref_row"><div class="pref_rowText">字号大小</div><div class="font_control"><div class="font_stepper">'
     + '<span class="font_value">14</span><span class="font_arrows"><button class="font_arrow">增大</button>'
     + '<button class="font_arrow">减小</button></span></div></div></div></div></div></div></div>'
+  if (grid) {
+    const panel = overlay.querySelector('[role="dialog"]')!
+    panel.className = 'settings_panel'
+    host.textContent += '.settings_panel{display:grid;grid-template-columns:1fr auto}.settings_options{grid-area:options}.settings_navList{padding:12px 16px 14px}'
+    const nav = panel.querySelector('nav')!
+    const content = panel.querySelector('.settings_content')!
+    panel.prepend(nav.querySelector('.settings_navTitle')!)
+    panel.append(content.querySelector('.settings_header')!, content.querySelector('.settings_options')!)
+    content.remove()
+  }
   document.head.append(host)
   document.body.append(overlay)
   const proxyStyles = source === 'proxy'
@@ -43,8 +53,14 @@ it.each(['proxy', 'reload'])('adapts settings navigation, long rows and font con
     expect(style('.settings_close').height).toBe('44px')
     expect(style('.settings_navCell').minHeight).toBe('44px')
     expect(style('.settings_navList').overflowX).toBe('auto')
-    expect(style('.settings_content').overflow).toBe('hidden')
-    expect(parseFloat(style('.settings_content').paddingBottom)).toBe(0)
+    expect(style('[role="dialog"]').display).toBe('flex')
+    expect(style('[role="dialog"]').flexDirection).toBe('column')
+    if (grid) expect(style('.settings_options').flexGrow).toBe('1')
+    else {
+      expect(style('.settings_content').overflow).toBe('hidden')
+      expect(parseFloat(style('.settings_content').paddingBottom)).toBe(0)
+    }
+    expect(parseFloat(style('.settings_navList').paddingLeft)).toBe(0)
     expect(style('.settings_options').overscrollBehaviorY).toBe('contain')
     expect(style('.settings_options').paddingBottom).toBe('16px')
     expect(injected).not.toContain('mask-image:linear-gradient')
