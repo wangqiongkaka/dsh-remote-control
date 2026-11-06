@@ -59,9 +59,16 @@ const PLUGIN_DIALOG = `${PLUGIN_MODAL} > [role="dialog"]`
 const PLUGIN_REGISTRY = 'body:has([data-plugin-panel]) [class*="_registry"]:has(> [class*="_registryOption"])'
 
 /** Shared by fresh proxy documents and client reloads; every rule lives inside the phone query. */
-export const PHONE_PLUGIN_STYLE = `${PLUGINS}{min-width:0;padding:0 16px 24px;gap:20px;overscroll-behavior-y:contain}`
+export const PHONE_PLUGIN_STYLE = `${PLUGINS}{--plugin-page-inset:16px !important;min-width:0;padding:0 16px 24px;gap:20px;overflow-y:auto;overscroll-behavior-y:contain}`
   + `${PLUGINS} > *{min-width:0;flex-shrink:0}`
-  + `${PLUGINS} :is(header[class*="_pageHead"],[class*="_detailTop"],[class*="_moreHead"]){padding-top:16px}`
+  + `${PLUGINS} :is([class*="_pageHead"]:not([class*="_pageHeading"]),[class*="_detailTop"],[class*="_moreHead"]){padding-top:0 !important}`
+  // Newer hosts cache absolute header geometry; phone pages scroll as one normal flow instead.
+  + `${PLUGINS} [data-plugin-body]{flex:none !important;overflow:visible !important;gap:20px;scroll-padding-top:0}`
+  + `${PLUGINS} [data-plugin-bar][data-natural]{position:relative !important}`
+  + `${PLUGINS} [data-plugin-bar][data-natural] > header{height:auto !important;clip-path:none !important}`
+  + `${PLUGINS} [data-plugin-bar][data-natural] [class*="_pageHeading"]{display:block !important}`
+  + `${PLUGINS} [data-plugin-bar][data-natural] [data-plugin-header-part]{position:static !important;width:auto !important;translate:none !important;clip-path:none !important}`
+  + `${PLUGINS} [data-plugin-bar][data-natural]::before,${PLUGINS} [data-plugin-bar][data-natural]::after{display:none !important}`
   + `${PLUGINS} [class*="_toolbar"]:not([hidden]){flex-wrap:wrap;flex-basis:100%;gap:8px}`
   + `${PLUGINS} [class*="_pageTabs"]{margin-top:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}`
   + `${PLUGINS} [class*="_pageTabList"]{min-width:0;flex-shrink:0}`
