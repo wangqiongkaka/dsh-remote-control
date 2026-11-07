@@ -110,7 +110,9 @@ it.each([
     expect(style('.plugins_pageIntro').gridColumn).toBe('1')
     expect(style('.plugins_pageIntro').gridRow).toBe('2')
     expect(style('.plugins_cards').gridColumn).toBe('1 / -1')
-    expect(getComputedStyle(page).paddingLeft).toBe('16px')
+    expect(getComputedStyle(page).paddingLeft).toBe('12px')
+    expect(getComputedStyle(page).paddingRight).toBe('12px')
+    expect(getComputedStyle(page).getPropertyValue('--plugin-page-inset')).toBe('12px')
     expect(getComputedStyle(page).scrollbarWidth).toBe('none')
     expect(getComputedStyle(page).scrollbarGutter).toBe('auto')
     const scrollbar = [...phone.sheet!.cssRules].find((rule): rule is CSSStyleRule =>
@@ -125,6 +127,8 @@ it.each([
     expect(style('.plugins_moreHead').paddingTop).toBe('0px')
     if (measured) {
       expect(style('[data-plugin-header-part]').position).toBe('fixed')
+      expect(style('.plugins_pageTitle').left).toBe('12px')
+      expect(style('.plugins_toolbar:not([hidden])').right).toBe('12px')
       expect(style('[data-plugin-header-part]').translate).toBe('none')
       expect(style('[data-plugin-header-part]').clipPath).toBe('none')
       expect(style('[data-plugin-header-part]').width).toBe('auto')

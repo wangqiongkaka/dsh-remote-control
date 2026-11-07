@@ -62,13 +62,13 @@ const PLUGIN_DIALOG = `${PLUGIN_MODAL} > [role="dialog"]`
 const PLUGIN_REGISTRY = 'body:has([data-plugin-panel]) [class*="_registry"]:has(> [class*="_registryOption"])'
 
 /** Shared by fresh proxy documents and client reloads; every rule lives inside the phone query. */
-export const PHONE_PLUGIN_STYLE = `html ${PLUGINS}{--plugin-page-inset:16px !important;min-width:0;padding:0 16px 24px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:start;align-items:start;gap:16px 8px;scroll-padding-top:${PHONE_HEADER_HEIGHT};overflow-y:auto;scrollbar-width:none;scrollbar-gutter:auto;overscroll-behavior-y:contain}`
+export const PHONE_PLUGIN_STYLE = `html ${PLUGINS}{--plugin-page-inset:12px !important;min-width:0;padding:0 12px 24px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:start;align-items:start;gap:16px 8px;scroll-padding-top:${PHONE_HEADER_HEIGHT};overflow-y:auto;scrollbar-width:none;scrollbar-gutter:auto;overscroll-behavior-y:contain}`
   + `${FRAME}[data-sidebar-drawer] [class*="_mainPanel"][data-global-panel]:has(${PLUGINS}){padding-top:0 !important}`
   + `html ${PLUGINS}:has([data-plugin-body]){display:flex;align-items:stretch;gap:16px;padding-bottom:0;overflow-x:clip;overflow-y:clip !important}`
   + `${PLUGINS} > *{min-width:0;flex-shrink:0;grid-column:1 / -1}`
   + `${PLUGINS} [class*="_pageHead"]:not([class*="_pageHeading"]){display:contents}`
   + `${PLUGINS} [class*="_pageHeading"]{display:contents !important}`
-  + `${PLUGINS} [class*="_pageTitle"]{position:sticky !important;top:0;z-index:3;grid-column:1;grid-row:1;height:${PHONE_HEADER_HEIGHT} !important;min-height:0 !important;max-height:${PHONE_HEADER_HEIGHT};box-sizing:border-box;overflow:hidden;background:var(--dsw-alias-bg-base);box-shadow:16px 0 0 var(--dsw-alias-bg-base),-16px 0 0 var(--dsw-alias-bg-base);display:flex;align-items:center;margin:0;font-size:17px;line-height:24px}`
+  + `${PLUGINS} [class*="_pageTitle"]{position:sticky !important;top:0;z-index:3;grid-column:1;grid-row:1;height:${PHONE_HEADER_HEIGHT} !important;min-height:0 !important;max-height:${PHONE_HEADER_HEIGHT};box-sizing:border-box;overflow:hidden;background:var(--dsw-alias-bg-base);box-shadow:12px 0 0 var(--dsw-alias-bg-base),-12px 0 0 var(--dsw-alias-bg-base);display:flex;align-items:center;margin:0;font-size:17px;line-height:24px}`
   + `${PLUGINS} [class*="_pageIntro"]{grid-column:1;grid-row:2;margin:0;min-width:0;align-self:center;align-items:center;white-space:normal;overflow-wrap:anywhere}`
   + `${PLUGINS} :is([class*="_pageHead"]:not([class*="_pageHeading"]),[class*="_detailTop"],[class*="_moreHead"]){padding-top:0 !important}`
   // Keep a real scroll box for the host lifecycle; only dissolve the header wrappers.
@@ -83,9 +83,9 @@ export const PHONE_PLUGIN_STYLE = `html ${PLUGINS}{--plugin-page-inset:16px !imp
   + `${PLUGINS} [data-plugin-bar][data-natural] [data-plugin-header-part]{inset:auto !important;top:0 !important;width:auto !important;translate:none !important;clip-path:none !important}`
   + `${PLUGINS} [data-plugin-header-part]:not([data-plugin-header-part="title"]):not([data-plugin-header-part="toolbar"]){position:static !important}`
   + `${PLUGINS} [data-plugin-bar][data-natural]::before,${PLUGINS} [data-plugin-bar][data-natural]::after{display:none !important}`
-  + `${PLUGINS} [class*="_toolbar"]:not([class*="_toolbarLabel"]):not([hidden]){position:sticky !important;top:0;z-index:4;box-sizing:border-box;height:${PHONE_HEADER_HEIGHT} !important;min-height:0 !important;max-height:${PHONE_HEADER_HEIGHT};background:var(--dsw-alias-bg-base);box-shadow:16px 0 0 var(--dsw-alias-bg-base),-8px 0 0 var(--dsw-alias-bg-base);padding:11px 0;grid-column:2;grid-row:1;flex-wrap:nowrap;flex-basis:auto;align-self:start;gap:8px}`
+  + `${PLUGINS} [class*="_toolbar"]:not([class*="_toolbarLabel"]):not([hidden]){position:sticky !important;top:0;z-index:4;box-sizing:border-box;height:${PHONE_HEADER_HEIGHT} !important;min-height:0 !important;max-height:${PHONE_HEADER_HEIGHT};background:var(--dsw-alias-bg-base);box-shadow:12px 0 0 var(--dsw-alias-bg-base),-8px 0 0 var(--dsw-alias-bg-base);padding:11px 0;grid-column:2;grid-row:1;flex-wrap:nowrap;flex-basis:auto;align-self:start;gap:8px}`
   // WebKit can lose sticky descendants through contents wrappers; reserve the row and pin only the real header parts.
-  + `${PLUGINS} [data-plugin-body] [data-plugin-header-part]:is([data-plugin-header-part="title"],[data-plugin-header-part="toolbar"]){position:fixed !important;top:calc(var(--dsh-remote-top-clearance,0px) + var(--dsh-remote-keyboard-shift,0px)) !important;left:16px !important;right:16px !important}`
+  + `${PLUGINS} [data-plugin-body] [data-plugin-header-part]:is([data-plugin-header-part="title"],[data-plugin-header-part="toolbar"]){position:fixed !important;top:calc(var(--dsh-remote-top-clearance,0px) + var(--dsh-remote-keyboard-shift,0px)) !important;left:12px !important;right:12px !important}`
   + `${PLUGINS} [data-plugin-body] [data-plugin-header-part="toolbar"][data-plugin-header-part]{left:auto !important}`
   + `${PLUGINS} [class*="_pageTabs"]{position:static;grid-column:2;grid-row:2;justify-self:end;align-self:center;width:auto;margin-top:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}`
   + `${PLUGINS} [class*="_pageTabList"]{min-width:0;flex-shrink:0;padding:4px;border:0;border-radius:22px;box-shadow:none;background:color-mix(in srgb,var(--dsw-alias-label-primary) 4%,var(--dsw-alias-bg-base))}`
