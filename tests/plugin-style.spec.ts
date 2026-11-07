@@ -11,6 +11,9 @@ it.each([
   host.textContent = '.plugins_cardTitle{white-space:nowrap;overflow:hidden}.plugins_cardDesc{display:-webkit-box;-webkit-line-clamp:1;overflow:hidden}'
     + '.plugins_toolbar[hidden]{display:none}.plugins_pageTabList{min-width:240px}.plugins_rowLine{display:flex}'
     + '.modal_dialog{display:flex;flex-direction:column}.modal_footer{display:flex}.settings_close{width:28px}'
+    + '.shell_frame[data-sidebar-drawer] .shell_mainPanel[data-global-panel]{padding-top:48px}'
+    + '[data-plugin-panel]{display:flex;align-items:center}'
+    + '.plugins_toolbar{order:3;flex-basis:100%}.plugins_pageHeading{flex-basis:100%}'
     + '.plugins_pageHead,.plugins_detailTop,.plugins_moreHead{padding-top:76px}'
     + '.plugins_pageBody{flex:1;overflow-y:auto;scroll-padding-top:88px}'
     + '.plugins_pageBar[data-natural]{position:sticky;top:0}'
@@ -19,7 +22,7 @@ it.each([
     + '.plugins_pageBar[data-natural] [data-plugin-header-part]{position:absolute;top:76px;width:300px}'
   const page = document.createElement('section')
   page.setAttribute('data-plugin-panel', '')
-  page.innerHTML = `<${headTag} class="plugins_pageHead"><div class="plugins_pageHeading"><h1>插件</h1></div><div class="plugins_toolbar"><button class="plugins_iconButton">刷新</button>`
+  page.innerHTML = `<${headTag} class="plugins_pageHead"><div class="plugins_pageHeading"><h1 class="plugins_pageTitle">插件</h1></div><div class="plugins_toolbar"><button class="plugins_iconButton">刷新</button>`
     + '<span class="plugins_addGroup"><button class="plugins_addPrimary">添加插件</button><button class="plugins_addMore">更多</button></span></div>'
     + `<div class="plugins_toolbar" hidden>不可用操作</div></${headTag}>`
     + '<div class="plugins_pageTabs"><div class="plugins_pageTabList"><button role="tab">已安装</button><button role="tab">插件市场</button></div></div>'
@@ -67,7 +70,12 @@ it.each([
   settings.setAttribute('role', 'presentation')
   settings.innerHTML = '<div role="dialog" data-shortcut-modal="settings"><div class="settings_header"><button class="settings_close">关闭设置</button></div></div>'
   document.head.append(host)
-  document.body.append(page, overlay, wizard, registry, settings)
+  const frame = document.createElement('main')
+  frame.className = 'shell_frame'
+  frame.setAttribute('data-sidebar-drawer', '')
+  frame.innerHTML = '<aside class="shell_sidebarCol"></aside><div class="shell_mainPanel" data-global-panel></div>'
+  frame.querySelector('[data-global-panel]')!.append(page)
+  document.body.append(frame, overlay, wizard, registry, settings)
   const proxy = source === 'proxy'
     ? Array.from(new DOMParser().parseFromString(phoneDocument('<head></head>'), 'text/html').querySelectorAll('style')) : []
   document.head.append(...proxy)
@@ -80,6 +88,17 @@ it.each([
   document.head.append(phone)
   const style = (selector: string) => getComputedStyle(document.querySelector(selector)!)
   try {
+    expect(style('[data-global-panel]').paddingTop).toBe('0px')
+    expect(style('.plugins_pageHead').display).toBe('contents')
+    expect(style('.plugins_pageTitle').position).toBe('sticky')
+    expect(getComputedStyle(page).display).toBe(measured ? 'flex' : 'grid')
+    expect(style('.plugins_pageTitle').height).toBe('66px')
+    expect(style('.plugins_toolbar:not([hidden])').position).toBe('sticky')
+    expect(style('.plugins_toolbar:not([hidden])').height).toBe('66px')
+    expect(style('.plugins_toolbar:not([hidden])').gridColumn).toBe('2')
+    expect(style('.plugins_toolbar:not([hidden])').gridRow).toBe('1')
+    expect(style('.plugins_pageTabs').gridColumn).toBe('1 / -1')
+    expect(style('.plugins_cards').gridColumn).toBe('1 / -1')
     expect(getComputedStyle(page).paddingLeft).toBe('16px')
     expect(style('.plugins_cardTitle').whiteSpace).toBe('normal')
     expect(style('.plugins_cardTitle').overflowWrap).toBe('anywhere')
@@ -89,16 +108,21 @@ it.each([
     expect(style('.plugins_detailTop').paddingTop).toBe('0px')
     expect(style('.plugins_moreHead').paddingTop).toBe('0px')
     if (measured) {
-      expect(style('[data-plugin-header-part]').position).toBe('static')
+      expect(style('[data-plugin-header-part]').position).toBe('sticky')
       expect(style('[data-plugin-header-part]').translate).toBe('none')
       expect(style('[data-plugin-header-part]').clipPath).toBe('none')
       expect(style('[data-plugin-header-part]').width).toBe('auto')
       expect(style('.plugins_pageHead').height).toBe('auto')
       expect(style('.plugins_pageHead').clipPath).toBe('none')
-      expect(style('.plugins_pageHeading').display).toBe('block')
-      expect(style('[data-plugin-bar]').position).toBe('relative')
-      expect(style('[data-plugin-body]').overflow).toBe('visible')
-      expect(style('[data-plugin-body]').flexGrow).toBe('0')
+      expect(style('.plugins_pageHeading').display).toBe('contents')
+      expect(style('[data-plugin-bar]').display).toBe('contents')
+      expect(style('[data-plugin-body]').display).toBe('grid')
+      expect(style('[data-plugin-body]').overflowY).toBe('auto')
+      expect(style('[data-plugin-body]').flexGrow).toBe('1')
+      const bar = page.querySelector('[data-plugin-bar]')!
+      bar.removeAttribute('data-natural')
+      expect(getComputedStyle(bar).display).toBe('contents')
+      bar.setAttribute('data-natural', '')
       expect(getComputedStyle(page).overflowY).toBe('auto')
     }
     expect(style('.plugins_pageHeading').paddingTop).not.toBe('16px')
@@ -140,7 +164,7 @@ it.each([
     document.body.append(page)
     expect(style('.plugins_cardTitle').whiteSpace).toBe('nowrap')
   } finally {
-    dispose(); phone.remove(); host.remove(); page.remove(); overlay.remove(); wizard.remove(); registry.remove(); settings.remove()
+    dispose(); phone.remove(); host.remove(); frame.remove(); page.remove(); overlay.remove(); wizard.remove(); registry.remove(); settings.remove()
     for (const node of proxy) node.remove()
   }
 })

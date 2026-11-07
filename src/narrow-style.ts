@@ -1,3 +1,5 @@
+export const PHONE_HEADER_HEIGHT = '66px'
+
 /** The narrow-screen patch layer the proxy injects into every forwarded DSH document. */
 
 /**
@@ -59,18 +61,27 @@ const PLUGIN_DIALOG = `${PLUGIN_MODAL} > [role="dialog"]`
 const PLUGIN_REGISTRY = 'body:has([data-plugin-panel]) [class*="_registry"]:has(> [class*="_registryOption"])'
 
 /** Shared by fresh proxy documents and client reloads; every rule lives inside the phone query. */
-export const PHONE_PLUGIN_STYLE = `${PLUGINS}{--plugin-page-inset:16px !important;min-width:0;padding:0 16px 24px;gap:20px;overflow-y:auto;overscroll-behavior-y:contain}`
-  + `${PLUGINS} > *{min-width:0;flex-shrink:0}`
+export const PHONE_PLUGIN_STYLE = `html ${PLUGINS}{--plugin-page-inset:16px !important;min-width:0;padding:0 16px 24px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:start;align-items:start;gap:16px 8px;scroll-padding-top:${PHONE_HEADER_HEIGHT};overflow-y:auto;overscroll-behavior-y:contain}`
+  + `${FRAME}[data-sidebar-drawer] [class*="_mainPanel"][data-global-panel]:has(${PLUGINS}){padding-top:0 !important}`
+  + `html ${PLUGINS}:has([data-plugin-body]){display:flex;align-items:stretch;gap:16px;padding-bottom:0}`
+  + `${PLUGINS} > *{min-width:0;flex-shrink:0;grid-column:1 / -1}`
+  + `${PLUGINS} [class*="_pageHead"]:not([class*="_pageHeading"]){display:contents}`
+  + `${PLUGINS} [class*="_pageHeading"]{display:contents !important}`
+  + `${PLUGINS} [class*="_pageTitle"]{position:sticky !important;top:0;z-index:3;grid-column:1;grid-row:1;height:${PHONE_HEADER_HEIGHT};display:flex;align-items:center;margin:0;font-size:17px;line-height:24px}`
+  + `${PLUGINS} [class*="_pageTitle"]::before{content:"";position:absolute;inset:0 auto 0 -16px;width:100vw;background:var(--dsw-alias-bg-base);z-index:-1}`
+  + `${PLUGINS} [class*="_pageIntro"]{grid-column:1 / -1;grid-row:2;margin:0;min-width:0;align-items:flex-start;white-space:normal}`
   + `${PLUGINS} :is([class*="_pageHead"]:not([class*="_pageHeading"]),[class*="_detailTop"],[class*="_moreHead"]){padding-top:0 !important}`
-  // Newer hosts cache absolute header geometry; phone pages scroll as one normal flow instead.
-  + `${PLUGINS} [data-plugin-body]{flex:none !important;overflow:visible !important;gap:20px;scroll-padding-top:0}`
-  + `${PLUGINS} [data-plugin-bar][data-natural]{position:relative !important}`
+  // Keep a real scroll box for the host lifecycle; only dissolve the header wrappers.
+  + `${PLUGINS} [data-plugin-body]{display:grid !important;grid-template-columns:minmax(0,1fr) auto;align-content:start;align-items:start;flex:1 !important;min-height:0;width:100% !important;max-width:none;margin:0 !important;padding:0 0 24px !important;overflow-y:auto !important;scrollbar-gutter:auto;gap:16px 8px;scroll-padding-top:${PHONE_HEADER_HEIGHT}}`
+  + `${PLUGINS} [data-plugin-body] > :not([data-plugin-bar]){grid-column:1 / -1}`
+  + `${PLUGINS} [data-plugin-bar]:not([data-measuring]){display:contents !important}`
   + `${PLUGINS} [data-plugin-bar][data-natural] > header{height:auto !important;clip-path:none !important}`
-  + `${PLUGINS} [data-plugin-bar][data-natural] [class*="_pageHeading"]{display:block !important}`
-  + `${PLUGINS} [data-plugin-bar][data-natural] [data-plugin-header-part]{position:static !important;width:auto !important;translate:none !important;clip-path:none !important}`
+  + `${PLUGINS} [data-plugin-bar][data-natural] [class*="_pageHeading"]{display:contents !important}`
+  + `${PLUGINS} [data-plugin-bar][data-natural] [data-plugin-header-part]{inset:auto !important;top:0 !important;width:auto !important;translate:none !important;clip-path:none !important}`
+  + `${PLUGINS} [data-plugin-header-part]:not([data-plugin-header-part="title"]):not([data-plugin-header-part="toolbar"]){position:static !important}`
   + `${PLUGINS} [data-plugin-bar][data-natural]::before,${PLUGINS} [data-plugin-bar][data-natural]::after{display:none !important}`
-  + `${PLUGINS} [class*="_toolbar"]:not([hidden]){flex-wrap:wrap;flex-basis:100%;gap:8px}`
-  + `${PLUGINS} [class*="_pageTabs"]{margin-top:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}`
+  + `${PLUGINS} [class*="_toolbar"]:not([hidden]){position:sticky !important;top:0;z-index:4;box-sizing:border-box;height:${PHONE_HEADER_HEIGHT};padding:11px 0;grid-column:2;grid-row:1;flex-wrap:nowrap;flex-basis:auto;align-self:start;gap:8px}`
+  + `${PLUGINS} [class*="_pageTabs"]{position:static;grid-column:1 / -1;grid-row:3;margin-top:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}`
   + `${PLUGINS} [class*="_pageTabList"]{min-width:0;flex-shrink:0}`
   + `${PLUGINS} [role="tab"]{min-height:44px;white-space:nowrap}`
   + `${PLUGINS} [class*="_installedPanel"]{gap:24px}`
@@ -118,26 +129,47 @@ export const PHONE_PLUGIN_STYLE = `${PLUGINS}{--plugin-page-inset:16px !importan
   + `${PLUGIN_REGISTRY} [class*="_registryOption"]{box-sizing:border-box;min-height:44px}`
   + `${PLUGIN_REGISTRY} [class*="_registryCustomField"]{min-width:0;min-height:44px;box-sizing:border-box;font-size:16px}`
 
+const TASK_PAGE = '[data-testid="task-manager-page"]'
+
+/** Compact only the automation catalog; its editor and run details keep their own layout. */
+export const PHONE_TASK_PAGE_STYLE = `${FRAME}[data-sidebar-drawer] [class*="_mainPanel"][data-global-panel]:has(${TASK_PAGE}){padding-top:0 !important}`
+  + `${TASK_PAGE} [class*="_pageScroll"]{scroll-padding-top:${PHONE_HEADER_HEIGHT};scrollbar-gutter:auto;overscroll-behavior-y:contain}`
+  + `${TASK_PAGE} [class*="_pageContent"]{padding:0 16px 24px}`
+  + `${TASK_PAGE} [class*="_pageHeading"]{position:sticky;top:0;z-index:3;box-sizing:border-box;height:${PHONE_HEADER_HEIGHT};padding:11px 0 !important;margin-bottom:12px;gap:8px;align-items:center;flex-wrap:nowrap;background:var(--dsw-alias-bg-base);box-shadow:16px 0 0 var(--dsw-alias-bg-base),-16px 0 0 var(--dsw-alias-bg-base)}`
+  + `${TASK_PAGE} [class*="_pageHeading"] h1{font-size:17px;line-height:24px}`
+  + `${TASK_PAGE} [class*="_creationActions"]{gap:8px}`
+  + `${TASK_PAGE} :is([class*="_creationActions"] button,[class*="_emptyAction"]){min-width:44px;min-height:44px}`
+  + `${TASK_PAGE} [class*="_filters"]{margin-bottom:12px}`
+  + `${TASK_PAGE} [class*="_filterTabs"]{max-width:100%;flex-wrap:nowrap;gap:4px;overflow-x:auto;overscroll-behavior-x:contain}`
+  + `${TASK_PAGE} button[class*="_filterTab"]{height:44px;padding-inline:12px;border-radius:22px}`
+  + `${TASK_PAGE} [class*="_searchField"]{box-sizing:border-box;height:44px;margin-bottom:12px}`
+  + `${TASK_PAGE} [class*="_searchClear"]{width:44px;height:44px}`
+  + `${TASK_PAGE} [class*="_list"] > [class*="_empty"]{padding:24px 0}`
+
 // dsh-superagent appends its sheet after the proxy's at runtime: the `html` prefix out-specifies
 // its single-class rules whichever order they land in.
 const SA = 'html .dt-page'
+const SA_ADMISSION = `${SA} .dt-admission:has([data-dsh-admission-label])`
 const SA_MODAL = 'html body > .dt-modal-root[role="presentation"]'
 
 /** dsh-superagent's panel, dialogs and toast; shared by fresh proxy documents and client reloads. */
-export const PHONE_SUPERAGENT_STYLE = `${SA}{padding:8px 16px 0;scroll-padding:56px 0 72px;scrollbar-gutter:auto;overscroll-behavior-y:contain;-webkit-tap-highlight-color:transparent}`
-  + `${SA} > .dt-column{gap:16px;padding-bottom:24px}`
+export const PHONE_SUPERAGENT_STYLE = `${SA}{padding:0 16px;scroll-padding:${PHONE_HEADER_HEIGHT} 0 72px;scrollbar-gutter:auto;overscroll-behavior-y:contain;-webkit-tap-highlight-color:transparent}`
+  // Drawer hosts reserve window controls outside global panels; the phone frame already owns its safe area.
+  + `${FRAME}[data-sidebar-drawer] [class*="_mainPanel"][data-global-panel]:has(.dt-page){padding-top:0 !important}`
+  + `${SA} > .dt-column{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,auto);gap:16px 4px;padding-bottom:24px}`
+  + `${SA} > .dt-column > :not(.dt-head){grid-column:1 / -1}`
   // A phone title bar: the page title, then its actions as icon buttons (their text stays the accessible
   // name), and the search on the row below; no desktop window strip to clear.
-  + `${SA} .dt-head{align-items:center;gap:8px 4px;padding-top:0 !important}`
+  + `${SA} .dt-head{display:contents;align-items:center;gap:8px 4px;padding-top:0 !important}`
   + `${SA} .dt-toolbar{display:contents}`
-  + `${SA} .dt-head-title{flex:1 1 auto;min-width:0}`
+  + `${SA} .dt-head-title{position:sticky;top:0;z-index:3;grid-column:1;grid-row:1;height:${PHONE_HEADER_HEIGHT};display:flex;align-items:center;min-width:0}`
+  + `${SA} .dt-head-title::before{content:"";position:absolute;inset:0 auto 0 -16px;width:100vw;background:var(--dsw-alias-bg-base);z-index:-1}`
   + `${SA} .dt-title{font-size:17px;line-height:24px;color:var(--dsw-alias-label-primary)}`
-  + `${SA} .dt-head .dt-search{order:1;flex:1 1 100%;width:100%}`
-  + `${SA} .dt-head > .dt-toolbar > .dt-btn{flex:none;width:44px;height:44px;min-height:44px;padding:0;gap:0;border:0;border-radius:22px;font-size:0}`
+  + `${SA} .dt-head .dt-search{grid-column:1 / -1;grid-row:2;order:0;flex:1 1 100%;width:100%}`
+  + `${SA} .dt-head > .dt-toolbar > .dt-btn{position:sticky;top:11px;z-index:4;grid-row:1;align-self:center;flex:none;width:44px;height:44px;min-height:44px;padding:0;gap:0;border:0;border-radius:22px;font-size:0}`
   + `${SA} .dt-head > .dt-toolbar > .dt-btn :is(.dt-btn-icon,svg){width:20px;height:20px}`
-  // The page tabs stay reachable through long pages, edge to edge like a phone's navigation bar.
-  // -8px cancels the page's top padding, which would otherwise leave a strip of scrolling content above them.
-  + `${SA} .dt-tabs{position:sticky;top:-8px;z-index:2;margin-inline:-16px;padding-inline:16px !important;`
+  // Only the title and actions stick; search and tabs leave with the page content.
+  + `${SA} .dt-tabs{position:static;top:auto;z-index:2;margin-inline:-16px;padding-inline:16px !important;`
   + 'background:var(--dsw-alias-bg-base);overscroll-behavior-x:contain;scrollbar-width:none}'
   + `${SA} .dt-tab{height:44px}`
   // Filters slide as one strip instead of wrapping into a second row of pills.
@@ -150,6 +182,22 @@ export const PHONE_SUPERAGENT_STYLE = `${SA}{padding:8px 16px 0;scroll-padding:5
   + `${SA} .dt-row-quote:empty{display:none}`
   // The selected settings tab already names the group.
   + `${SA} .dt-settings-title{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}`
+  // Keep each source's conditions together; labels come from the live localized table headings.
+  + `${SA_ADMISSION}{display:block}`
+  + `${SA_ADMISSION} thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}`
+  + `${SA_ADMISSION} tbody{display:block}`
+  + `${SA_ADMISSION} tbody tr{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;padding:16px 0;border-top:.5px solid var(--dsw-alias-border-l3)}`
+  + `${SA_ADMISSION} td{display:block;min-width:0;padding:0;border:0}`
+  + `${SA_ADMISSION} .dt-admission-scope{font-weight:500;overflow-wrap:anywhere}`
+  + `${SA_ADMISSION} .dt-admission-scope small{font-weight:400;margin-top:4px}`
+  + `${SA_ADMISSION} [data-dsh-admission-label]::before{content:attr(data-dsh-admission-label);display:block;margin-bottom:6px;color:var(--dsw-alias-label-secondary)}`
+  + `${SA} .dt-rows-item:not(.dt-rows-expanded):has(> :nth-child(3)){grid-template-columns:minmax(0,1fr) auto;row-gap:8px;padding-block:8px}`
+  + `${SA} .dt-rows-item:not(.dt-rows-expanded):has(> :nth-child(3)) > :first-child{grid-column:1 / -1}`
+  + `${SA} .dt-rows-item:not(.dt-rows-expanded):has(> :nth-child(3)) > :last-child{grid-column:2;grid-row:2;min-width:44px;min-height:44px}`
+  + `${SA} .dt-rows-item > .dt-row-label{white-space:normal;overflow-wrap:anywhere}`
+  + `${SA} .dt-rule .dt-disclosure-row{flex-wrap:wrap}`
+  + `${SA} .dt-rule .dt-disclosure-title{flex:1;white-space:normal;overflow-wrap:anywhere}`
+  + `${SA} .dt-rule-preview{flex:1 1 100%;margin-left:28px;white-space:normal;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}`
   // The prompt list scrolls in its own box so the editor stays near the first screen.
   + `${SA} .dt-prompt-nav{max-height:min(320px,45dvh);overflow-y:auto;overscroll-behavior-y:contain;padding:4px;`
   + 'border:.5px solid var(--dsw-alias-border-l3);border-radius:12px}'
@@ -265,6 +313,7 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + PHONE_HERO_COMPOSER_STYLE
   + PHONE_SETTINGS_STYLE
   + PHONE_PLUGIN_STYLE
+  + PHONE_TASK_PAGE_STYLE
   + PHONE_SUPERAGENT_STYLE
   // Only the conversation scrollport moves. At its ends, stop a pull from panning the page and
   // carrying the composer and its context meter with the whole shell.

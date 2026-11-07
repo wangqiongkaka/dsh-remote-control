@@ -34,7 +34,12 @@ it.each(['proxy', 'reload'])('fits the Superagent panel, dialogs and toast to ph
     + '<div class="dt-modal-footer"><button class="dt-btn dt-btn-md">关闭</button></div></div>'
   const toast = document.createElement('div')
   toast.className = 'dt-toast'
-  document.body.append(page, modal, toast)
+  const frame = document.createElement('main')
+  frame.className = 'shell_frame'
+  frame.setAttribute('data-sidebar-drawer', '')
+  frame.innerHTML = '<aside class="shell_sidebarCol"></aside><div class="shell_mainPanel" data-global-panel></div>'
+  frame.querySelector('[data-global-panel]')!.append(page)
+  document.body.append(frame, modal, toast)
   const proxy = source === 'proxy'
     ? Array.from(new DOMParser().parseFromString(phoneDocument('<head></head>'), 'text/html').querySelectorAll('style')) : []
   document.head.append(...proxy)
@@ -45,21 +50,28 @@ it.each(['proxy', 'reload'])('fits the Superagent panel, dialogs and toast to ph
     .filter((rule): rule is CSSMediaRule => rule instanceof CSSMediaRule && rule.conditionText === '(max-width: 720px)')
     .flatMap(rule => Array.from(rule.cssRules).map(child => child.cssText)).join('')
   const superagent = document.createElement('style')
+  // The drawer host reserves a 48px window-controls band outside the page itself.
   superagent.textContent = SUPERAGENT
+    + '.shell_frame[data-sidebar-drawer] .shell_mainPanel[data-global-panel]{padding-top:48px}'
   document.head.append(phone, superagent)
   const style = (selector: string) => getComputedStyle(document.querySelector(selector)!)
   try {
+    expect(style('[data-global-panel]').paddingTop).toBe('0px')
     expect(style('.dt-page').paddingLeft).toBe('16px')
-    expect(style('.dt-page').paddingTop).toBe('8px')
+    expect(style('.dt-page').paddingTop).toBe('0px')
     expect(style('.dt-head').paddingTop).toBe('0px')
     expect(style('.dt-toolbar').display).toBe('contents')
-    expect(style('.dt-search').order).toBe('1')
+    expect(style('.dt-search').gridRow).toBe('2')
     expect(style('.dt-search').width).toBe('100%')
     expect(style('.dt-tab').height).toBe('44px')
     expect(style('.dt-input').height).toBe('44px')
     expect(style('.dt-head .dt-btn').width).toBe('44px')
     expect(style('.dt-head .dt-btn').fontSize).toBe('0px')
-    expect(style('.dt-tabs').position).toBe('sticky')
+    expect(style('.dt-tabs').position).toBe('static')
+    expect(style('.dt-head').display).toBe('contents')
+    expect(style('.dt-head-title').height).toBe('66px')
+    expect(style('.dt-head-title').position).toBe('sticky')
+    expect(style('.dt-head .dt-btn').position).toBe('sticky')
     expect(style('.dt-filters').flexWrap).toBe('nowrap')
     expect(style('.dt-filters').overflowX).toBe('auto')
     expect(style('.dt-ticket-meta').flexWrap).toBe('wrap')
@@ -77,8 +89,10 @@ it.each(['proxy', 'reload'])('fits the Superagent panel, dialogs and toast to ph
     expect(style('.dt-glossary td').whiteSpace).toBe('normal')
     expect(style('.dt-glossary td:nth-child(3)').gridColumn).toBe('1 / -1')
     expect(style('.dt-toast').top).toContain('--dsh-remote-top-clearance')
+    page.remove()
+    expect(style('[data-global-panel]').paddingTop).toBe('48px')
   } finally {
-    dispose(); phone.remove(); superagent.remove(); page.remove(); modal.remove(); toast.remove()
+    dispose(); phone.remove(); superagent.remove(); frame.remove(); modal.remove(); toast.remove()
     for (const node of proxy) node.remove()
     document.documentElement.removeAttribute('data-platform')
   }

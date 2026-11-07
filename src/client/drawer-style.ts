@@ -24,7 +24,7 @@
  * styling); this module only owns the sheet.
  */
 
-import { PHONE_NATIVE_DRAWER_STYLE, PHONE_DRAWER_BOTTOM_STYLE, PHONE_HERO_COMPOSER_STYLE, PHONE_PLUGIN_STYLE, PHONE_SAFE_AREA_STYLE, PHONE_SETTINGS_STYLE, PHONE_SUPERAGENT_STYLE } from '../narrow-style.ts'
+import { PHONE_HEADER_HEIGHT, PHONE_NATIVE_DRAWER_STYLE, PHONE_DRAWER_BOTTOM_STYLE, PHONE_HERO_COMPOSER_STYLE, PHONE_PLUGIN_STYLE, PHONE_SAFE_AREA_STYLE, PHONE_SETTINGS_STYLE, PHONE_SUPERAGENT_STYLE, PHONE_TASK_PAGE_STYLE } from '../narrow-style.ts'
 import { phoneViewport } from '../phone-document.ts'
 import { followSettingsSheet } from './settings-sheet.ts'
 
@@ -87,10 +87,10 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   // Workspace negative margins reach past the header box; paint over both side insets
   // without widening its grid or shifting the controls.
   + `${DRAWER_SCROLL_ROOT} > [class*="_logoRow"]{position:sticky;top:0;z-index:3;`
-  + 'height:66px;padding-top:14px;background:var(--dsw-specific-sidebar-fill);'
+  + `height:${PHONE_HEADER_HEIGHT};padding-top:14px;background:var(--dsw-specific-sidebar-fill);`
   + 'box-shadow:var(--dsh-sidebar-inline-padding,12px) 0 0 var(--dsw-specific-sidebar-fill),'
   + 'calc(-1 * var(--dsh-sidebar-inline-padding,12px)) 0 0 var(--dsw-specific-sidebar-fill)}'
-  + `${DRAWER_HEADER}{display:grid;grid-template-columns:minmax(0,1fr) auto 40px;grid-template-rows:66px auto 1fr auto;column-gap:8px}`
+  + `${DRAWER_HEADER}{display:grid;grid-template-columns:minmax(0,1fr) auto 40px;grid-template-rows:${PHONE_HEADER_HEIGHT} auto 1fr auto;column-gap:8px}`
   // Paint one full-width sticky header; its subgrid leaves the middle track to panel shortcuts.
   + `${DRAWER_HEADER} > [class*="_logoRow"]{grid-column:1 / -1;grid-row:1;display:grid;grid-template-columns:subgrid;`
   + 'gap:8px;min-width:0;padding:14px 0 12px 4px;margin-bottom:0}'
@@ -100,7 +100,7 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + 'flex:none;margin:0;padding:0;display:inline-flex;align-items:center;justify-content:center}'
   + `${HEADER_BUTTON} svg{width:18px;height:18px;flex:none}`
   + `${DRAWER_HEADER} > [class*="_panelList"]{grid-column:2;grid-row:1;position:sticky;top:0;z-index:4;`
-  + 'display:flex;flex-direction:row;align-items:center;align-self:start;gap:8px;height:66px;box-sizing:border-box;'
+  + `display:flex;flex-direction:row;align-items:center;align-self:start;gap:8px;height:${PHONE_HEADER_HEIGHT};box-sizing:border-box;`
   + 'padding:14px 0 12px;margin:0;background:var(--dsw-specific-sidebar-fill)}'
   + `${DRAWER_HEADER} > [class*="_panelList"] [class*="_panelTitle"]{display:none}`
   + `${DRAWER_HEADER} [class*="_settingsArea"] [class*="_triggerRow"]{display:flex;align-items:center;gap:8px;`
@@ -172,6 +172,7 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + PHONE_HERO_COMPOSER_STYLE
   + PHONE_SETTINGS_STYLE
   + PHONE_PLUGIN_STYLE
+  + PHONE_TASK_PAGE_STYLE
   + PHONE_SUPERAGENT_STYLE
   // Client reloads do not replace the proxy HTML; keep live composer layout in this sheet.
   // Installed hosts lack data-composer-dock; the card's dock sibling exists in both versions.
@@ -227,6 +228,16 @@ export function applyDrawerSelection(): () => void {
   let frame = 0
   const position = (): void => {
     frame = 0
+    for (const table of document.querySelectorAll<HTMLTableElement>('.dt-page .dt-admission')) {
+      const headings = Array.from(table.tHead?.rows[0]?.cells ?? [], cell =>
+        Array.from(cell.childNodes, node => node.textContent?.trim()).filter(Boolean).join(' '))
+      for (const body of table.tBodies) for (const row of body.rows) {
+        for (let index = 1; index < row.cells.length; index++) {
+          const label = headings[index]
+          if (label) row.cells[index]!.setAttribute('data-dsh-admission-label', label)
+        }
+      }
+    }
     const viewportTop = viewport?.offsetTop ?? 0
     for (const menu of document.querySelectorAll<HTMLElement>(selector)) {
       const button = menu.closest('.hp-anchor')?.querySelector('.hp-chip')
@@ -240,7 +251,7 @@ export function applyDrawerSelection(): () => void {
   }
   const schedule = (): void => { if (!frame) frame = requestAnimationFrame(position) }
   const observer = new MutationObserver(schedule)
-  observer.observe(document.body, { childList: true, subtree: true })
+  observer.observe(document.body, { childList: true, characterData: true, subtree: true })
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
   document.addEventListener('scroll', schedule, true)
   window.addEventListener('resize', schedule)
@@ -260,6 +271,7 @@ export function applyDrawerSelection(): () => void {
       menu.style.removeProperty('--dsh-remote-mode-menu-bottom')
       menu.style.removeProperty('--dsh-remote-mode-menu-height')
     }
+    for (const cell of document.querySelectorAll('[data-dsh-admission-label]')) cell.removeAttribute('data-dsh-admission-label')
     style.remove()
   }
 }
