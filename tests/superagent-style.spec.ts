@@ -5,6 +5,7 @@ import { applyDrawerSelection } from '../dist/client/drawer-style.js'
 
 // dsh-superagent's own rules that the phone layer must override; the plugin appends them after the proxy's sheet.
 const SUPERAGENT = '.dt-page{padding:28px 24px 0}.dt-head{display:flex;flex-wrap:wrap}[data-platform] .dt-page .dt-head{padding-top:48px}'
+  + '.dt-settings{display:grid}.dt-settings-nav{position:static;flex-wrap:wrap}'
   + '.dt-toolbar{display:flex}.dt-search{width:240px}.dt-page .dt-tab{height:34px}.dt-btn-sm{height:28px}.dt-input{height:32px}'
   + '.dt-ticket-meta{flex-wrap:nowrap;overflow:hidden;white-space:nowrap}.dt-row-quote{min-height:20px}'
   + '.dt-prompt-team-item > .dt-info{position:absolute}.dt-modal-root{position:fixed;inset:0;display:flex;align-items:center;padding:24px}.dt-modal{width:380px;border-radius:24px}'
@@ -23,7 +24,7 @@ it.each(['proxy', 'reload'])('fits the Superagent panel, dialogs and toast to ph
     + '<span class="dt-ticket-note">LlmError: no adapter registered</span></div></li></ul>'
     + '<div class="dt-prompt-nav"><div class="dt-prompt-team-item"><button class="dt-nav-item">沟通方式</button><button class="dt-info">?</button></div></div>'
     + '<button class="dt-info">?</button>'
-    + '<div class="dt-tabs"><button role="tab" class="dt-tab">概览</button></div>'
+    + '<div class="dt-tabs"><button role="tab" class="dt-tab">概览</button></div><div class="dt-main"><div class="dt-settings"><nav class="dt-settings-nav"><button class="dt-settings-link">来源</button><button class="dt-settings-link" aria-current="page">评估</button></nav><div class="dt-settings-body">策略内容</div></div></div>'
     + '<button class="dt-switch" role="switch"><span class="dt-switch-thumb"></span></button></div>'
   const modal = document.createElement('div')
   modal.className = 'dt-modal-root'
@@ -59,6 +60,11 @@ it.each(['proxy', 'reload'])('fits the Superagent panel, dialogs and toast to ph
     expect(style('[data-global-panel]').paddingTop).toBe('0px')
     expect(style('.dt-page').paddingLeft).toBe('16px')
     expect(style('.dt-page').paddingTop).toBe('0px')
+    expect(style('.dt-page').scrollbarWidth).toBe('none')
+    expect(style('.dt-page').scrollbarGutter).toBe('auto')
+    const scrollbar = [...phone.sheet!.cssRules].find((rule): rule is CSSStyleRule =>
+      rule instanceof CSSStyleRule && rule.selectorText === 'html .dt-page::-webkit-scrollbar')
+    expect(scrollbar?.style.display).toBe('none')
     expect(style('.dt-head').paddingTop).toBe('0px')
     expect(style('.dt-toolbar').display).toBe('contents')
     expect(style('.dt-search').gridRow).toBe('2')
@@ -67,7 +73,15 @@ it.each(['proxy', 'reload'])('fits the Superagent panel, dialogs and toast to ph
     expect(style('.dt-input').height).toBe('44px')
     expect(style('.dt-head .dt-btn').width).toBe('44px')
     expect(style('.dt-head .dt-btn').fontSize).toBe('0px')
-    expect(style('.dt-tabs').position).toBe('static')
+    expect(style('.dt-tabs').position).toBe('sticky')
+    expect(style('.dt-tabs').top).toBe('66px')
+    expect(style('.dt-tabs').height).toBe('44px')
+    expect(style('.dt-settings-nav').position).toBe('sticky')
+    expect(style('.dt-settings-nav').top).toBe('calc(110px)')
+    expect(style('.dt-settings-nav').height).toBe('44px')
+    expect(style('.dt-settings-nav').flexWrap).toBe('nowrap')
+    expect(style('.dt-settings-nav').overflowX).toBe('auto')
+    expect(style('.dt-settings').display).toBe('block')
     expect(style('.dt-head').display).toBe('contents')
     expect(style('.dt-head-title').height).toBe('66px')
     expect(style('.dt-head-title').position).toBe('sticky')

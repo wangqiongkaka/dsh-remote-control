@@ -55,26 +55,28 @@ const SETTINGS = '[data-shortcut-modal="settings"]'
 const SETTING_CHOICE = `${SETTINGS} [data-slot="settings.general.item"] [class*="_row"]:has(> [class*="_rowText"] [class*="_desc"]):has([class*="_selector"])`
 
 const PLUGINS = '[data-plugin-panel]'
+const PLUGIN_TOOLBAR = `${PLUGINS} [class*="_pageHead"]:not([class*="_pageHeading"]) > [class*="_toolbar"]`
 // Install, recovery and uninstall dialogs have no shortcut scope; settings keeps its own sheet.
 const PLUGIN_MODAL = `body:has(${PLUGINS}) > [role="presentation"]:has(> [role="dialog"]:not([data-shortcut-modal]))`
 const PLUGIN_DIALOG = `${PLUGIN_MODAL} > [role="dialog"]`
 const PLUGIN_REGISTRY = 'body:has([data-plugin-panel]) [class*="_registry"]:has(> [class*="_registryOption"])'
 
 /** Shared by fresh proxy documents and client reloads; every rule lives inside the phone query. */
-export const PHONE_PLUGIN_STYLE = `html ${PLUGINS}{--plugin-page-inset:16px !important;min-width:0;padding:0 16px 24px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:start;align-items:start;gap:16px 8px;scroll-padding-top:${PHONE_HEADER_HEIGHT};overflow-y:auto;overscroll-behavior-y:contain}`
+export const PHONE_PLUGIN_STYLE = `html ${PLUGINS}{--plugin-page-inset:16px !important;min-width:0;padding:0 16px 24px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:start;align-items:start;gap:16px 8px;scroll-padding-top:${PHONE_HEADER_HEIGHT};overflow-y:auto;scrollbar-width:none;scrollbar-gutter:auto;overscroll-behavior-y:contain}`
   + `${FRAME}[data-sidebar-drawer] [class*="_mainPanel"][data-global-panel]:has(${PLUGINS}){padding-top:0 !important}`
   + `html ${PLUGINS}:has([data-plugin-body]){display:flex;align-items:stretch;gap:16px;padding-bottom:0;overflow-x:clip;overflow-y:clip !important}`
   + `${PLUGINS} > *{min-width:0;flex-shrink:0;grid-column:1 / -1}`
   + `${PLUGINS} [class*="_pageHead"]:not([class*="_pageHeading"]){display:contents}`
   + `${PLUGINS} [class*="_pageHeading"]{display:contents !important}`
   + `${PLUGINS} [class*="_pageTitle"]{position:sticky !important;top:0;z-index:3;grid-column:1;grid-row:1;height:${PHONE_HEADER_HEIGHT} !important;min-height:0 !important;max-height:${PHONE_HEADER_HEIGHT};box-sizing:border-box;overflow:hidden;background:var(--dsw-alias-bg-base);box-shadow:16px 0 0 var(--dsw-alias-bg-base),-16px 0 0 var(--dsw-alias-bg-base);display:flex;align-items:center;margin:0;font-size:17px;line-height:24px}`
-  + `${PLUGINS} [class*="_pageIntro"]{grid-column:1 / -1;grid-row:2;margin:0;min-width:0;align-items:flex-start;white-space:normal}`
+  + `${PLUGINS} [class*="_pageIntro"]{grid-column:1;grid-row:2;margin:0;min-width:0;align-self:center;align-items:center;white-space:normal;overflow-wrap:anywhere}`
   + `${PLUGINS} :is([class*="_pageHead"]:not([class*="_pageHeading"]),[class*="_detailTop"],[class*="_moreHead"]){padding-top:0 !important}`
   // Keep a real scroll box for the host lifecycle; only dissolve the header wrappers.
-  + `${PLUGINS} [data-plugin-body]{display:grid !important;grid-template-columns:minmax(0,1fr) auto;align-content:start;align-items:start;flex:1 !important;min-height:0;width:100% !important;max-width:none;margin:0 !important;padding:0 0 24px !important;overflow-y:auto !important;scrollbar-gutter:auto;gap:16px 8px;scroll-padding-top:${PHONE_HEADER_HEIGHT}}`
-  + `${PLUGINS} [data-plugin-body]:has(> [data-plugin-bar]){grid-template-rows:${PHONE_HEADER_HEIGHT} auto auto}`
+  + `${PLUGINS} [data-plugin-body]{display:grid !important;grid-template-columns:minmax(0,1fr) auto;align-content:start;align-items:start;flex:1 !important;min-height:0;width:100% !important;max-width:none;margin:0 !important;padding:0 0 24px !important;overflow-y:auto !important;scrollbar-width:none;scrollbar-gutter:auto;gap:16px 8px;scroll-padding-top:${PHONE_HEADER_HEIGHT}}`
+  + `html ${PLUGINS}::-webkit-scrollbar,${PLUGINS} [data-plugin-body]::-webkit-scrollbar{display:none;width:0;height:0}`
+  + `${PLUGINS} [data-plugin-body]:has(> [data-plugin-bar]){grid-template-rows:${PHONE_HEADER_HEIGHT} auto}`
   + `${PLUGINS} [data-plugin-body]:has(> [data-plugin-bar])::before{content:"";grid-column:1 / -1;grid-row:1;height:${PHONE_HEADER_HEIGHT};pointer-events:none}`
-  + `${PLUGINS} [data-plugin-body] > :not([data-plugin-bar]){grid-column:1 / -1}`
+  + `${PLUGINS} [data-plugin-body] > :not([data-plugin-bar]):not([class*="_pageTabs"]){grid-column:1 / -1}`
   + `${PLUGINS} [data-plugin-bar]:not([data-measuring]){display:contents !important}`
   + `${PLUGINS} [data-plugin-bar][data-natural] > header{height:auto !important;clip-path:none !important}`
   + `${PLUGINS} [data-plugin-bar][data-natural] [class*="_pageHeading"]{display:contents !important}`
@@ -85,9 +87,19 @@ export const PHONE_PLUGIN_STYLE = `html ${PLUGINS}{--plugin-page-inset:16px !imp
   // WebKit can lose sticky descendants through contents wrappers; reserve the row and pin only the real header parts.
   + `${PLUGINS} [data-plugin-body] [data-plugin-header-part]:is([data-plugin-header-part="title"],[data-plugin-header-part="toolbar"]){position:fixed !important;top:calc(var(--dsh-remote-top-clearance,0px) + var(--dsh-remote-keyboard-shift,0px)) !important;left:16px !important;right:16px !important}`
   + `${PLUGINS} [data-plugin-body] [data-plugin-header-part="toolbar"][data-plugin-header-part]{left:auto !important}`
-  + `${PLUGINS} [class*="_pageTabs"]{position:static;grid-column:1 / -1;grid-row:3;margin-top:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}`
-  + `${PLUGINS} [class*="_pageTabList"]{min-width:0;flex-shrink:0}`
-  + `${PLUGINS} [role="tab"]{min-height:44px;white-space:nowrap}`
+  + `${PLUGINS} [class*="_pageTabs"]{position:static;grid-column:2;grid-row:2;justify-self:end;align-self:center;width:auto;margin-top:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}`
+  + `${PLUGINS} [class*="_pageTabList"]{min-width:0;flex-shrink:0;padding:4px;border:0;border-radius:22px;box-shadow:none;background:color-mix(in srgb,var(--dsw-alias-label-primary) 4%,var(--dsw-alias-bg-base))}`
+  + `${PLUGINS} [role="tab"]{position:relative;height:36px;min-height:36px;min-width:64px;padding:0 12px;font-size:13px;line-height:20px;white-space:nowrap}`
+  + `${PLUGINS} [class*="_pageTabList"] > [class*="_indicator"][aria-hidden="true"]{border:0;border-radius:18px;box-shadow:none;background:color-mix(in srgb,var(--dsw-alias-label-primary) 12%,var(--dsw-alias-bg-base))}`
+  + `${PLUGINS} [role="tab"]{border:0;border-radius:18px;box-shadow:none;background:transparent;font-weight:400;color:var(--dsw-alias-label-secondary)}`
+  + `${PLUGINS} [role="tab"][aria-selected="true"]{font-weight:600;color:var(--dsw-alias-label-primary)}`
+  // Compact controls retain a 44px hit area inside the unchanged 66px header and padded tab list.
+  + `${PLUGIN_TOOLBAR} button{position:relative;box-sizing:border-box;width:auto;min-width:36px;height:36px;min-height:36px;padding:0 10px;gap:6px;font-size:13px;line-height:20px}`
+  + `${PLUGIN_TOOLBAR} [class*="_addMore"]{width:36px;padding:0}`
+  + `${PLUGIN_TOOLBAR} [class*="_addGroup"]{overflow:visible}`
+  + `${PLUGIN_TOOLBAR} svg{width:16px;height:16px;flex:none}`
+  + `${PLUGIN_TOOLBAR} button::after{content:"";position:absolute;inset:-4px}`
+  + `${PLUGINS} [role="tab"]::after{content:"";position:absolute;inset:-4px 0}`
   + `${PLUGINS} [class*="_installedPanel"]{gap:24px}`
   + `${PLUGINS} [class*="_cards"]{gap:8px}`
   + `${PLUGINS} [class*="_cards"] > [class*="_card"]{margin:0;box-shadow:inset 0 0 0 .5px var(--dsw-alias-border-l3)}`
@@ -142,7 +154,12 @@ export const PHONE_TASK_PAGE_STYLE = `${FRAME}[data-sidebar-drawer] [class*="_ma
   + `${TASK_PAGE} [class*="_pageHeading"]{position:sticky;top:0;z-index:3;box-sizing:border-box;height:${PHONE_HEADER_HEIGHT};padding:11px 0 !important;margin-bottom:12px;gap:8px;align-items:center;flex-wrap:nowrap;background:var(--dsw-alias-bg-base);box-shadow:16px 0 0 var(--dsw-alias-bg-base),-16px 0 0 var(--dsw-alias-bg-base)}`
   + `${TASK_PAGE} [class*="_pageHeading"] h1{font-size:17px;line-height:24px}`
   + `${TASK_PAGE} [class*="_creationActions"]{gap:8px}`
-  + `${TASK_PAGE} :is([class*="_creationActions"] button,[class*="_emptyAction"]){min-width:44px;min-height:44px}`
+  + `${TASK_PAGE} [class*="_emptyAction"]{min-width:44px;min-height:44px}`
+  + `${TASK_PAGE} [class*="_creationActions"] button{position:relative;box-sizing:border-box;min-width:36px;height:36px;min-height:36px;padding:0 10px;gap:6px;font-size:13px;line-height:20px}`
+  + `${TASK_PAGE} [class*="_creationActions"] button[aria-haspopup="menu"]{width:36px;padding:0}`
+  + `${TASK_PAGE} [class*="_creationActions"] [class*="_createGroup"]{overflow:visible}`
+  + `${TASK_PAGE} [class*="_creationActions"] svg{width:16px;height:16px;flex:none}`
+  + `${TASK_PAGE} [class*="_creationActions"] button::after{content:"";position:absolute;inset:-4px}`
   + `${TASK_PAGE} [class*="_filters"]{margin-bottom:12px}`
   + `${TASK_PAGE} [class*="_filterTabs"]{max-width:100%;flex-wrap:nowrap;gap:4px;overflow-x:auto;overscroll-behavior-x:contain}`
   + `${TASK_PAGE} button[class*="_filterTab"]{height:44px;padding-inline:12px;border-radius:22px}`
@@ -157,7 +174,8 @@ const SA_ADMISSION = `${SA} .dt-admission:has([data-dsh-admission-label])`
 const SA_MODAL = 'html body > .dt-modal-root[role="presentation"]'
 
 /** dsh-superagent's panel, dialogs and toast; shared by fresh proxy documents and client reloads. */
-export const PHONE_SUPERAGENT_STYLE = `${SA}{padding:0 16px;scroll-padding:${PHONE_HEADER_HEIGHT} 0 72px;scrollbar-gutter:auto;overscroll-behavior-y:contain;-webkit-tap-highlight-color:transparent}`
+export const PHONE_SUPERAGENT_STYLE = `${SA}{padding:0 16px;scroll-padding:calc(${PHONE_HEADER_HEIGHT} + 44px) 0 72px;scrollbar-width:none;scrollbar-gutter:auto;overscroll-behavior-y:contain;-webkit-tap-highlight-color:transparent}`
+  + `${SA}::-webkit-scrollbar{display:none;width:0;height:0}`
   // Drawer hosts reserve window controls outside global panels; the phone frame already owns its safe area.
   + `${FRAME}[data-sidebar-drawer] [class*="_mainPanel"][data-global-panel]:has(.dt-page){padding-top:0 !important}`
   + `${SA} > .dt-column{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,auto);gap:16px 4px;padding-bottom:24px}`
@@ -172,10 +190,15 @@ export const PHONE_SUPERAGENT_STYLE = `${SA}{padding:0 16px;scroll-padding:${PHO
   + `${SA} .dt-head .dt-search{grid-column:1 / -1;grid-row:2;order:0;flex:1 1 100%;width:100%}`
   + `${SA} .dt-head > .dt-toolbar > .dt-btn{position:sticky;top:11px;z-index:4;grid-row:1;align-self:center;flex:none;width:44px;height:44px;min-height:44px;padding:0;gap:0;border:0;border-radius:22px;font-size:0}`
   + `${SA} .dt-head > .dt-toolbar > .dt-btn :is(.dt-btn-icon,svg){width:20px;height:20px}`
-  // Only the title and actions stick; search and tabs leave with the page content.
-  + `${SA} .dt-tabs{position:static;top:auto;z-index:2;margin-inline:-16px;padding-inline:16px !important;`
+  // Stack the two navigation levels below the title; the search still scrolls with the content.
+  + `${SA} .dt-tabs{position:sticky;top:${PHONE_HEADER_HEIGHT};height:44px;box-sizing:border-box;z-index:2;margin-inline:-16px;padding-inline:16px !important;`
   + 'background:var(--dsw-alias-bg-base);overscroll-behavior-x:contain;scrollbar-width:none}'
   + `${SA} .dt-tab{height:44px}`
+  + `${SA}:has(.dt-settings-nav){scroll-padding-top:calc(${PHONE_HEADER_HEIGHT} + 88px)}`
+  + `${SA} .dt-settings{display:block}`
+  + `${SA} .dt-settings-nav{position:sticky;top:calc(${PHONE_HEADER_HEIGHT} + 44px);z-index:1;display:flex;flex-direction:row;flex-wrap:nowrap;height:44px;box-sizing:border-box;margin-inline:-16px;padding-inline:16px;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none;background:var(--dsw-alias-bg-base)}`
+  + `${SA} .dt-settings-link{flex:none;white-space:nowrap}`
+  + `${SA} .dt-settings-body{margin-top:12px}`
   // Filters slide as one strip instead of wrapping into a second row of pills.
   + `${SA} .dt-filters:not(:has(.dt-search)){flex-wrap:nowrap;overflow-x:auto;margin-inline:-16px;padding-inline:16px;`
   + 'overscroll-behavior-x:contain;scrollbar-width:none}'

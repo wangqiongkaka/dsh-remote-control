@@ -10,6 +10,7 @@ it.each([
   const host = document.createElement('style')
   host.textContent = '.plugins_cardTitle{white-space:nowrap;overflow:hidden}.plugins_cardDesc{display:-webkit-box;-webkit-line-clamp:1;overflow:hidden}'
     + '.plugins_toolbar[hidden]{display:none}.plugins_pageTabList{min-width:240px}.plugins_rowLine{display:flex}'
+    + '.tabs_indicator{border:1px solid #555;box-shadow:0 0 2px #555}'
     + '.modal_dialog{display:flex;flex-direction:column}.modal_footer{display:flex}.settings_close{width:28px}'
     + '.shell_frame[data-sidebar-drawer] .shell_mainPanel[data-global-panel]{padding-top:48px}'
     + '[data-plugin-panel]{display:flex;align-items:center}'
@@ -22,10 +23,10 @@ it.each([
     + '.plugins_pageBar[data-natural] [data-plugin-header-part]{position:absolute;top:76px;width:300px}'
   const page = document.createElement('section')
   page.setAttribute('data-plugin-panel', '')
-  page.innerHTML = `<${headTag} class="plugins_pageHead"><div class="plugins_pageHeading"><h1 class="plugins_pageTitle">插件</h1></div><div class="plugins_toolbar"><button class="plugins_iconButton"><span class="plugins_toolbarLabel">刷新</span></button>`
+  page.innerHTML = `<${headTag} class="plugins_pageHead"><div class="plugins_pageHeading"><h1 class="plugins_pageTitle">插件</h1><div class="plugins_pageIntro"><span>安装、启用和配置插件</span><button class="plugins_infoButton" aria-label="说明">?</button></div></div><div class="plugins_toolbar"><button class="plugins_iconButton"><span class="plugins_toolbarLabel">刷新</span></button>`
     + '<span class="plugins_addGroup"><button class="plugins_addPrimary">添加插件</button><button class="plugins_addMore">更多</button></span></div>'
     + `<div class="plugins_toolbar" hidden>不可用操作</div></${headTag}>`
-    + '<div class="plugins_pageTabs"><div class="plugins_pageTabList"><button role="tab">已安装</button><button role="tab">插件市场</button></div></div>'
+    + '<div class="plugins_pageTabs"><div class="plugins_pageTabList" role="tablist"><span class="tabs_indicator" aria-hidden="true"></span><button role="tab" aria-selected="true">已安装</button><button role="tab" aria-selected="false">插件市场</button></div></div>'
     + '<ul class="plugins_cards"><li class="plugins_card"><div class="plugins_cardHead"><div class="plugins_cardMain">'
     + '<button class="plugins_cardTitle plugins_cardOpen">@organization/a-very-long-plugin-package-name</button>'
     + '<span class="plugins_cardDesc">较长的插件说明应该完整显示，帮助手机用户判断插件用途。</span></div>'
@@ -103,9 +104,18 @@ it.each([
     expect(style('.plugins_toolbarLabel').height).not.toBe('66px')
     expect(style('.plugins_toolbar:not([hidden])').gridColumn).toBe('2')
     expect(style('.plugins_toolbar:not([hidden])').gridRow).toBe('1')
-    expect(style('.plugins_pageTabs').gridColumn).toBe('1 / -1')
+    expect(style('.plugins_pageTabs').gridColumn).toBe('2')
+    expect(style('.plugins_pageTabs').gridRow).toBe('2')
+    expect(style('.plugins_pageTabs').justifySelf).toBe('end')
+    expect(style('.plugins_pageIntro').gridColumn).toBe('1')
+    expect(style('.plugins_pageIntro').gridRow).toBe('2')
     expect(style('.plugins_cards').gridColumn).toBe('1 / -1')
     expect(getComputedStyle(page).paddingLeft).toBe('16px')
+    expect(getComputedStyle(page).scrollbarWidth).toBe('none')
+    expect(getComputedStyle(page).scrollbarGutter).toBe('auto')
+    const scrollbar = [...phone.sheet!.cssRules].find((rule): rule is CSSStyleRule =>
+      rule instanceof CSSStyleRule && rule.selectorText.includes('[data-plugin-body]::-webkit-scrollbar'))
+    expect(scrollbar?.style.display).toBe('none')
     expect(style('.plugins_cardTitle').whiteSpace).toBe('normal')
     expect(style('.plugins_cardTitle').overflowWrap).toBe('anywhere')
     expect(style('.plugins_cardDesc').display).toBe('block')
@@ -124,6 +134,7 @@ it.each([
       expect(style('[data-plugin-bar]').display).toBe('contents')
       expect(style('[data-plugin-body]').display).toBe('grid')
       expect(style('[data-plugin-body]').overflowY).toBe('auto')
+      expect(style('[data-plugin-body]').scrollbarWidth).toBe('none')
       expect(style('[data-plugin-body]').flexGrow).toBe('1')
       const bar = page.querySelector('[data-plugin-bar]')!
       bar.removeAttribute('data-natural')
@@ -132,13 +143,24 @@ it.each([
       expect(getComputedStyle(page).overflowY).toBe('clip')
     }
     expect(style('.plugins_pageHeading').paddingTop).not.toBe('16px')
-    expect(style('.plugins_iconButton').width).toBe('44px')
-    expect(style('.plugins_addMore').width).toBe('44px')
-    expect(style('.plugins_addPrimary').minHeight).toBe('44px')
+    expect(style('.plugins_iconButton').height).toBe('36px')
+    expect(style('.plugins_iconButton').minHeight).toBe('36px')
+    expect(style('.plugins_iconButton').fontSize).toBe('13px')
+    expect(style('.plugins_addMore').width).toBe('36px')
+    expect(style('.plugins_addPrimary').minHeight).toBe('36px')
     expect(style('.plugins_toolbar[hidden]').display).toBe('none')
     expect(style('.plugins_pageTabs').overflowX).toBe('auto')
     expect(parseFloat(style('.plugins_pageTabList').minWidth)).toBe(0)
-    expect(style('[role="tab"]').minHeight).toBe('44px')
+    expect(style('[role="tab"]').minHeight).toBe('36px')
+    expect(style('[role="tab"]').fontSize).toBe('13px')
+    expect(style('.tabs_indicator').borderTopWidth).toBe('0px')
+    expect(style('.tabs_indicator').boxShadow).toBe('none')
+    expect(style('[aria-selected="true"]').fontWeight).toBe('600')
+    const tabs = page.querySelectorAll('[role="tab"]')
+    tabs[0]!.setAttribute('aria-selected', 'false')
+    tabs[1]!.setAttribute('aria-selected', 'true')
+    expect(getComputedStyle(tabs[0]!).fontWeight).toBe('400')
+    expect(getComputedStyle(tabs[1]!).fontWeight).toBe('600')
     expect(style('.plugins_crumb').minHeight).toBe('44px')
     expect(style('.plugins_partsFilter').width).toBe('100%')
     expect(style('.plugins_rowLine').display).toBe('grid')
