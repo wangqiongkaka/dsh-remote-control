@@ -22,7 +22,7 @@ it.each([
     + '.plugins_pageBar[data-natural] [data-plugin-header-part]{position:absolute;top:76px;width:300px}'
   const page = document.createElement('section')
   page.setAttribute('data-plugin-panel', '')
-  page.innerHTML = `<${headTag} class="plugins_pageHead"><div class="plugins_pageHeading"><h1 class="plugins_pageTitle">插件</h1></div><div class="plugins_toolbar"><button class="plugins_iconButton">刷新</button>`
+  page.innerHTML = `<${headTag} class="plugins_pageHead"><div class="plugins_pageHeading"><h1 class="plugins_pageTitle">插件</h1></div><div class="plugins_toolbar"><button class="plugins_iconButton"><span class="plugins_toolbarLabel">刷新</span></button>`
     + '<span class="plugins_addGroup"><button class="plugins_addPrimary">添加插件</button><button class="plugins_addMore">更多</button></span></div>'
     + `<div class="plugins_toolbar" hidden>不可用操作</div></${headTag}>`
     + '<div class="plugins_pageTabs"><div class="plugins_pageTabList"><button role="tab">已安装</button><button role="tab">插件市场</button></div></div>'
@@ -48,6 +48,7 @@ it.each([
     body.prepend(bar)
     const title = bar.querySelector<HTMLElement>('h1')!
     title.setAttribute('data-plugin-header-part', 'title')
+    bar.querySelector('.plugins_toolbar')!.setAttribute('data-plugin-header-part', 'toolbar')
     title.style.cssText = 'translate:0 -20px;width:300px;clip-path:inset(20% 0 0)'
     page.append(body)
   }
@@ -90,11 +91,16 @@ it.each([
   try {
     expect(style('[data-global-panel]').paddingTop).toBe('0px')
     expect(style('.plugins_pageHead').display).toBe('contents')
-    expect(style('.plugins_pageTitle').position).toBe('sticky')
+    expect(style('.plugins_pageTitle').position).toBe(measured ? 'fixed' : 'sticky')
     expect(getComputedStyle(page).display).toBe(measured ? 'flex' : 'grid')
     expect(style('.plugins_pageTitle').height).toBe('66px')
-    expect(style('.plugins_toolbar:not([hidden])').position).toBe('sticky')
+    expect(style('.plugins_pageTitle').maxHeight).toBe('66px')
+    expect(style('.plugins_pageTitle').overflow).toBe('hidden')
+    expect(style('.plugins_toolbar:not([hidden])').maxHeight).toBe('66px')
+    expect(style('.plugins_toolbar:not([hidden])').position).toBe(measured ? 'fixed' : 'sticky')
     expect(style('.plugins_toolbar:not([hidden])').height).toBe('66px')
+    expect(style('.plugins_toolbarLabel').position).not.toBe('sticky')
+    expect(style('.plugins_toolbarLabel').height).not.toBe('66px')
     expect(style('.plugins_toolbar:not([hidden])').gridColumn).toBe('2')
     expect(style('.plugins_toolbar:not([hidden])').gridRow).toBe('1')
     expect(style('.plugins_pageTabs').gridColumn).toBe('1 / -1')
@@ -108,7 +114,7 @@ it.each([
     expect(style('.plugins_detailTop').paddingTop).toBe('0px')
     expect(style('.plugins_moreHead').paddingTop).toBe('0px')
     if (measured) {
-      expect(style('[data-plugin-header-part]').position).toBe('sticky')
+      expect(style('[data-plugin-header-part]').position).toBe('fixed')
       expect(style('[data-plugin-header-part]').translate).toBe('none')
       expect(style('[data-plugin-header-part]').clipPath).toBe('none')
       expect(style('[data-plugin-header-part]').width).toBe('auto')
@@ -123,7 +129,7 @@ it.each([
       bar.removeAttribute('data-natural')
       expect(getComputedStyle(bar).display).toBe('contents')
       bar.setAttribute('data-natural', '')
-      expect(getComputedStyle(page).overflowY).toBe('auto')
+      expect(getComputedStyle(page).overflowY).toBe('clip')
     }
     expect(style('.plugins_pageHeading').paddingTop).not.toBe('16px')
     expect(style('.plugins_iconButton').width).toBe('44px')

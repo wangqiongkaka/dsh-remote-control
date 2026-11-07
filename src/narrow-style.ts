@@ -63,16 +63,17 @@ const PLUGIN_REGISTRY = 'body:has([data-plugin-panel]) [class*="_registry"]:has(
 /** Shared by fresh proxy documents and client reloads; every rule lives inside the phone query. */
 export const PHONE_PLUGIN_STYLE = `html ${PLUGINS}{--plugin-page-inset:16px !important;min-width:0;padding:0 16px 24px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:start;align-items:start;gap:16px 8px;scroll-padding-top:${PHONE_HEADER_HEIGHT};overflow-y:auto;overscroll-behavior-y:contain}`
   + `${FRAME}[data-sidebar-drawer] [class*="_mainPanel"][data-global-panel]:has(${PLUGINS}){padding-top:0 !important}`
-  + `html ${PLUGINS}:has([data-plugin-body]){display:flex;align-items:stretch;gap:16px;padding-bottom:0}`
+  + `html ${PLUGINS}:has([data-plugin-body]){display:flex;align-items:stretch;gap:16px;padding-bottom:0;overflow-x:clip;overflow-y:clip !important}`
   + `${PLUGINS} > *{min-width:0;flex-shrink:0;grid-column:1 / -1}`
   + `${PLUGINS} [class*="_pageHead"]:not([class*="_pageHeading"]){display:contents}`
   + `${PLUGINS} [class*="_pageHeading"]{display:contents !important}`
-  + `${PLUGINS} [class*="_pageTitle"]{position:sticky !important;top:0;z-index:3;grid-column:1;grid-row:1;height:${PHONE_HEADER_HEIGHT};display:flex;align-items:center;margin:0;font-size:17px;line-height:24px}`
-  + `${PLUGINS} [class*="_pageTitle"]::before{content:"";position:absolute;inset:0 auto 0 -16px;width:100vw;background:var(--dsw-alias-bg-base);z-index:-1}`
+  + `${PLUGINS} [class*="_pageTitle"]{position:sticky !important;top:0;z-index:3;grid-column:1;grid-row:1;height:${PHONE_HEADER_HEIGHT} !important;min-height:0 !important;max-height:${PHONE_HEADER_HEIGHT};box-sizing:border-box;overflow:hidden;background:var(--dsw-alias-bg-base);box-shadow:16px 0 0 var(--dsw-alias-bg-base),-16px 0 0 var(--dsw-alias-bg-base);display:flex;align-items:center;margin:0;font-size:17px;line-height:24px}`
   + `${PLUGINS} [class*="_pageIntro"]{grid-column:1 / -1;grid-row:2;margin:0;min-width:0;align-items:flex-start;white-space:normal}`
   + `${PLUGINS} :is([class*="_pageHead"]:not([class*="_pageHeading"]),[class*="_detailTop"],[class*="_moreHead"]){padding-top:0 !important}`
   // Keep a real scroll box for the host lifecycle; only dissolve the header wrappers.
   + `${PLUGINS} [data-plugin-body]{display:grid !important;grid-template-columns:minmax(0,1fr) auto;align-content:start;align-items:start;flex:1 !important;min-height:0;width:100% !important;max-width:none;margin:0 !important;padding:0 0 24px !important;overflow-y:auto !important;scrollbar-gutter:auto;gap:16px 8px;scroll-padding-top:${PHONE_HEADER_HEIGHT}}`
+  + `${PLUGINS} [data-plugin-body]:has(> [data-plugin-bar]){grid-template-rows:${PHONE_HEADER_HEIGHT} auto auto}`
+  + `${PLUGINS} [data-plugin-body]:has(> [data-plugin-bar])::before{content:"";grid-column:1 / -1;grid-row:1;height:${PHONE_HEADER_HEIGHT};pointer-events:none}`
   + `${PLUGINS} [data-plugin-body] > :not([data-plugin-bar]){grid-column:1 / -1}`
   + `${PLUGINS} [data-plugin-bar]:not([data-measuring]){display:contents !important}`
   + `${PLUGINS} [data-plugin-bar][data-natural] > header{height:auto !important;clip-path:none !important}`
@@ -80,7 +81,10 @@ export const PHONE_PLUGIN_STYLE = `html ${PLUGINS}{--plugin-page-inset:16px !imp
   + `${PLUGINS} [data-plugin-bar][data-natural] [data-plugin-header-part]{inset:auto !important;top:0 !important;width:auto !important;translate:none !important;clip-path:none !important}`
   + `${PLUGINS} [data-plugin-header-part]:not([data-plugin-header-part="title"]):not([data-plugin-header-part="toolbar"]){position:static !important}`
   + `${PLUGINS} [data-plugin-bar][data-natural]::before,${PLUGINS} [data-plugin-bar][data-natural]::after{display:none !important}`
-  + `${PLUGINS} [class*="_toolbar"]:not([hidden]){position:sticky !important;top:0;z-index:4;box-sizing:border-box;height:${PHONE_HEADER_HEIGHT};padding:11px 0;grid-column:2;grid-row:1;flex-wrap:nowrap;flex-basis:auto;align-self:start;gap:8px}`
+  + `${PLUGINS} [class*="_toolbar"]:not([class*="_toolbarLabel"]):not([hidden]){position:sticky !important;top:0;z-index:4;box-sizing:border-box;height:${PHONE_HEADER_HEIGHT} !important;min-height:0 !important;max-height:${PHONE_HEADER_HEIGHT};background:var(--dsw-alias-bg-base);box-shadow:16px 0 0 var(--dsw-alias-bg-base),-8px 0 0 var(--dsw-alias-bg-base);padding:11px 0;grid-column:2;grid-row:1;flex-wrap:nowrap;flex-basis:auto;align-self:start;gap:8px}`
+  // WebKit can lose sticky descendants through contents wrappers; reserve the row and pin only the real header parts.
+  + `${PLUGINS} [data-plugin-body] [data-plugin-header-part]:is([data-plugin-header-part="title"],[data-plugin-header-part="toolbar"]){position:fixed !important;top:calc(var(--dsh-remote-top-clearance,0px) + var(--dsh-remote-keyboard-shift,0px)) !important;left:16px !important;right:16px !important}`
+  + `${PLUGINS} [data-plugin-body] [data-plugin-header-part="toolbar"][data-plugin-header-part]{left:auto !important}`
   + `${PLUGINS} [class*="_pageTabs"]{position:static;grid-column:1 / -1;grid-row:3;margin-top:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none}`
   + `${PLUGINS} [class*="_pageTabList"]{min-width:0;flex-shrink:0}`
   + `${PLUGINS} [role="tab"]{min-height:44px;white-space:nowrap}`
