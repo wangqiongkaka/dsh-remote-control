@@ -37,6 +37,16 @@ const HERO = `${FRAME} [data-phase="hero"] > [data-conversation-content]`
 
 /** Keep the welcome mark in the free space above a phone's shared, bottom-aligned composer. */
 export const PHONE_HERO_COMPOSER_STYLE = `${HERO} > [data-conversation-scroll] > [data-composer-seat]{position:absolute !important;inset:0}`
+  // The New Session row keeps one line on a phone: ui-forge stacks its branch chip over the
+  // worktree checkbox below 600px, and that pair plus the two leading chips overruns the row.
+  // Undo the stack, then buy the ~45px it needs from the row's own padding and the chips' inner
+  // spacing rather than from the labels. The leading chips already ellipsize, so a screen narrow
+  // enough to exhaust that room still loses text instead of clipping or wrapping.
+  + `${HERO} [class*="_heroWorkspaceRow"]{flex-wrap:nowrap;padding:0 10px;gap:2px}`
+  + `${HERO} [class*="_heroWorkspaceRow"] :is([class*="_workspace"],[class*="_seat"],[class*="_menuAnchor"]){min-width:0}`
+  + `${HERO} [class*="_heroWorkspaceRow"] :is([class*="_workspace"],[class*="_seat"]){padding:0 5px;gap:3px}`
+  + `${HERO} [data-forge-worktree]{flex-direction:row !important;align-items:center !important;gap:0 !important}`
+  + `${HERO} [data-forge-worktree] > *{padding:0 4px;gap:4px}`
   + `${HERO} [class*="_composerHero"]{flex:1;min-height:0;justify-content:flex-end;padding-bottom:0}`
   + `${HERO} [class*="_composerHero"] > :first-child{flex:1;min-height:0;height:auto;overflow:hidden}`
   + `${HERO} [data-composer-input]{min-height:36px !important}`
