@@ -608,16 +608,35 @@ it.skipIf(process.platform === 'win32').each([
   await expect(readFile(join(directory!, 'ssh-args'), 'utf8')).rejects.toThrow()
 })
 
-it.skipIf(process.platform === 'win32')('restores an interrupted paired SSH tunnel but never undoes a user stop', async () => {
-  const route = await sshRoute(sshForward, { browserTtlMs: 0 })
+it.skipIf(process.platform === 'win32').each(['ssh', 'public', 'tailnet'] as const)(
+  'restores a paired %s tunnel even after a long outage but never undoes a user stop', async mode => {
+  const script = `
+const target = path.join(home, 'tunnel-target')
+if (fs.existsSync(path.join(home, 'offline'))) {
+  fs.writeFileSync(path.join(home, 'offline-attempt'), '1')
+  process.exit(7)
+}
+const ssh = args.includes('-R')
+const forward = ssh ? args[args.indexOf('-R') + 1].split(':') : []
+fs.writeFileSync(target, ssh ? 'http://' + forward[2] + ':' + forward[3] : args.at(-1))
+fs.writeFileSync(path.join(home, 'tunnel-pid'), String(process.pid))
+process.on('SIGTERM', () => { fs.unlinkSync(target); process.exit(0) })
+if (ssh) process.stderr.write('debug1: remote forward success for: listen ' + forward[0] + ':' + forward[1] + ',\\n')
+setInterval(() => {}, 1000)
+`
+  const route = mode === 'ssh' ? await sshRoute(script, { browserTtlMs: 0 })
+    : await controlRoute(script, 5_000,
+      `fs.existsSync(path.join(home, 'tunnel-target'))
+        ? JSON.stringify({ Web: { Proxy: fs.readFileSync(path.join(home, 'tunnel-target'), 'utf8') } }) : '{}'`,
+      false, mode, { browserTtlMs: 0 })
   const response = await begin(route)
   expect(response.status, await response.clone().text()).toBe(200)
   const { url } = await response.json() as { url: string }
   const phone = async (path: string, cookie = ''): Promise<{ status: number; cookie: string }> => {
-    const proxy = new URL(await readFile(join(directory!, 'ssh-target'), 'utf8'))
+    const proxy = new URL(await readFile(join(directory!, 'tunnel-target'), 'utf8'))
     return new Promise((resolve, reject) => {
       httpRequest({ hostname: proxy.hostname, port: Number(proxy.port), path,
-        headers: { host: '203.0.113.10', cookie } }, reply => {
+        headers: { host: mode === 'ssh' ? '203.0.113.10' : 'host.tailnet.ts.net', cookie } }, reply => {
         reply.resume()
         resolve({ status: reply.statusCode ?? 502, cookie: String(reply.headers['set-cookie'] ?? '').split(';', 1)[0]! })
       }).on('error', reject).end()
@@ -625,17 +644,34 @@ it.skipIf(process.platform === 'win32')('restores an interrupted paired SSH tunn
   }
   const cookie = (await phone('/' + new URL(url).search)).cookie
   expect(cookie).toMatch(/^dsh-remote-control=/u)
-  const firstPid = Number(await readFile(join(directory!, 'ssh-pid'), 'utf8'))
+  const firstPid = Number(await readFile(join(directory!, 'tunnel-pid'), 'utf8'))
   process.kill(firstPid, 'SIGTERM')
   await vi.waitFor(async () => {
-    expect(Number(await readFile(join(directory!, 'ssh-pid'), 'utf8'))).not.toBe(firstPid)
+    expect(Number(await readFile(join(directory!, 'tunnel-pid'), 'utf8'))).not.toBe(firstPid)
     expect(await (await route.fetch(new Request('http://localhost/api/remote-control'))).json())
       .toMatchObject({ active: true, paired: true })
   }, 8_000)
   expect((await phone('/api/echo', cookie)).status).toBe(303)
   await writeFile(join(directory!, 'offline'), '1')
-  process.kill(Number(await readFile(join(directory!, 'ssh-pid'), 'utf8')), 'SIGTERM')
+  process.kill(Number(await readFile(join(directory!, 'tunnel-pid'), 'utf8')), 'SIGTERM')
   await vi.waitFor(async () => {
+    expect(await readFile(join(directory!, 'offline-attempt'), 'utf8')).toBe('1')
+  }, 5_000)
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(Date.now() + 61_000)
+  // Keep real process/timer events, but cross the old one-minute recovery deadline.
+  await new Promise(resolve => setTimeout(resolve, 2_300))
+  await rm(join(directory!, 'offline'))
+  await vi.waitFor(async () => {
+    expect(await (await route.fetch(new Request('http://localhost/api/remote-control'))).json())
+      .toMatchObject({ active: true, paired: true })
+  }, 8_000)
+  expect((await phone('/api/echo', cookie)).status).toBe(303)
+  await rm(join(directory!, 'offline-attempt'))
+  await writeFile(join(directory!, 'offline'), '1')
+  process.kill(Number(await readFile(join(directory!, 'tunnel-pid'), 'utf8')), 'SIGTERM')
+  await vi.waitFor(async () => {
+    expect(await readFile(join(directory!, 'offline-attempt'), 'utf8')).toBe('1')
     expect(await (await route.fetch(new Request('http://localhost/api/remote-control'))).json()).toEqual({ active: false })
   }, 5_000)
   expect((await route.fetch(new Request('http://localhost/api/remote-control', {
@@ -643,10 +679,10 @@ it.skipIf(process.platform === 'win32')('restores an interrupted paired SSH tunn
   }))).status).toBe(200)
   await rm(join(directory!, 'offline'))
   await new Promise(resolve => setTimeout(resolve, 2_300))
-  await expect(readFile(join(directory!, 'ssh-target'), 'utf8')).rejects.toThrow()
+  await expect(readFile(join(directory!, 'tunnel-target'), 'utf8')).rejects.toThrow()
   await expect(readFile(join(directory!, 'dsh-remote-control', 'pairing.json'), 'utf8')).rejects.toThrow()
   expect(await (await route.fetch(new Request('http://localhost/api/remote-control'))).json()).toEqual({ active: false })
-}, 20_000)
+}, 30_000)
 
 it.skipIf(process.platform === 'win32').each([
   ['tailnet', false], ['tailnet', true], ['public', false], ['public', true],

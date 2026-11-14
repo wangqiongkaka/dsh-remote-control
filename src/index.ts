@@ -713,7 +713,7 @@ export function apply(ctx: Context, config: Config): void {
         const epoch = recoveryEpoch
         active = undefined
         await closeProxy(current.proxy)
-        if (ssh !== undefined) void restore(epoch)
+        void restore(epoch)
       }
     })
     try {
@@ -739,10 +739,9 @@ export function apply(ctx: Context, config: Config): void {
       throw error
     }
   }
-  // Reloads and interrupted SSH connections share the existing one-minute recovery window.
+  // Keep recovering across network changes while the phone's pairing still grants access.
   const restore = async (epoch: number): Promise<void> => {
-    const deadline = Date.now() + 60_000
-    while (!disposed && epoch === recoveryEpoch && Date.now() < deadline) {
+    while (!disposed && epoch === recoveryEpoch) {
       try {
         await serialize(async () => {
           if (!disposed && epoch === recoveryEpoch && loadPairing() !== undefined) await open()
@@ -791,6 +790,6 @@ export function apply(ctx: Context, config: Config): void {
   ctx.effect(() => () => { disposed = true; return serialize(stop) }, 'remote-control: tunnel shutdown')
   // A reload or DSH restart closes the tunnel, usually while nobody is at the desktop to reopen it.
   // Reopen it for a phone that is still paired. The previous instance may still hold the port and
-  // Tailscale may still be connecting after login, so keep trying for a minute.
+  // Tailscale may still be connecting after login, so retry while the pairing is valid.
   void restore(recoveryEpoch)
 }
