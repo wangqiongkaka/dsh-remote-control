@@ -18,7 +18,7 @@ export const DRAWER_PICK_ATTRIBUTE = 'data-hp-agents-pick'
 
 /** Drawer picks that navigate away from the current page. */
 const NAVIGATION_PICK = '[data-row-key^="session:"], [class*="_searchResultRow"], [class*="_newSession"], '
-  + `[class*="_panelList"] button[class*="_panelRow"], [${DRAWER_PICK_ATTRIBUTE}]`
+  + `[class*="_panelList"] button[class*="_panelRow"]:not([aria-haspopup="menu"]), [${DRAWER_PICK_ATTRIBUTE}]`
 
 /**
  * A Workspace row's New Session button. It sits in the row's action strip beside the Workspace

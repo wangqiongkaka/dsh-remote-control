@@ -56,6 +56,15 @@ it('folds the drawer after choosing Plugins or Automations', () => {
   expect(drawerNavigationPick(pick('[class*="_panelRow"] span'))).toBe(false)
 })
 
+it('keeps the drawer open when the header More button opens its menu', () => {
+  const more = document.createElement('button')
+  more.className = 'ui_sidebar__panelRow__h1'
+  more.setAttribute('aria-haspopup', 'menu')
+  more.innerHTML = '<span>更多</span>'
+  pick('[class*="_panelList"]').append(more)
+  expect(drawerNavigationPick(more.firstElementChild)).toBe(false)
+})
+
 it('folds the drawer after opening a Session from the Agent card', () => {
   const card = document.createElement('div')
   card.innerHTML = '<button type="button">运行中</button>'

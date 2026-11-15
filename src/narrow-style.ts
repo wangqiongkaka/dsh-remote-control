@@ -20,6 +20,10 @@ export const PHONE_NATIVE_DRAWER_STYLE = `${FRAME}[data-sidebar-drawer] [class*=
   + `${FRAME}[data-sidebar-drawer][data-sidebar-collapsed] [data-remote-control-scrim]{pointer-events:none}`
   + `@media (max-width: 720px){${FRAME}[data-sidebar-drawer] [class*="_sidebarCol"]{width:100vw !important}}`
 
+/** WKWebView can autofocus the native drawer before CSS :focus applies; hide its portalled desktop shortcuts. */
+export const PHONE_SIDEBAR_TOOLTIP_STYLE = '[class*="_sidebarCol"] [class*="_logoRow"] [role="tooltip"],'
+  + 'body:has([class*="_sidebarCol"] [data-sidebar-toggle][data-modal-autofocus]) > [role="tooltip"][data-has-shortcut]{display:none !important}'
+
 /** Keep the home-indicator clearance inside the phone scrollport so no fixed strip clips its rows. */
 export const PHONE_DRAWER_BOTTOM_STYLE = `${DRAWER}{height:calc(var(--dsh-remote-keyboard-height,100dvh) - var(--dsh-remote-top-clearance)) !important}`
   + `${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"] [class*="_root"]:has(> [class*="_logoRow"]){width:100% !important;`
@@ -347,6 +351,7 @@ export const PHONE_SAFE_AREA_STYLE = 'html{--dsh-remote-bottom-clearance:max(8px
 /** The DSH shell has no narrow-screen layout, so the proxy lends phones a small patch layer. */
 export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + '@media (max-width: 720px){'
+  + PHONE_SIDEBAR_TOOLTIP_STYLE
   + PHONE_HERO_COMPOSER_STYLE
   + PHONE_SETTINGS_STYLE
   + PHONE_PLUGIN_STYLE

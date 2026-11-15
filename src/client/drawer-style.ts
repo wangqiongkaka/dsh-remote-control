@@ -24,7 +24,7 @@
  * styling); this module only owns the sheet.
  */
 
-import { PHONE_HEADER_HEIGHT, PHONE_NATIVE_DRAWER_STYLE, PHONE_DRAWER_BOTTOM_STYLE, PHONE_HERO_COMPOSER_STYLE, PHONE_PLUGIN_STYLE, PHONE_SAFE_AREA_STYLE, PHONE_SETTINGS_STYLE, PHONE_SUPERAGENT_STYLE, PHONE_TASK_PAGE_STYLE } from '../narrow-style.ts'
+import { PHONE_HEADER_HEIGHT, PHONE_NATIVE_DRAWER_STYLE, PHONE_DRAWER_BOTTOM_STYLE, PHONE_HERO_COMPOSER_STYLE, PHONE_PLUGIN_STYLE, PHONE_SAFE_AREA_STYLE, PHONE_SIDEBAR_TOOLTIP_STYLE, PHONE_SETTINGS_STYLE, PHONE_SUPERAGENT_STYLE, PHONE_TASK_PAGE_STYLE } from '../narrow-style.ts'
 import { phoneViewport } from '../phone-document.ts'
 import { followSettingsSheet } from './settings-sheet.ts'
 
@@ -39,7 +39,7 @@ export const DRAWER_SCROLL_ROOT = '[class*="_frame"]:has([class*="_sidebarCol"])
   + '[class*="_sidebarCol"] [class*="_root"]:has(> [class*="_logoRow"])'
 
 /** Share the sticky top row with the shell's existing panel navigation, without moving its DOM. */
-const DRAWER_HEADER = `${DRAWER_SCROLL_ROOT}:has(> [class*="_panelList"])`
+const DRAWER_HEADER = `${DRAWER_SCROLL_ROOT}:has([class*="_panelList"])`
 
 const HEADER_BUTTON = `${DRAWER_HEADER} :is(button[class*="_toggle"],button[class*="_panelRow"])`
 
@@ -76,6 +76,7 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + 'border:.5px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-1);color:inherit}'
   + '[class*="_sessionRow"][aria-selected="true"]'
   + '{background:var(--dsw-specific-sidebar-nav-item-active) !important}'
+  + PHONE_SIDEBAR_TOOLTIP_STYLE
   // The Agent card takes New Session's seat; a Workspace row's own New Session button stays.
   + '[class*="_sidebarCol"] button[class*="_newSession"]{display:none !important}'
   // One scrollport lets the Agent card leave room for projects instead of squeezing their list.
@@ -99,17 +100,27 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${HEADER_BUTTON}{width:40px;height:40px;min-width:40px;min-height:40px;box-sizing:border-box;`
   + 'flex:none;margin:0;padding:0;display:inline-flex;align-items:center;justify-content:center}'
   + `${HEADER_BUTTON} svg{width:18px;height:18px;flex:none}`
-  + `${DRAWER_HEADER} > [class*="_panelList"]{grid-column:2;grid-row:1;position:sticky;top:0;z-index:4;`
+  + `${DRAWER_HEADER} [class*="_panelList"]{grid-column:2;grid-row:1;position:sticky;top:0;z-index:4;`
   + `display:flex;flex-direction:row;align-items:center;align-self:start;gap:8px;height:${PHONE_HEADER_HEIGHT};box-sizing:border-box;`
   + 'padding:14px 0 12px;margin:0;background:var(--dsw-specific-sidebar-fill)}'
-  + `${DRAWER_HEADER} > [class*="_panelList"] [class*="_panelTitle"]{display:none}`
+  + `${DRAWER_HEADER} [class*="_panelList"] [class*="_panelTitle"]{display:none}`
+  // Installed hosts nest navigation and workspaces in two scroll wrappers; keep one drawer scrollport.
+  + `${DRAWER_HEADER} > [class*="_scrollRegion"],${DRAWER_HEADER} > [class*="_scrollRegion"] > [class*="_scrollArea"]{display:contents;container-type:normal}`
+  + `${DRAWER_HEADER} [class*="_scrollArea"]::before,${DRAWER_HEADER} [class*="_scrollArea"]::after{display:none}`
+  + `${DRAWER_HEADER} [class*="_scrollFade"]{display:none}`
+  + `${DRAWER_HEADER} > [class*="_newSessionRow"]{grid-column:1 / -1;grid-row:2;min-width:0;margin:0}`
+  // Pin management remains in More; compact entries leave room for all four header shortcuts.
+  + `${DRAWER_HEADER} [class*="_panelEntry"]{flex:none;border-inline:0}`
+  + `${DRAWER_HEADER} [class*="_panelUnpin"]{display:none}`
+  + `${DRAWER_HEADER}:has(> [class*="_scrollRegion"]) [class*="_panelList"]{gap:4px}`
+  + `${DRAWER_HEADER}:has(> [class*="_scrollRegion"]) button[class*="_panelRow"]{width:32px;min-width:32px;border-inline:0}`
   + `${DRAWER_HEADER} [class*="_settingsArea"] [class*="_triggerRow"]{display:flex;align-items:center;gap:8px;`
   + 'width:100%;min-height:44px;box-sizing:border-box;margin:0}'
   // Touch hover can latch after the account menu opens.
   + `${DRAWER_SCROLL_ROOT} [class*="_settingsArea"] button[class*="_trigger"][aria-haspopup="menu"]{background:transparent !important}`
   // harness-provider's Agent card takes the seat New Session leaves.
   + `${DRAWER_HEADER} > [data-hp-agents]{grid-column:1 / -1;grid-row:2;min-width:0}`
-  + `${DRAWER_HEADER} > [class*="_regionArea"]{grid-column:1 / -1;grid-row:3;min-width:0;min-height:auto}`
+  + `${DRAWER_HEADER} [class*="_regionArea"]{grid-column:1 / -1;grid-row:3;min-width:0;min-height:auto}`
   + `${DRAWER_HEADER} > [class*="_footArea"]{grid-column:1 / -1;grid-row:4}`
   + `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]{position:sticky;bottom:0;z-index:3;margin-top:auto;`
   + 'padding:6px 0 max(32px,env(safe-area-inset-bottom));background:transparent}'
@@ -121,6 +132,8 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${DRAWER_SCROLL_ROOT} > [class*="_regionArea"]{flex:none;overflow:visible}`
   + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] :is([class*="_root"],[class*="_list"],[class*="_treeBody"])`
   + '{flex:none;overflow:visible;overflow-y:visible;scrollbar-gutter:auto}'
+  // The host caps this section to one viewport; overflowing rows would run past the sticky footer's seat.
+  + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] [class*="_root"]{height:auto;max-height:none}`
   + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] [class*="_fade"]{display:none}`
   + `${DRAWER_SCROLL_ROOT} .hp-agents-list{max-height:none;overflow:visible}`
   + `${TASKS}{white-space:nowrap}`

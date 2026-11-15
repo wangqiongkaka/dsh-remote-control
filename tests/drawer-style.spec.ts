@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from 'vitest'
+import { phoneDocument } from '../dist/phone-document.js'
 import { applyDrawerSelection, DRAWER_SCROLL_ROOT, DRAWER_STYLE_ATTRIBUTE } from '../dist/client/drawer-style.js'
 
 /** The injected sheet, or undefined while none is mounted. */
@@ -320,6 +321,96 @@ it('scrolls the whole drawer while the brand and settings stay pinned', () => {
   } finally { dispose(); frame.remove() }
 })
 
+it('hides the sidebar header shortcut tooltip on phones without changing the button or other hints', () => {
+  const frame = document.createElement('div')
+  frame.className = 'host_frame'
+  frame.innerHTML = '<aside class="host_sidebarCol"><div class="host_root">'
+    + '<div class="host_logoRow"><button class="host_toggle" aria-label="收起侧边栏">收起</button>'
+    + '<span role="tooltip">收起侧边栏 ⌥ ⌘ B</span></div>'
+    + '<nav class="host_panelList"><span role="tooltip">插件</span></nav></div></aside>'
+  document.body.append(frame)
+  const dispose = applyDrawerSelection()
+  const tooltip = frame.querySelector('.host_logoRow [role="tooltip"]')!
+  const toggle = frame.querySelector<HTMLButtonElement>('button')!
+  let clicked = false
+  toggle.onclick = () => { clicked = true }
+  try {
+    expect(getComputedStyle(tooltip).display).toBe('none')
+    expect(getComputedStyle(frame.querySelector('nav [role="tooltip"]')!).display).not.toBe('none')
+    expect(toggle.getAttribute('aria-label')).toBe('收起侧边栏')
+    toggle.focus()
+    toggle.click()
+    expect(clicked).toBe(true)
+    expect(document.activeElement).toBe(toggle)
+    frame.setAttribute('data-sidebar-collapsed', '')
+    expect(getComputedStyle(tooltip).display).toBe('none')
+    dispose()
+    expect(getComputedStyle(tooltip).display).not.toBe('none')
+  } finally { dispose(); frame.remove() }
+})
+
+it.each(['proxy', 'client'])('hides the portalled toggle tooltip after cold-start autofocus via %s styles', delivery => {
+  const frame = document.createElement('div')
+  frame.innerHTML = '<aside class="host_sidebarCol"><div class="host_logoRow">'
+    + '<button data-sidebar-toggle data-modal-autofocus aria-label="收起侧边栏">收起</button>'
+    + '</div></aside>'
+  document.body.append(frame)
+  const toggle = frame.querySelector<HTMLButtonElement>('button')!
+  const proxy = document.createElement('div')
+  proxy.innerHTML = phoneDocument('<head></head>')
+  const style = delivery === 'proxy' ? proxy.querySelector<HTMLStyleElement>('style[data-dsh-remote-control]')! : null
+  const dispose = delivery === 'client' ? applyDrawerSelection() : () => { style?.remove() }
+  if (style) document.head.append(style)
+  const active = document.createElement('style')
+  // jsdom has no media layout; activate the delivered phone tooltip rules.
+  const rules = (list: CSSRuleList): string => Array.from(list).flatMap(rule => {
+    if (rule instanceof CSSMediaRule) return rules(rule.cssRules)
+    return rule instanceof CSSStyleRule && rule.selectorText.includes('[role="tooltip"]') ? [rule.cssText] : []
+  }).join('')
+  active.textContent = rules((style ?? sheet()!).sheet!.cssRules)
+  document.head.append(active)
+  const tooltip = document.createElement('span')
+  tooltip.setAttribute('role', 'tooltip')
+  tooltip.setAttribute('data-portal', '')
+  tooltip.setAttribute('data-has-shortcut', 'true')
+  tooltip.textContent = '收起侧边栏 ⌥ ⌘ B'
+  // Native drawer tooltips are portalled to body after the toggle receives autofocus.
+  document.body.append(tooltip)
+  try {
+    expect(toggle.hasAttribute('data-modal-autofocus')).toBe(true)
+    expect(getComputedStyle(tooltip).display).toBe('none')
+    active.remove()
+    dispose()
+    expect(getComputedStyle(tooltip).display).not.toBe('none')
+  } finally { active.remove(); dispose(); frame.remove(); tooltip.remove() }
+})
+
+it.each([false, true])('lets long workspace content grow past the host viewport cap (search: %s)', search => {
+  const host = document.createElement('style')
+  host.textContent = '.work_root:not(.work_rail){max-height:100cqh}'
+    + '.work_root:has(.work_searchExpanded){height:100cqh}'
+  document.head.append(host)
+  const frame = document.createElement('div')
+  frame.className = 'host_frame'
+  frame.innerHTML = '<aside class="host_sidebarCol"><div class="host_root">'
+    + '<div class="host_logoRow">品牌</div><nav class="host_panelList">插件</nav>'
+    + '<div class="host_scrollRegion"><div class="host_scrollArea"><div class="host_regionArea">'
+    + `<div class="work_root">${search ? '<input class="work_searchExpanded">' : ''}`
+    + '<div class="work_listArea"><div class="work_treeBody"><div class="work_list" role="tree">'
+    + '<div class="work_groupSection"><button>工作区</button></div>'.repeat(30)
+    + '</div></div></div></div></div></div></div><footer class="host_footArea">账户</footer></div></aside>'
+  document.body.append(frame)
+  const dispose = applyDrawerSelection()
+  const root = frame.querySelector('.work_root')!
+  try {
+    expect(getComputedStyle(root).maxHeight).toBe('none')
+    expect(getComputedStyle(root).height).toBe('auto')
+    dispose()
+    expect(getComputedStyle(root).maxHeight).toBe('100cqh')
+    if (search) expect(getComputedStyle(root).height).toBe('100cqh')
+  } finally { dispose(); frame.remove(); host.remove() }
+})
+
 it('pins settings at the bottom and preserves the header button sizes and spacing', () => {
   const host = document.createElement('style')
   host.textContent = '.ui_sidebar__footArea__h1{display:flex;flex-direction:column}'
@@ -419,6 +510,61 @@ it('pins settings at the bottom and preserves the header button sizes and spacin
     expect(style('.ui_sidebar__footArea__h1').display).not.toBe('contents')
     expect(style('.settings__triggerRow__h1').gridRow).not.toBe('1')
     expect(style('[data-connection-indicator]').order).not.toBe('-1')
+  } finally { dispose(); frame.remove(); host.remove() }
+})
+
+it('shares the header with nested navigation in the installed host', () => {
+  const host = document.createElement('style')
+  host.textContent = '.host_scrollRegion{display:flex;container-type:size}'
+    + '.host_scrollArea{display:grid;overflow:auto;container-type:scroll-state}'
+    + '.host_panelEntry{display:flex;border-inline:3px solid transparent}'
+    + '.host_panelEntryWide .host_panelRow{width:100%;padding-right:38px}'
+  document.head.append(host)
+  const frame = document.createElement('div')
+  frame.className = 'host_frame'
+  frame.innerHTML = '<aside class="host_sidebarCol"><div class="host_root">'
+    + '<div class="host_logoRow"><button class="host_brand">品牌</button><button class="host_toggle">收起</button></div>'
+    + '<div class="host_newSessionRow"><div data-hp-agents>Agent 运行</div></div>'
+    + '<div class="host_scrollRegion"><div class="host_scrollArea"><nav class="host_panelList">'
+    + ['插件', 'Superagent', '自动化任务'].map(label => '<div class="host_panelEntry host_panelEntryWide">'
+      + `<button class="host_panelRow" aria-label="${label}"><svg></svg><span class="host_panelTitle">${label}</span></button>`
+      + '<button class="host_panelUnpin">取消置顶</button></div>').join('')
+    + '<div class="host_moreAnchor"><button class="host_panelRow" aria-label="更多" aria-haspopup="menu">'
+    + '<svg></svg><span class="host_panelTitle">更多</span></button></div></nav>'
+    + '<div class="host_regionArea">工作区</div></div><span class="host_scrollFade"></span></div>'
+    + '<footer class="host_footArea">账户</footer></div></aside>'
+  document.body.append(frame)
+  const dispose = applyDrawerSelection()
+  const style = (selector: string) => getComputedStyle(frame.querySelector(selector)!)
+  const picked: string[] = []
+  for (const button of frame.querySelectorAll<HTMLButtonElement>('[aria-label]')) {
+    button.onclick = () => { picked.push(button.getAttribute('aria-label')!) }
+  }
+  try {
+    expect(style('.host_root').display).toBe('grid')
+    for (const selector of ['.host_scrollRegion', '.host_scrollArea']) {
+      expect(style(selector).display).toBe('contents')
+      expect(style(selector).containerType).toBe('normal')
+    }
+    expect(style('.host_scrollFade').display).toBe('none')
+    expect(style('.host_newSessionRow').gridRow).toBe('2')
+    expect(style('.host_regionArea').gridRow).toBe('3')
+    expect(style('.host_panelList').gridRow).toBe('1')
+    expect(style('.host_panelList').gridColumn).toBe('2')
+    expect(style('.host_panelList').flexDirection).toBe('row')
+    expect(style('.host_panelTitle').display).toBe('none')
+    expect(style('.host_panelUnpin').display).toBe('none')
+    expect(style('.host_panelEntry').getPropertyValue('border-inline')).toBe('0px')
+    for (const button of frame.querySelectorAll<HTMLButtonElement>('.host_panelRow')) {
+      expect(getComputedStyle(button).width).toBe('32px')
+      expect(getComputedStyle(button).height).toBe('40px')
+      expect(getComputedStyle(button).paddingRight).toBe('0px')
+      button.click()
+    }
+    expect(picked).toEqual(['插件', 'Superagent', '自动化任务', '更多'])
+    dispose()
+    expect(style('.host_scrollRegion').display).toBe('flex')
+    expect(style('.host_panelTitle').display).not.toBe('none')
   } finally { dispose(); frame.remove(); host.remove() }
 })
 
