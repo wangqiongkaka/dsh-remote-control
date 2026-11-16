@@ -181,7 +181,9 @@ it('keeps the pinned composer ends still at the strip edges', () => {
 
 it('keeps a boundary swipe in the chat instead of moving the whole phone page', () => {
   const out = phoneDocument('<head></head>')
-  expect(out).toContain('html,body{overflow:hidden;overscroll-behavior-y:none}')
+  // Only the shell document locks its scroll: the proxy also forwards embedded pages (the
+  // Hindsight console iframe) as their own documents, and those must keep their own scrolling.
+  expect(out).toContain('html:has([class*="_sidebarCol"]) body{overflow:hidden;overscroll-behavior-y:none}')
 })
 
 it('hides the phone chat scrollbar without reserving its gutter', () => {

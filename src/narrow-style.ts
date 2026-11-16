@@ -9,6 +9,13 @@ export const PHONE_HEADER_HEIGHT = '66px'
  */
 const FRAME = '[class*="_frame"]:has([class*="_sidebarCol"])'
 
+/**
+ * A document that IS the DSH shell. The proxy forwards embedded pages too — the Hindsight console
+ * arrives as its own same-origin HTML document — and locking their `html,body` would take away the
+ * scrolling the embedded app relies on. Every rule that assumes the shell is gated on this.
+ */
+const SHELL_DOC = 'html:has([class*="_sidebarCol"])'
+
 /** The sidebar column as the phone drawer: always while it is open, and closed too while no right panel holds a track. */
 const DRAWER = `${FRAME}[data-rightbar-collapsed] [class*="_sidebarCol"],${FRAME}:not([data-sidebar-collapsed]) [class*="_sidebarCol"]`
 
@@ -287,9 +294,16 @@ export const PHONE_SETTINGS_STYLE = `${MODAL}:has(> ${SETTINGS}){height:var(--ds
   + `${SETTINGS} > nav{flex:none;width:auto !important;min-width:0;padding:0 12px 8px !important;gap:8px !important;border-bottom:.5px solid var(--dsw-alias-border-l2)}`
   + `${SETTINGS} [class*="_navTitle"]{box-sizing:border-box;flex:none;min-height:44px;padding:8px 52px 8px 4px !important;font-size:20px;line-height:28px;font-weight:600}`
   + `${SETTINGS} > [class*="_navTitle"]{width:100%;padding-left:16px !important}`
-  + `${SETTINGS} [class*="_navList"]{flex-direction:row !important;flex:none;gap:4px;padding:0 !important;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:none}`
+  // The section row is wider than a phone, so it scrolls; fade its edges so a tab resting half
+  // outside the viewport reads as "scroll for more" instead of a clipped label. The fade zone is
+  // the scroller's own 12px padding (cancelled out of the nav's) — at either end the first and
+  // last tabs stop short of it, so only a tab mid-scroll fades.
+  + `${SETTINGS} [class*="_navList"]{flex-direction:row !important;flex:none;gap:4px;margin-inline:-12px;padding:0 12px !important;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:none;`
+  + 'scroll-snap-type:x proximity;scroll-padding-inline:12px;'
+  + 'mask-image:linear-gradient(to right,transparent,#000 12px,#000 calc(100% - 12px),transparent);'
+  + '-webkit-mask-image:linear-gradient(to right,transparent,#000 12px,#000 calc(100% - 12px),transparent)}'
   + `${SETTINGS} [class*="_navList"]::-webkit-scrollbar{display:none}`
-  + `${SETTINGS} [class*="_navCell"]{flex:none;min-height:44px;height:44px !important;padding:0 10px !important;gap:6px}`
+  + `${SETTINGS} [class*="_navCell"]{flex:none;min-height:44px;height:44px !important;padding:0 10px !important;gap:6px;scroll-snap-align:start}`
   + `${SETTINGS} > [class*="_content"],${SETTINGS} > [class*="_options"]{flex:1;min-width:0;min-height:0}`
   + `${SETTINGS} > [class*="_content"]{overflow:hidden !important;padding-bottom:0}`
   + `${SETTINGS} [class*="_header"]:has([class*="_close"]){position:absolute;top:8px;right:8px;height:44px !important;padding:0 !important;align-items:center;z-index:2}`
@@ -359,9 +373,10 @@ export const NARROW_SCREEN_STYLE = '<style data-dsh-remote-control>'
   + PHONE_SUPERAGENT_STYLE
   // Only the conversation scrollport moves. At its ends, stop a pull from panning the page and
   // carrying the composer and its context meter with the whole shell.
-  + 'html,body{overflow:hidden;overscroll-behavior-y:none}'
+  + `${SHELL_DOC}{overflow:hidden;overscroll-behavior-y:none}`
+  + `${SHELL_DOC} body{overflow:hidden;overscroll-behavior-y:none}`
   // The page and browser theme-color share the safe-area surface in both palettes.
-  + 'body{--dsw-alias-bg-base:var(--dsw-specific-sidebar-fill) !important;background:var(--dsw-alias-bg-base) !important}'
+  + `${SHELL_DOC} body{--dsw-alias-bg-base:var(--dsw-specific-sidebar-fill) !important;background:var(--dsw-alias-bg-base) !important}`
   // iOS zooms the whole page when a focused field is under 16px.
   + 'input,textarea,select,[contenteditable="true"]{font-size:16px !important}'
   // The session utilities are desktop actions; keep the separate sidebar corner control.

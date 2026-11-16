@@ -60,11 +60,14 @@ it.each([['proxy', false], ['reload', false], ['proxy', true], ['reload', true]]
       expect(style('.settings_content').overflow).toBe('hidden')
       expect(parseFloat(style('.settings_content').paddingBottom)).toBe(0)
     }
-    expect(parseFloat(style('.settings_navList').paddingLeft)).toBe(0)
+    // The scroller owns the fade-safe padding the nav's own inset used to provide.
+    expect(parseFloat(style('.settings_navList').paddingLeft)).toBe(12)
     expect(style('.settings_options').overscrollBehaviorY).toBe('contain')
     expect(style('.settings_options').paddingBottom).toBe('16px')
-    expect(injected).not.toContain('mask-image:linear-gradient')
+    // The section row fades the tabs a phone cannot fit; settings content must not be masked.
+    expect(injected).toContain('mask-image:linear-gradient(to right,transparent,#000 12px')
     expect(injected).toContain('mask-image:none')
+    expect(style('.settings_navList').scrollSnapType).toBe('x proximity')
     expect(getComputedStyle(overlay).height).toBe('var(--dsh-remote-keyboard-height,100dvh)')
     expect(style('#links').flexDirection).toBe('column')
     expect(style('#links .pref_selector').width).toBe('100%')
