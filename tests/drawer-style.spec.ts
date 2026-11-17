@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it } from 'vitest'
 import { phoneDocument } from '../dist/phone-document.js'
-import { applyDrawerSelection, DRAWER_SCROLL_ROOT, DRAWER_STYLE_ATTRIBUTE } from '../dist/client/drawer-style.js'
+import { applyDrawerSelection, DRAWER_HEADER, DRAWER_SCROLL_ROOT, DRAWER_STYLE_ATTRIBUTE } from '../dist/client/drawer-style.js'
 
 /** The injected sheet, or undefined while none is mounted. */
 function sheet(): HTMLStyleElement | null {
@@ -285,13 +285,18 @@ it('removes the sheet it injected', () => {
   expect(sheet()).toBeNull()
 })
 
-it('scrolls the whole drawer while the brand and settings stay pinned', () => {
+it('keeps the Agent card pinned while the workspace list scrolls on its own', () => {
   const frame = document.createElement('div')
   frame.className = 'ui_layout__frame__h1'
   frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
     + '<div class="ui_sidebar__logoRow__h1">品牌</div>'
+    + '<nav class="ui_sidebar__panelList__h1">插件</nav>'
     + '<div data-hp-agents><div class="hp-agents-list">Agent</div></div>'
     + '<div class="ui_sidebar__regionArea__h1"><div class="ui_workspace__root__h1">'
+    + '<div class="ui_workspace__sectionHeader__h1"><span class="ui_workspace__sectionLabel__h1">工作区</span>'
+    + '<div class="ui_workspace__searchSlot__h1"><button class="ui_workspace__searchButton__h1">搜索</button></div>'
+    + '<div class="ui_workspace__headerActions__h1"><button class="ui_workspace__iconButton__h1">视图</button>'
+    + '<button class="ui_workspace__iconButton__h1 ui_workspace__add__h1">新建</button></div></div>'
     + '<div class="ui_workspace__listArea__h1"><div class="ui_workspace__treeBody__h1">'
     + '<div class="ui_workspace__list__h1" role="tree">项目</div></div></div></div></div>'
     + '<div class="ui_sidebar__footArea__h1">设置</div></div></div>'
@@ -299,23 +304,42 @@ it('scrolls the whole drawer while the brand and settings stay pinned', () => {
   const dispose = applyDrawerSelection()
   const style = (selector: string): CSSStyleDeclaration => getComputedStyle(frame.querySelector(selector)!)
   try {
-    expect(style('.ui_sidebar__root__h1').overflowY).toBe('auto')
+    // The drawer itself no longer scrolls, so the Agent card and the footer keep their seats.
+    expect(style('.ui_sidebar__root__h1').overflowY).toBe('hidden')
     expect(style('.ui_sidebar__root__h1').scrollbarWidth).toBe('none')
     expect(style('.ui_sidebar__root__h1').scrollbarGutter).toBe('auto')
-    const scrollbar = Array.from(sheet()!.sheet!.cssRules).find(rule => rule instanceof CSSStyleRule
-      && rule.selectorText === `${DRAWER_SCROLL_ROOT}::-webkit-scrollbar`) as CSSStyleRule
-    expect(scrollbar.style.display).toBe('none')
     expect(style('.ui_sidebar__root__h1').overscrollBehaviorY).toBe('none')
     expect(style('.ui_sidebar__logoRow__h1').position).toBe('sticky')
     expect(style('.ui_sidebar__logoRow__h1').top).toBe('0px')
     expect(style('.ui_sidebar__footArea__h1').position).toBe('sticky')
     expect(style('.ui_sidebar__footArea__h1').bottom).toBe('0px')
-    // The scrollport owns the home-indicator inset, not this inner sticky footer.
-    expect(document.querySelector(`[${DRAWER_STYLE_ATTRIBUTE}]`)!.textContent).toContain(
-      `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]{padding-bottom:0}`,
-    )
-    expect(style('.ui_sidebar__regionArea__h1').overflow).toBe('visible')
+    // The region holds the section header and hands the rest of its height to the Workspace list.
+    expect(style('.ui_sidebar__regionArea__h1').overflowX).toBe('hidden')
+    expect(style('.ui_sidebar__regionArea__h1').overflowY).toBe('hidden')
+    expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('0px')
+    expect(style('.ui_workspace__root__h1').flexGrow).toBe('1')
+    expect(style('.ui_workspace__root__h1').minHeight).toBe('0px')
+    expect(style('.ui_workspace__root__h1').maxHeight).toBe('none')
+    // The list itself scrolls, so the section header above it never moves. A sideways drag stays the
+    // drawer's closing swipe, not the list's.
+    expect(style('.ui_workspace__listArea__h1').flexGrow).toBe('1')
+    expect(style('.ui_workspace__listArea__h1').minHeight).toBe('0px')
+    expect(style('.ui_workspace__listArea__h1').overflowX).toBe('hidden')
+    expect(style('.ui_workspace__listArea__h1').overflowY).toBe('auto')
+    expect(style('.ui_workspace__listArea__h1').scrollbarWidth).toBe('none')
+    expect(frame.querySelector('.ui_workspace__listArea__h1')!.contains(frame.querySelector('.ui_workspace__sectionHeader__h1'))).toBe(false)
     expect(style('.ui_workspace__list__h1').overflowY).toBe('visible')
+    // The title takes the left seat and the three controls (search, view options, add) hug the
+    // right edge, level with the Workspace cards below the header. Host builds disagree on the
+    // row's own packing, so the sheet packs it and gives the title the free space.
+    expect(style('.ui_workspace__sectionHeader__h1').justifyContent).toBe('flex-end')
+    expect(style('.ui_workspace__sectionLabel__h1').marginRight).toBe('auto')
+    expect(style('.ui_workspace__searchSlot__h1').marginLeft).toBe('auto')
+    // jsdom resolves no var(), so the right edge shared with the cards is read off the sheet.
+    const sheetText = document.querySelector(`[${DRAWER_STYLE_ATTRIBUTE}]`)!.textContent
+    expect(sheetText).toContain('justify-content:flex-end;flex-wrap:nowrap;'
+      + 'margin-right:calc(2px - var(--dsh-sidebar-inline-padding,12px));'
+      + 'padding-right:calc(var(--dsh-sidebar-inline-padding,12px) - var(--dsh-scrollbar-width,5px) - 2px)}')
     expect(style('.hp-agents-list').overflow).toBe('visible')
     expect(style('.hp-agents-list').maxHeight).toBe('none')
   } finally { dispose(); frame.remove() }
@@ -395,7 +419,7 @@ it.each([false, true])('lets long workspace content grow past the host viewport 
   frame.innerHTML = '<aside class="host_sidebarCol"><div class="host_root">'
     + '<div class="host_logoRow">品牌</div><nav class="host_panelList">插件</nav>'
     + '<div class="host_scrollRegion"><div class="host_scrollArea"><div class="host_regionArea">'
-    + `<div class="work_root">${search ? '<input class="work_searchExpanded">' : ''}`
+    + `<div class="work_root"><div class="work_sectionHeader" data-sidebar-workspace-header>工作区</div>${search ? '<input class="work_searchExpanded">' : ''}`
     + '<div class="work_listArea"><div class="work_treeBody"><div class="work_list" role="tree">'
     + '<div class="work_groupSection"><button>工作区</button></div>'.repeat(30)
     + '</div></div></div></div></div></div></div><footer class="host_footArea">账户</footer></div></aside>'
@@ -474,8 +498,9 @@ it('pins settings at the bottom and preserves the header button sizes and spacin
     indicator.setAttribute('role', 'status')
     expect(style('[data-connection-indicator]').order).not.toBe('-1')
     expect(style('[data-update-indicator]').order).not.toBe('-1')
-    // The project track grows with its content above the pinned footer.
-    expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('auto')
+    // The project track yields height to the pinned Agent card and footer; its list scrolls instead.
+    expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('0px')
+    expect(style('.ui_sidebar__regionArea__h1').overflowY).toBe('hidden')
     for (const selector of ['.ui_sidebar__logoRow__h1', '.ui_sidebar__panelList__h1']) {
       expect(style(selector).gridRow).toBe('1')
       expect(style(selector).position).toBe('sticky')
@@ -618,7 +643,7 @@ it('fades the scrolling list into a slightly translucent footer without fading i
     expect(fade!.style.pointerEvents).toBe('none')
     // jsdom drops gradient shorthands containing a CSS variable; browser QA checks the paint.
     expect(sheet()!.textContent).toContain('background:linear-gradient(to bottom,transparent,var(--dsw-specific-sidebar-fill) 16px);pointer-events:none')
-    const region = rules.find(rule => rule.selectorText === `${DRAWER_SCROLL_ROOT} > [class*="_regionArea"]`)
+    const region = rules.find(rule => rule.selectorText === `${DRAWER_HEADER} [class*="_regionArea"]`)
     expect(region!.style.paddingBottom).toBe('')
     const phone = Array.from(sheet()!.sheet!.cssRules).find(rule => rule instanceof CSSMediaRule
       && rule.conditionText === '(max-width: 720px)') as CSSMediaRule

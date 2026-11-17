@@ -39,7 +39,7 @@ export const DRAWER_SCROLL_ROOT = '[class*="_frame"]:has([class*="_sidebarCol"])
   + '[class*="_sidebarCol"] [class*="_root"]:has(> [class*="_logoRow"])'
 
 /** Share the sticky top row with the shell's existing panel navigation, without moving its DOM. */
-const DRAWER_HEADER = `${DRAWER_SCROLL_ROOT}:has([class*="_panelList"])`
+export const DRAWER_HEADER = `${DRAWER_SCROLL_ROOT}:has([class*="_panelList"])`
 
 const HEADER_BUTTON = `${DRAWER_HEADER} :is(button[class*="_toggle"],button[class*="_panelRow"])`
 
@@ -79,7 +79,7 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + PHONE_SIDEBAR_TOOLTIP_STYLE
   // The Agent card takes New Session's seat; a Workspace row's own New Session button stays.
   + '[class*="_sidebarCol"] button[class*="_newSession"]{display:none !important}'
-  // One scrollport lets the Agent card leave room for projects instead of squeezing their list.
+  // The drawer itself does not scroll: the Agent card stays put and the Workspace list scrolls below it.
   + `${DRAWER_SCROLL_ROOT}{overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:none;scrollbar-width:none;`
   + 'scrollbar-gutter:auto;padding-top:0 !important;padding-bottom:0 !important;'
   + '--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2)}'
@@ -120,7 +120,27 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${DRAWER_SCROLL_ROOT} [class*="_settingsArea"] button[class*="_trigger"][aria-haspopup="menu"]{background:transparent !important}`
   // harness-provider's Agent card takes the seat New Session leaves.
   + `${DRAWER_HEADER} > [data-hp-agents]{grid-column:1 / -1;grid-row:2;min-width:0}`
-  + `${DRAWER_HEADER} [class*="_regionArea"]{grid-column:1 / -1;grid-row:3;min-width:0;min-height:auto}`
+  // The drawer never scrolls: the Agent card, the Workspace section header and the footer keep
+  // their seats and only the Workspace list scrolls, under that header.
+  + `${DRAWER_HEADER}{overflow-y:hidden}`
+  + `${DRAWER_HEADER} [class*="_regionArea"]{grid-column:1 / -1;grid-row:3;min-width:0;min-height:0;`
+  + 'overflow-x:hidden;overflow-y:hidden}'
+  // The host caps the Workspace section to one container-query height and lets its own list scroll;
+  // keep that seat flexible so the header above the list stays put instead of scrolling away.
+  // Menu anchors also use _root; only the container owning the Workspace header may grow.
+  + `${DRAWER_HEADER} [class*="_regionArea"] [class*="_root"]:has(> [class*="_sectionHeader"]){flex:1 1 auto;min-height:0;height:auto;max-height:none}`
+  // Sideways stays locked: with overflow-y scrolling the host also computes overflow-x as auto, and
+  // the rows are a few pixels wider than the seat — a drag would slide them and the swipe layer
+  // would hand the gesture to the list instead of closing the drawer.
+  + `${DRAWER_HEADER} [class*="_regionArea"] [class*="_listArea"]{flex:1 1 auto;min-width:0;min-height:0;`
+  + 'overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-width:none}'
+  + `${DRAWER_HEADER} [class*="_regionArea"] [class*="_listArea"]::-webkit-scrollbar{display:none}`
+  // Keep the title at the left and the three controls aligned with the Workspace cards.
+  + `${DRAWER_HEADER} [class*="_sectionHeader"]{justify-content:flex-end;flex-wrap:nowrap;`
+  + 'margin-right:calc(2px - var(--dsh-sidebar-inline-padding,12px));'
+  + 'padding-right:calc(var(--dsh-sidebar-inline-padding,12px) - var(--dsh-scrollbar-width,5px) - 2px)}'
+  + `${DRAWER_HEADER} [class*="_sectionLabel"]{margin-right:auto}`
+  + `${DRAWER_HEADER} [class*="_searchSlot"]{margin-left:auto}`
   + `${DRAWER_HEADER} > [class*="_footArea"]{grid-column:1 / -1;grid-row:4}`
   + `${DRAWER_SCROLL_ROOT} > [class*="_footArea"]{position:sticky;bottom:0;z-index:3;margin-top:auto;`
   + 'padding:6px 0 max(32px,env(safe-area-inset-bottom));background:transparent}'
@@ -129,11 +149,8 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + 'bottom:0;z-index:-1;opacity:.9;'
   + 'left:calc(-1 * var(--dsh-sidebar-inline-padding,12px));right:calc(-1 * var(--dsh-sidebar-inline-padding,12px));'
   + 'background:linear-gradient(to bottom,transparent,var(--dsw-specific-sidebar-fill) 16px);pointer-events:none}'
-  + `${DRAWER_SCROLL_ROOT} > [class*="_regionArea"]{flex:none;overflow:visible}`
-  + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] :is([class*="_root"],[class*="_list"],[class*="_treeBody"])`
+  + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] :is([class*="_list"],[class*="_treeBody"])`
   + '{flex:none;overflow:visible;overflow-y:visible;scrollbar-gutter:auto}'
-  // The host caps this section to one viewport; overflowing rows would run past the sticky footer's seat.
-  + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] [class*="_root"]{height:auto;max-height:none}`
   + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] [class*="_fade"]{display:none}`
   + `${DRAWER_SCROLL_ROOT} .hp-agents-list{max-height:none;overflow:visible}`
   + `${TASKS}{white-space:nowrap}`
