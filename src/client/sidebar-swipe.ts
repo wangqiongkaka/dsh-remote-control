@@ -494,12 +494,15 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
   }
 }
 
-/** Bounce the chat or drawer past its ends; only a chat's top pull loads earlier messages. */
+/**
+ * Bounce the chat past its ends and the drawer past its bottom; only a chat's top pull loads earlier
+ * messages. The drawer holds still under a top pull, so its header and the Agent card's pinned tiles stay put.
+ */
 export function followVerticalPulls(): () => void {
   const THRESHOLD = 72
   const LIMIT = 56
   const DURATION = 220
-  let start: { id: number; x: number; y: number; scroller: HTMLElement; columns: HTMLElement[]; distance: number } | undefined
+  let start: { id: number; x: number; y: number; scroller: HTMLElement; columns: HTMLElement[]; drawer: boolean; distance: number } | undefined
   let animated: HTMLElement[] = []
   let cleanupTimer: ReturnType<typeof setTimeout> | undefined
   const clearAnimation = (): void => {
@@ -532,7 +535,7 @@ export function followVerticalPulls(): () => void {
     const touch = event.touches[0]
     if (touch === undefined) return
     clearAnimation()
-    start = { id: touch.identifier, x: touch.clientX, y: touch.clientY, scroller, columns, distance: 0 }
+    start = { id: touch.identifier, x: touch.clientX, y: touch.clientY, scroller, columns, drawer: !chat, distance: 0 }
   }
   const onMove = (event: TouchEvent): void => {
     const from = start
@@ -542,6 +545,12 @@ export function followVerticalPulls(): () => void {
     if (!touch || touch.identifier !== from.id) return
     const dx = touch.clientX - from.x
     const dy = touch.clientY - from.y
+    // Claim the drawer's top pull from its first pixel: once WebKit's own rubber band starts, it
+    // drags the sticky header along and later moves can no longer be cancelled.
+    if (from.drawer && dy > 0 && from.scroller.scrollTop <= 1 && Math.abs(dy) >= Math.abs(dx)) {
+      event.preventDefault()
+      return
+    }
     if (Math.abs(dy) < 8 || Math.abs(dy) < Math.abs(dx) * 1.2) {
       if (from.distance) finish(false)
       return

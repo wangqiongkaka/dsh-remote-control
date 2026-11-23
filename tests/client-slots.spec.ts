@@ -1647,7 +1647,7 @@ it('rebounds an upward pull at the bottom without moving the composer', () => {
   }
 })
 
-it('rebounds the whole drawer at either edge without moving its pinned header or settings', () => {
+it('holds the drawer still under a top pull and rebounds it at the bottom, never moving its pinned header or settings', () => {
   const proxy = document.createElement('style')
   proxy.setAttribute('data-dsh-remote-control', '')
   document.head.append(proxy)
@@ -1691,22 +1691,35 @@ it('rebounds the whole drawer at either edge without moving its pinned header or
     touch(target, 'touchend', 200)
     scroller.scrollTop = 0
     touch(target, 'touchstart', 100)
+    // At the top the drawer holds still, from the first pixel on: neither WebKit's own rubber band
+    // nor a rebound may pull the header, the Agent card or its pinned tiles off their seats.
+    expect(touch(target, 'touchmove', 103).defaultPrevented).toBe(true)
     expect(touch(target, 'touchmove', 200).defaultPrevented).toBe(true)
-    expect(agents.style.transform).toMatch(/translateY\([1-9]/u)
-    expect(projects.style.transform).toBe(agents.style.transform)
-    expect(frame.querySelector('.ui_sidebar__logoRow__h1')?.getAttribute('style')).toBeNull()
-    expect(frame.querySelector('.ui_sidebar__panelList__h1')?.getAttribute('style')).toBeNull()
-    expect(frame.querySelector('.ui_sidebar__footArea__h1')?.getAttribute('style')).toBeNull()
+    for (const element of [agents, projects, ...frame.querySelectorAll('.ui_sidebar__logoRow__h1,.ui_sidebar__panelList__h1,.ui_sidebar__footArea__h1')]) {
+      expect(element.getAttribute('style')).toBeNull()
+    }
     touch(target, 'touchend', 200)
-    expect(agents.style.transform).toBe('translateY(0px)')
-    expect(projects.style.transition).toContain('transform')
+    expect(agents.getAttribute('style')).toBeNull()
+    // A drawer that cannot scroll at all also holds still under a pull.
+    scroller.scrollTop = 0
+    touch(target, 'touchstart', 100)
+    expect(touch(target, 'touchmove', 200).defaultPrevented).toBe(true)
+    expect(projects.getAttribute('style')).toBeNull()
+    touch(target, 'touchend', 200)
+    // An upward drag at the top is an ordinary scroll.
+    touch(target, 'touchstart', 200)
+    expect(touch(target, 'touchmove', 197).defaultPrevented).toBe(false)
+    touch(target, 'touchend', 197)
     scroller.scrollTop = 500
     touch(target, 'touchstart', 200)
     expect(touch(target, 'touchmove', 100).defaultPrevented).toBe(true)
     expect(projects.style.transform).toMatch(/translateY\(-/u)
+    expect(agents.style.transform).toBe(projects.style.transform)
     expect(frame.querySelector('.ui_sidebar__panelList__h1')?.getAttribute('style')).toBeNull()
+    expect(frame.querySelector('.ui_sidebar__footArea__h1')?.getAttribute('style')).toBeNull()
     touch(target, 'touchcancel', 100)
     expect(projects.style.transform).toBe('translateY(0px)')
+    expect(projects.style.transition).toContain('transform')
     reducedMotion = true
     touch(target, 'touchstart', 200)
     touch(target, 'touchmove', 100)
