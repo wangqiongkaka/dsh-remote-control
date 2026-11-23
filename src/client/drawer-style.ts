@@ -133,6 +133,11 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${DRAWER_SCROLL_ROOT} .hp-agents-tiles{position:sticky;top:${PHONE_HEADER_HEIGHT};z-index:2;`
   + 'background:var(--dsw-specific-sidebar-fill);box-shadow:0 -6px 0 var(--dsw-specific-sidebar-fill),0 6px 0 var(--dsw-specific-sidebar-fill)}'
   + `${DRAWER_SCROLL_ROOT} .hp-agents-group > div{max-height:none;overflow-y:visible}`
+  // Like a Workspace card, a collapsed Agent group shows five rows and harness-provider's control for the rest.
+  + `${DRAWER_SCROLL_ROOT} .hp-agents-group[data-collapsed] > div > .hp-agents-item:nth-child(n+6){display:none}`
+  + `${DRAWER_SCROLL_ROOT} .hp-agents-overflow{display:flex;align-items:center;width:100%;height:36px;`
+  + 'padding:0 8px 0 34px !important;border-radius:10px;font-size:12px;color:var(--dsw-alias-label-tertiary) !important}'
+  + `${DRAWER_SCROLL_ROOT} .hp-agents-overflow:active{background:var(--dsw-alias-interactive-bg-active)}`
   // Keep the title at the left and the three controls aligned with the Workspace cards.
   + `${DRAWER_HEADER} [class*="_sectionHeader"]{justify-content:flex-end;flex-wrap:nowrap;`
   + 'margin-right:calc(2px - var(--dsh-sidebar-inline-padding,12px));'

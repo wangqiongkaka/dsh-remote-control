@@ -375,6 +375,40 @@ it.each([false, true])('scrolls the drawer as one list while the Agent tiles and
   } finally { dispose(); frame.remove(); provider.remove() }
 })
 
+it('folds a collapsed Agent group to five rows behind its expand control in the phone drawer', () => {
+  // harness-provider's own rule: the desktop scrollport needs no expand control.
+  const provider = document.createElement('style')
+  provider.textContent = '.hp-agents-overflow{display:none}'
+  document.head.append(provider)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
+    + '<div class="ui_sidebar__logoRow__h1">品牌</div><nav class="ui_sidebar__panelList__h1">插件</nav>'
+    + '<div data-hp-agents><section class="hp-agents-card"><div class="hp-agents-list">'
+    + '<section class="hp-agents-group" data-collapsed><h3>已完成</h3><div>'
+    + '<div class="hp-agents-item">会话</div>'.repeat(7)
+    + '<button class="hp-agents-overflow" aria-expanded="false">展开其余 2 个会话</button></div></section>'
+    + '</div></section></div></div></div>'
+  document.body.append(frame)
+  const dispose = applyDrawerSelection()
+  const group = frame.querySelector('.hp-agents-group')!
+  const shown = (): boolean[] => Array.from(group.querySelectorAll('.hp-agents-item'), row => getComputedStyle(row).display !== 'none')
+  const toggle = frame.querySelector('.hp-agents-overflow')!
+  try {
+    expect(shown()).toEqual([true, true, true, true, true, false, false])
+    expect(getComputedStyle(toggle).display).not.toBe('none')
+    // Expanded, every row comes back and the control stays to fold them again.
+    group.removeAttribute('data-collapsed')
+    expect(shown()).toEqual(Array(7).fill(true))
+    expect(getComputedStyle(toggle).display).not.toBe('none')
+    // Outside the phone drawer the provider's own card rules stand.
+    group.setAttribute('data-collapsed', '')
+    dispose()
+    expect(shown()).toEqual(Array(7).fill(true))
+    expect(getComputedStyle(toggle).display).toBe('none')
+  } finally { dispose(); frame.remove(); provider.remove() }
+})
+
 it('hides the sidebar header shortcut tooltip on phones without changing the button or other hints', () => {
   const frame = document.createElement('div')
   frame.className = 'host_frame'
