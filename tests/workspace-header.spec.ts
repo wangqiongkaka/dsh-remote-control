@@ -4,7 +4,7 @@ import { applyDrawerSelection } from '../dist/client/drawer-style.js'
 
 it('keeps menu anchors from taking the free space beside workspace header controls', () => {
   const host = document.createElement('style')
-  host.textContent = '._root_70kcw_1{display:inline-flex;flex:0 1 auto}'
+  host.textContent = '._root_70kcw_1{display:inline-flex;flex:0 1 auto}.workspace_root{max-height:100cqh}'
   document.head.append(host)
   const frame = document.createElement('div')
   frame.className = 'host_frame'
@@ -25,7 +25,7 @@ it('keeps menu anchors from taking the free space beside workspace header contro
   const picks: string[] = []
   for (const button of header.querySelectorAll('button')) button.onclick = () => { picks.push(button.ariaLabel!) }
   try {
-    expect(getComputedStyle(frame.querySelector('.workspace_root')!).flexGrow).toBe('1')
+    expect(getComputedStyle(frame.querySelector('.workspace_root')!).maxHeight).toBe('none')
     for (const anchor of header.querySelectorAll('._root_70kcw_1')) {
       expect(getComputedStyle(anchor).flexGrow).toBe('0')
       expect(getComputedStyle(anchor).minHeight).not.toBe('0px')

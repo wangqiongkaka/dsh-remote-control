@@ -285,27 +285,52 @@ it('removes the sheet it injected', () => {
   expect(sheet()).toBeNull()
 })
 
-it('keeps the Agent card pinned while the workspace list scrolls on its own', () => {
-  const frame = document.createElement('div')
-  frame.className = 'ui_layout__frame__h1'
-  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
-    + '<div class="ui_sidebar__logoRow__h1">品牌</div>'
-    + '<nav class="ui_sidebar__panelList__h1">插件</nav>'
-    + '<div data-hp-agents><div class="hp-agents-list">Agent</div></div>'
-    + '<div class="ui_sidebar__regionArea__h1"><div class="ui_workspace__root__h1">'
+it.each([false, true])('scrolls the drawer as one list while the Agent tiles and Workspace header stick (installed host: %s)', installed => {
+  // harness-provider's own card rules: the group caps itself to five rows and scrolls inside.
+  const provider = document.createElement('style')
+  provider.textContent = '.hp-agents-list{max-height:40dvh;overflow:auto}'
+    + '.hp-agents-group > div{max-height:248px;overflow-y:auto}'
+    + '.kB3qhq_scrollArea{overflow:hidden auto}'
+  document.head.append(provider)
+  const card = '<div data-hp-agents><section class="hp-agents-card"><div class="hp-agents-head">Agent 运行</div>'
+    + '<div class="hp-agents-tiles"><button class="hp-agents-tile">已完成</button></div>'
+    + '<div class="hp-agents-list"><section class="hp-agents-group"><h3>已完成</h3><div>'
+    + '<div class="hp-agents-item">会话</div>'.repeat(8) + '</div></section></div></section></div>'
+  const workspace = '<div class="ui_sidebar__regionArea__h1"><div class="ui_workspace__root__h1">'
     + '<div class="ui_workspace__sectionHeader__h1"><span class="ui_workspace__sectionLabel__h1">工作区</span>'
     + '<div class="ui_workspace__searchSlot__h1"><button class="ui_workspace__searchButton__h1">搜索</button></div>'
     + '<div class="ui_workspace__headerActions__h1"><button class="ui_workspace__iconButton__h1">视图</button>'
     + '<button class="ui_workspace__iconButton__h1 ui_workspace__add__h1">新建</button></div></div>'
     + '<div class="ui_workspace__listArea__h1"><div class="ui_workspace__treeBody__h1">'
     + '<div class="ui_workspace__list__h1" role="tree">项目</div></div></div></div></div>'
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
+    + '<div class="ui_sidebar__logoRow__h1">品牌</div>'
+    + (installed
+      // The installed host keeps the card's row on the root and nests navigation and Workspaces.
+      ? `<div class="ui_sidebar__newSessionRow__h1">${card}</div><div class="kB3qhq_scrollRegion"><div class="kB3qhq_scrollArea">`
+        + `<nav class="ui_sidebar__panelList__h1">插件</nav>${workspace}</div></div>`
+      : `<nav class="ui_sidebar__panelList__h1">插件</nav>${card}${workspace}`)
     + '<div class="ui_sidebar__footArea__h1">设置</div></div></div>'
   document.body.append(frame)
   const dispose = applyDrawerSelection()
   const style = (selector: string): CSSStyleDeclaration => getComputedStyle(frame.querySelector(selector)!)
+  const root = frame.querySelector('.ui_sidebar__root__h1')!
+  // A sticky child only sticks to the drawer when nothing between them clips or scrolls.
+  const clippers = (selector: string): string[] => {
+    const found: string[] = []
+    for (let node = frame.querySelector(selector)!.parentElement; node !== root; node = node!.parentElement) {
+      const computed = getComputedStyle(node!)
+      if (computed.display !== 'contents' && (computed.overflowY !== 'visible' || computed.overflowX !== 'visible')) {
+        found.push(node!.className || node!.tagName)
+      }
+    }
+    return found
+  }
   try {
-    // The drawer itself no longer scrolls, so the Agent card and the footer keep their seats.
-    expect(style('.ui_sidebar__root__h1').overflowY).toBe('hidden')
+    // The drawer itself is the one scrollport, so a long Agent list no longer hides in a five-row box.
+    expect(style('.ui_sidebar__root__h1').overflowY).toBe('auto')
     expect(style('.ui_sidebar__root__h1').scrollbarWidth).toBe('none')
     expect(style('.ui_sidebar__root__h1').scrollbarGutter).toBe('auto')
     expect(style('.ui_sidebar__root__h1').overscrollBehaviorY).toBe('none')
@@ -313,36 +338,41 @@ it('keeps the Agent card pinned while the workspace list scrolls on its own', ()
     expect(style('.ui_sidebar__logoRow__h1').top).toBe('0px')
     expect(style('.ui_sidebar__footArea__h1').position).toBe('sticky')
     expect(style('.ui_sidebar__footArea__h1').bottom).toBe('0px')
-    // The region holds the section header and hands the rest of its height to the Workspace list.
-    expect(style('.ui_sidebar__regionArea__h1').overflowX).toBe('hidden')
-    expect(style('.ui_sidebar__regionArea__h1').overflowY).toBe('hidden')
-    expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('0px')
-    expect(style('.ui_workspace__root__h1').flexGrow).toBe('1')
-    expect(style('.ui_workspace__root__h1').minHeight).toBe('0px')
+    expect(style('.hp-agents-list').overflow).toBe('visible')
+    expect(style('.hp-agents-list').maxHeight).toBe('none')
+    expect(style('.hp-agents-group > div').overflowY).toBe('visible')
+    expect(style('.hp-agents-group > div').maxHeight).toBe('none')
+    // The card title scrolls away; the tiles stay under the drawer header while the Agent rows pass.
+    expect(style('.hp-agents-head').position).not.toBe('sticky')
+    expect(style('.hp-agents-tiles').position).toBe('sticky')
+    expect(style('.hp-agents-tiles').top).toBe('66px')
+    expect(clippers('.hp-agents-tiles')).toEqual([])
+    // Past the card, the Workspace header takes that seat, as it did when only the list scrolled.
+    expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('auto')
     expect(style('.ui_workspace__root__h1').maxHeight).toBe('none')
-    // The list itself scrolls, so the section header above it never moves. A sideways drag stays the
-    // drawer's closing swipe, not the list's.
-    expect(style('.ui_workspace__listArea__h1').flexGrow).toBe('1')
-    expect(style('.ui_workspace__listArea__h1').minHeight).toBe('0px')
-    expect(style('.ui_workspace__listArea__h1').overflowX).toBe('hidden')
-    expect(style('.ui_workspace__listArea__h1').overflowY).toBe('auto')
-    expect(style('.ui_workspace__listArea__h1').scrollbarWidth).toBe('none')
-    expect(frame.querySelector('.ui_workspace__listArea__h1')!.contains(frame.querySelector('.ui_workspace__sectionHeader__h1'))).toBe(false)
+    expect(style('.ui_workspace__root__h1').height).toBe('auto')
+    expect(style('.ui_workspace__sectionHeader__h1').position).toBe('sticky')
+    expect(style('.ui_workspace__sectionHeader__h1').top).toBe('66px')
+    expect(clippers('.ui_workspace__sectionHeader__h1')).toEqual([])
     expect(style('.ui_workspace__list__h1').overflowY).toBe('visible')
+    // jsdom resolves no var(); the stuck rows need the drawer's opaque fill so rows do not show through.
+    const sheetText = document.querySelector(`[${DRAWER_STYLE_ATTRIBUTE}]`)!.textContent
+    expect(sheetText).toMatch(/\.hp-agents-tiles\{[^}]*background:var\(--dsw-specific-sidebar-fill\)/)
+    expect(sheetText).toMatch(/_sectionHeader"\]\{[^}]*background:var\(--dsw-specific-sidebar-fill\)/)
+    // Like the drawer header, the stuck Workspace header also paints the side insets rows reach into.
+    const headerShadow = style('.ui_workspace__sectionHeader__h1').boxShadow
+    expect(headerShadow).toContain('var(--dsh-sidebar-inline-padding,12px) 0 0 var(--dsw-specific-sidebar-fill)')
+    expect(headerShadow).toContain('calc(-1 * var(--dsh-sidebar-inline-padding,12px)) 0 0 var(--dsw-specific-sidebar-fill)')
     // The title takes the left seat and the three controls (search, view options, add) hug the
     // right edge, level with the Workspace cards below the header. Host builds disagree on the
     // row's own packing, so the sheet packs it and gives the title the free space.
     expect(style('.ui_workspace__sectionHeader__h1').justifyContent).toBe('flex-end')
     expect(style('.ui_workspace__sectionLabel__h1').marginRight).toBe('auto')
     expect(style('.ui_workspace__searchSlot__h1').marginLeft).toBe('auto')
-    // jsdom resolves no var(), so the right edge shared with the cards is read off the sheet.
-    const sheetText = document.querySelector(`[${DRAWER_STYLE_ATTRIBUTE}]`)!.textContent
     expect(sheetText).toContain('justify-content:flex-end;flex-wrap:nowrap;'
       + 'margin-right:calc(2px - var(--dsh-sidebar-inline-padding,12px));'
-      + 'padding-right:calc(var(--dsh-sidebar-inline-padding,12px) - var(--dsh-scrollbar-width,5px) - 2px)}')
-    expect(style('.hp-agents-list').overflow).toBe('visible')
-    expect(style('.hp-agents-list').maxHeight).toBe('none')
-  } finally { dispose(); frame.remove() }
+      + 'padding-right:calc(var(--dsh-sidebar-inline-padding,12px) - var(--dsh-scrollbar-width,5px) - 2px)')
+  } finally { dispose(); frame.remove(); provider.remove() }
 })
 
 it('hides the sidebar header shortcut tooltip on phones without changing the button or other hints', () => {
@@ -498,9 +528,9 @@ it('pins settings at the bottom and preserves the header button sizes and spacin
     indicator.setAttribute('role', 'status')
     expect(style('[data-connection-indicator]').order).not.toBe('-1')
     expect(style('[data-update-indicator]').order).not.toBe('-1')
-    // The project track yields height to the pinned Agent card and footer; its list scrolls instead.
-    expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('0px')
-    expect(style('.ui_sidebar__regionArea__h1').overflowY).toBe('hidden')
+    // The project track grows with its content; the drawer scrolls above the pinned footer.
+    expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('auto')
+    expect(style('.ui_sidebar__regionArea__h1').overflowY).toBe('visible')
     for (const selector of ['.ui_sidebar__logoRow__h1', '.ui_sidebar__panelList__h1']) {
       expect(style(selector).gridRow).toBe('1')
       expect(style(selector).position).toBe('sticky')

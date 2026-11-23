@@ -79,7 +79,7 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + PHONE_SIDEBAR_TOOLTIP_STYLE
   // The Agent card takes New Session's seat; a Workspace row's own New Session button stays.
   + '[class*="_sidebarCol"] button[class*="_newSession"]{display:none !important}'
-  // The drawer itself does not scroll: the Agent card stays put and the Workspace list scrolls below it.
+  // One scrollport lets the Agent card leave room for projects instead of squeezing their list.
   + `${DRAWER_SCROLL_ROOT}{overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:none;scrollbar-width:none;`
   + 'scrollbar-gutter:auto;padding-top:0 !important;padding-bottom:0 !important;'
   + '--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2)}'
@@ -120,21 +120,19 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${DRAWER_SCROLL_ROOT} [class*="_settingsArea"] button[class*="_trigger"][aria-haspopup="menu"]{background:transparent !important}`
   // harness-provider's Agent card takes the seat New Session leaves.
   + `${DRAWER_HEADER} > [data-hp-agents]{grid-column:1 / -1;grid-row:2;min-width:0}`
-  // The drawer never scrolls: the Agent card, the Workspace section header and the footer keep
-  // their seats and only the Workspace list scrolls, under that header.
-  + `${DRAWER_HEADER}{overflow-y:hidden}`
-  + `${DRAWER_HEADER} [class*="_regionArea"]{grid-column:1 / -1;grid-row:3;min-width:0;min-height:0;`
-  + 'overflow-x:hidden;overflow-y:hidden}'
-  // The host caps the Workspace section to one container-query height and lets its own list scroll;
-  // keep that seat flexible so the header above the list stays put instead of scrolling away.
+  // One drawer scrollport: the Agent tiles stick under the header while their rows pass, then the
+  // Workspace header takes that seat; the host's own section cap and inner list scroll are lifted.
+  + `${DRAWER_HEADER} [class*="_regionArea"]{grid-column:1 / -1;grid-row:3;min-width:0;min-height:auto;overflow:visible}`
   // Menu anchors also use _root; only the container owning the Workspace header may grow.
-  + `${DRAWER_HEADER} [class*="_regionArea"] [class*="_root"]:has(> [class*="_sectionHeader"]){flex:1 1 auto;min-height:0;height:auto;max-height:none}`
-  // Sideways stays locked: with overflow-y scrolling the host also computes overflow-x as auto, and
-  // the rows are a few pixels wider than the seat — a drag would slide them and the swipe layer
-  // would hand the gesture to the list instead of closing the drawer.
-  + `${DRAWER_HEADER} [class*="_regionArea"] [class*="_listArea"]{flex:1 1 auto;min-width:0;min-height:0;`
-  + 'overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-width:none}'
-  + `${DRAWER_HEADER} [class*="_regionArea"] [class*="_listArea"]::-webkit-scrollbar{display:none}`
+  + `${DRAWER_HEADER} [class*="_regionArea"] [class*="_root"]:has(> [class*="_sectionHeader"]){flex:none;height:auto;max-height:none;overflow:visible}`
+  + `${DRAWER_HEADER} [class*="_regionArea"] [class*="_listArea"]{flex:none;overflow:visible}`
+  // Like the drawer header, paint the side insets the Workspace rows reach into.
+  + `${DRAWER_HEADER} [class*="_regionArea"] [class*="_sectionHeader"]{position:sticky;top:${PHONE_HEADER_HEIGHT};z-index:2;`
+  + 'background:var(--dsw-specific-sidebar-fill);box-shadow:var(--dsh-sidebar-inline-padding,12px) 0 0 var(--dsw-specific-sidebar-fill),'
+  + 'calc(-1 * var(--dsh-sidebar-inline-padding,12px)) 0 0 var(--dsw-specific-sidebar-fill)}'
+  + `${DRAWER_SCROLL_ROOT} .hp-agents-tiles{position:sticky;top:${PHONE_HEADER_HEIGHT};z-index:2;`
+  + 'background:var(--dsw-specific-sidebar-fill);box-shadow:0 -6px 0 var(--dsw-specific-sidebar-fill),0 6px 0 var(--dsw-specific-sidebar-fill)}'
+  + `${DRAWER_SCROLL_ROOT} .hp-agents-group > div{max-height:none;overflow-y:visible}`
   // Keep the title at the left and the three controls aligned with the Workspace cards.
   + `${DRAWER_HEADER} [class*="_sectionHeader"]{justify-content:flex-end;flex-wrap:nowrap;`
   + 'margin-right:calc(2px - var(--dsh-sidebar-inline-padding,12px));'
