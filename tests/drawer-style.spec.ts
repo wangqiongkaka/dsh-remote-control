@@ -329,7 +329,7 @@ it.each([false, true])('scrolls the drawer as one list while the Agent tiles and
     return found
   }
   try {
-    // The drawer itself is the one scrollport, so a long Agent list no longer hides in a five-row box.
+    // The drawer itself is the one scrollport; a long Agent group keeps the card's own five-row scrollport.
     expect(style('.ui_sidebar__root__h1').overflowY).toBe('auto')
     expect(style('.ui_sidebar__root__h1').scrollbarWidth).toBe('none')
     expect(style('.ui_sidebar__root__h1').scrollbarGutter).toBe('auto')
@@ -340,8 +340,8 @@ it.each([false, true])('scrolls the drawer as one list while the Agent tiles and
     expect(style('.ui_sidebar__footArea__h1').bottom).toBe('0px')
     expect(style('.hp-agents-list').overflow).toBe('visible')
     expect(style('.hp-agents-list').maxHeight).toBe('none')
-    expect(style('.hp-agents-group > div').overflowY).toBe('visible')
-    expect(style('.hp-agents-group > div').maxHeight).toBe('none')
+    expect(style('.hp-agents-group > div').overflowY).toBe('auto')
+    expect(style('.hp-agents-group > div').maxHeight).toBe('248px')
     // The card title scrolls away; the tiles stay under the drawer header while the Agent rows pass.
     expect(style('.hp-agents-head').position).not.toBe('sticky')
     expect(style('.hp-agents-tiles').position).toBe('sticky')
@@ -372,40 +372,6 @@ it.each([false, true])('scrolls the drawer as one list while the Agent tiles and
     expect(sheetText).toContain('justify-content:flex-end;flex-wrap:nowrap;'
       + 'margin-right:calc(2px - var(--dsh-sidebar-inline-padding,12px));'
       + 'padding-right:calc(var(--dsh-sidebar-inline-padding,12px) - var(--dsh-scrollbar-width,5px) - 2px)')
-  } finally { dispose(); frame.remove(); provider.remove() }
-})
-
-it('folds a collapsed Agent group to five rows behind its expand control in the phone drawer', () => {
-  // harness-provider's own rule: the desktop scrollport needs no expand control.
-  const provider = document.createElement('style')
-  provider.textContent = '.hp-agents-overflow{display:none}'
-  document.head.append(provider)
-  const frame = document.createElement('div')
-  frame.className = 'ui_layout__frame__h1'
-  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
-    + '<div class="ui_sidebar__logoRow__h1">品牌</div><nav class="ui_sidebar__panelList__h1">插件</nav>'
-    + '<div data-hp-agents><section class="hp-agents-card"><div class="hp-agents-list">'
-    + '<section class="hp-agents-group" data-collapsed><h3>已完成</h3><div>'
-    + '<div class="hp-agents-item">会话</div>'.repeat(7)
-    + '<button class="hp-agents-overflow" aria-expanded="false">展开其余 2 个会话</button></div></section>'
-    + '</div></section></div></div></div>'
-  document.body.append(frame)
-  const dispose = applyDrawerSelection()
-  const group = frame.querySelector('.hp-agents-group')!
-  const shown = (): boolean[] => Array.from(group.querySelectorAll('.hp-agents-item'), row => getComputedStyle(row).display !== 'none')
-  const toggle = frame.querySelector('.hp-agents-overflow')!
-  try {
-    expect(shown()).toEqual([true, true, true, true, true, false, false])
-    expect(getComputedStyle(toggle).display).not.toBe('none')
-    // Expanded, every row comes back and the control stays to fold them again.
-    group.removeAttribute('data-collapsed')
-    expect(shown()).toEqual(Array(7).fill(true))
-    expect(getComputedStyle(toggle).display).not.toBe('none')
-    // Outside the phone drawer the provider's own card rules stand.
-    group.setAttribute('data-collapsed', '')
-    dispose()
-    expect(shown()).toEqual(Array(7).fill(true))
-    expect(getComputedStyle(toggle).display).toBe('none')
   } finally { dispose(); frame.remove(); provider.remove() }
 })
 
