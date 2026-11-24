@@ -28,7 +28,7 @@ const start = vi.fn()
 const stop = vi.fn()
 const status = vi.fn()
 const invitation = (id: string, pairedUntil = Date.now() + 60_000) => ({
-  url: `https://host.tailnet.ts.net/?pair=${id}`, expiresAt: Date.now() + 30_000, pairedUntil,
+  url: `https://203.0.113.10/?pair=${id}`, expiresAt: Date.now() + 30_000, pairedUntil,
 })
 
 async function click(selector: string): Promise<void> {
@@ -236,7 +236,7 @@ it('refreshes spent or expired invitations without hiding the QR code after pair
 
 it('stops showing the startup spinner and offers retry when the tunnel times out', async () => {
   start.mockImplementation(() => new Promise((_resolve, reject) => {
-    setTimeout(() => { reject(new Error('Tailscale Funnel startup timeout')) }, 60_000)
+    setTimeout(() => { reject(new Error('SSH tunnel startup timeout')) }, 60_000)
   }))
   await click('button[aria-label="title"]')
   expect(document.querySelector('[role="status"]')?.textContent).toContain('loading')
@@ -244,6 +244,6 @@ it('stops showing the startup spinner and offers retry when the tunnel times out
   expect(start).toHaveBeenCalledOnce()
   await act(async () => { await vi.advanceTimersByTimeAsync(1) })
   expect(document.querySelector('[role="status"]')).toBeNull()
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain('Tailscale Funnel startup timeout')
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain('SSH tunnel startup timeout')
   expect(document.querySelector('[role="alert"] button')?.textContent).toBe('retry')
 })

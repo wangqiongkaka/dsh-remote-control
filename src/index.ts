@@ -1,14 +1,13 @@
-/** Paired mobile access to an existing DSH Web process through a managed CLI tunnel. */
+/** Paired mobile access to an existing DSH Web process through a managed SSH reverse tunnel. */
 
-import { spawn, execFile, type ChildProcess } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import {
   createServer, request as httpRequest, STATUS_CODES,
   type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse,
 } from 'node:http'
-import { promisify } from 'node:util'
-import { connect, type AddressInfo } from 'node:net'
+import type { AddressInfo } from 'node:net'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 import type { Duplex } from 'node:stream'
@@ -36,14 +35,10 @@ interface SshConfig {
 
 /** Tunnel and pairing settings. */
 export interface Config {
-  /** When set, use SSH instead of Tailscale; credentials stay in OpenSSH. */
+  /** SSH reverse tunnel to the public server; credentials stay in OpenSSH. */
   ssh?: SshConfig | undefined
   /** When set, push waiting and finished Sessions to the phone through Bark. */
   bark?: BarkConfig | undefined
-  tailscaleBinary: string
-  /** `public` opens an internet ingress; `tailnet` serves Tailscale peers only. */
-  access: 'public' | 'tailnet'
-  funnelPort: 443 | 8443 | 10000
   invitationTtlMs: number
   /** Phone access lifetime; 0 disables time-based expiry. */
   browserTtlMs: number
@@ -68,9 +63,6 @@ export const Config: z<Config> = z.object({
     key: z.string().min(1).required(),
     server: z.string().pattern(/^https?:\/\/[^\s]+$/u).default('https://api.day.app'),
   }), z.const(undefined)]),
-  tailscaleBinary: z.string().min(1).default('tailscale'),
-  access: z.union([z.const('public'), z.const('tailnet')]).default('public'),
-  funnelPort: z.union([z.const(443), z.const(8443), z.const(10000)]).default(443),
   invitationTtlMs: z.natural().min(1_000).default(5 * 60_000),
   browserTtlMs: z.union([z.const(0), z.natural().min(1_000).max(24 * 60 * 60_000)]).default(0),
   startupTimeoutMs: z.natural().min(1_000).default(30_000),
@@ -106,92 +98,10 @@ function cliEnv(): Record<string, string> {
   const env = Object.fromEntries(Object.entries(process.env).filter(([name, value]) =>
     value !== undefined && !/KEY|PASSWORD|SECRET|TOKEN/i.test(name)
     && !name.toUpperCase().startsWith('DSH_'))) as Record<string, string>
-  // Apps launched from Finder or the Dock get /usr/bin:/bin:/usr/sbin:/sbin, which misses the Mac App
-  // and Homebrew CLIs; spawn looks the binary up in this PATH.
+  // Apps launched from Finder or the Dock get /usr/bin:/bin:/usr/sbin:/sbin, which misses
+  // Homebrew CLIs; spawn looks the binary up in this PATH.
   env.PATH = [env.PATH, '/usr/local/bin', '/opt/homebrew/bin'].filter(Boolean).join(':')
   return env
-}
-
-async function cliRun(binary: string, args: readonly string[]): Promise<string> {
-  const { stdout } = await promisify(execFile)(binary, [...args], {
-    env: cliEnv(), timeout: 10_000, maxBuffer: 1024 * 1024,
-  })
-  return stdout
-}
-
-async function cliJson(binary: string, args: readonly string[]): Promise<unknown> {
-  return JSON.parse(await cliRun(binary, args))
-}
-
-/** The port of a loopback proxy target, or undefined for any other address. */
-function loopbackPort(target: string): number | undefined {
-  let url: URL
-  try { url = new URL(target) } catch { return undefined }
-  if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname)) return undefined
-  const port = Number(url.port === '' ? (url.protocol === 'https:' ? 443 : 80) : url.port)
-  return Number.isSafeInteger(port) && port > 0 && port < 65_536 ? port : undefined
-}
-
-/** Whether a loopback port accepts connections right now. */
-function listening(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = connect({ host: '127.0.0.1', port })
-    const settle = (result: boolean): void => { socket.destroy(); resolve(result) }
-    socket.once('connect', () => { settle(true) })
-    socket.once('error', () => { settle(false) })
-    socket.setTimeout(1_000, () => { settle(false) })
-  })
-}
-
-/** TCP listeners are shared by Serve and Funnel, including foreground sessions. */
-function portAvailable(status: unknown, port: number): boolean {
-  if (!record(status)) return false
-  if (Object.keys(status).length === 0) return true
-  if ('TCP' in status && (!record(status.TCP) || String(port) in status.TCP)) return false
-  if ('Foreground' in status && (!record(status.Foreground)
-    || Object.values(status.Foreground).some(session => !portAvailable(session, port)))) return false
-  // An unrecognised nonempty config cannot safely prove that the port is free.
-  return record(status.TCP) || record(status.Foreground)
-}
-
-/**
- * A DSH process can exit without stopping its tunnel, leaving a foreground serve session whose
- * loopback proxy died with that process. Cleanup may retire the orphaned CLI only when there is
- * no background configuration or other listener port that a reset would also remove.
- */
-async function abandoned(status: Record<string, unknown>, port: number): Promise<boolean> {
-  if (Object.keys(status).length !== 1 || !('Foreground' in status)) return false
-  if (!record(status.Foreground) || Object.values(status.Foreground).some(session =>
-    !record(session) || !record(session.TCP) || Object.keys(session.TCP).length !== 1
-    || !(String(port) in session.TCP))) return false
-  const targets: string[] = []
-  const walk = (value: unknown): void => {
-    if (Array.isArray(value)) { for (const item of value) walk(item); return }
-    if (!record(value)) return
-    for (const [key, item] of Object.entries(value)) {
-      if (key === 'Proxy' && typeof item === 'string') targets.push(item)
-      else walk(item)
-    }
-  }
-  walk(status)
-  if (targets.length === 0) return false
-  for (const target of targets) {
-    const port = loopbackPort(target)
-    if (port === undefined || await listening(port)) return false
-  }
-  return true
-}
-
-function publicUrl(config: Config, status: unknown): string {
-  if (!record(status) || status.BackendState !== 'Running' || !record(status.Self)
-    || typeof status.Self.DNSName !== 'string' || status.Self.DNSName === '') {
-    throw new Error('Tailscale must be connected and have a MagicDNS name')
-  }
-  const hostname = status.Self.DNSName.replace(/\.$/u, '')
-  const port = config.funnelPort === 443 ? '' : ':' + String(config.funnelPort)
-  const result = new URL('https://' + hostname + port + '/')
-  if (result.hostname !== hostname || result.pathname !== '/') throw new Error('Invalid Tailscale DNS name')
-  return result.href
 }
 
 /** Keep the public origin usable by Secure cookies and the existing Host/Origin fence. */
@@ -598,8 +508,8 @@ function captureOutput(child: ChildProcess): () => string {
 }
 
 /**
- * Signal the child's whole process group: the `tailscale` on PATH is a wrapper script that does not
- * exec, so the CLI is a grandchild that a plain `child.kill()` would leave running.
+ * Signal the child's whole process group so a wrapper script or ProxyCommand grandchild is not
+ * left running when the tunnel stops.
  */
 function killTree(child: ChildProcess, signal: NodeJS.Signals): void {
   if (child.pid === undefined) return
@@ -659,42 +569,24 @@ export function apply(ctx: Context, config: Config): void {
   const open = async (refresh = false): Promise<Invitation> => {
     if (active !== undefined) return active.proxy.invite(refresh)
     const ssh = config.ssh ?? undefined
-    const command = config.access === 'public' ? 'funnel' : 'serve'
-    const label = ssh === undefined ? 'Tailscale ' + (config.access === 'public' ? 'Funnel' : 'Serve') : 'SSH tunnel'
-    const baseUrl = ssh === undefined
-      ? publicUrl(config, await cliJson(config.tailscaleBinary, ['status', '--json'])) : sshPublicUrl(ssh)
-    if (ssh === undefined) {
-      const existing = await cliJson(config.tailscaleBinary, [command, 'status', '--json'])
-      if (!portAvailable(existing, config.funnelPort)) {
-        if (!record(existing) || !await abandoned(existing, config.funnelPort)) {
-          throw new Error(label + ' port ' + String(config.funnelPort) + ' already has a configuration')
-        }
-        // Either verb can own the leftover, so clear both before claiming the port.
-        for (const other of ['serve', 'funnel']) await cliRun(config.tailscaleBinary, [other, 'reset'])
-      }
-    }
+    if (ssh === undefined) throw new Error('SSH tunnel is not configured')
+    const baseUrl = sshPublicUrl(ssh)
     const dshCookie = await localCookie(ctx)
     const pairing = browserProxy(baseUrl, ctx.webServer.port, dshCookie, config)
     const proxyPort = await listen(pairing.server)
-    const target = 'http://127.0.0.1:' + String(proxyPort)
-    const child = spawn(ssh?.binary ?? config.tailscaleBinary, ssh === undefined
-      ? [command, '--yes', '--https=' + String(config.funnelPort), target] : sshArguments(ssh, proxyPort), {
+    const child = spawn(ssh.binary, sshArguments(ssh, proxyPort), {
       env: cliEnv(), stdio: ['ignore', 'pipe', 'pipe'], detached: true,
     })
     let sshReady = false
-    if (ssh !== undefined) {
-      // OpenSSH emits this only after the server acknowledges the requested reverse listener.
-      const confirmation = 'debug1: remote forward success for: listen 127.0.0.1:' + String(ssh.remotePort) + ','
-      let pending = ''
-      child.stderr?.on('data', (chunk: Buffer) => {
-        const text = pending + chunk.toString('utf8')
-        sshReady ||= text.includes(confirmation)
-        pending = text.slice(-confirmation.length)
-      })
-    }
+    // OpenSSH emits this only after the server acknowledges the requested reverse listener.
+    const confirmation = 'debug1: remote forward success for: listen 127.0.0.1:' + String(ssh.remotePort) + ','
+    let pending = ''
+    child.stderr?.on('data', (chunk: Buffer) => {
+      const text = pending + chunk.toString('utf8')
+      sshReady ||= text.includes(confirmation)
+      pending = text.slice(-confirmation.length)
+    })
     const output = captureOutput(child)
-    // Funnel prints why it refuses to start and then waits for an admin instead of exiting, so the
-    // reason has to travel with whichever failure ends the wait.
     const failure = (message: string): Error => {
       const detail = output()
       return new Error(detail === '' ? message : message + ' — ' + detail)
@@ -703,7 +595,7 @@ export function apply(ctx: Context, config: Config): void {
     const exited = new Promise<void>((resolve) => {
       child.once('error', (error) => { exitReason = failure(error.message); resolve() })
       child.once('close', (code, signal) => {
-        exitReason ??= failure(label + ' exited (' + String(code ?? signal) + ')')
+        exitReason ??= failure('SSH tunnel exited (' + String(code ?? signal) + ')')
         resolve()
       })
     })
@@ -719,20 +611,13 @@ export function apply(ctx: Context, config: Config): void {
     try {
       const deadline = Date.now() + config.startupTimeoutMs
       while (Date.now() < deadline && exitReason === undefined) {
-        const ready = ssh === undefined
-          ? JSON.stringify(await cliJson(config.tailscaleBinary, [command, 'status', '--json'])).includes(target) : sshReady
-        if (ready && exitReason === undefined) {
+        if (sshReady) {
           active = { child, exited, proxy: pairing }
           return pairing.invite()
         }
-        // A public ingress the tailnet has not enabled is a setup step, not a slow start: report it
-        // without the wait. `serve` needs no such permission.
-        if (ssh === undefined && config.access === 'public' && /funnel is not enabled/iu.test(output())) {
-          throw failure('Tailscale Funnel could not start')
-        }
         await new Promise(resolve => setTimeout(resolve, 250))
       }
-      throw exitReason ?? failure(label + ' did not become ready before the startup timeout')
+      throw exitReason ?? failure('SSH tunnel did not become ready before the startup timeout')
     } catch (error) {
       await closeProxy(pairing)
       await stopChild(child, exited, config.stopTimeoutMs)
@@ -789,7 +674,7 @@ export function apply(ctx: Context, config: Config): void {
   }), 'remote-control: local control route')
   ctx.effect(() => () => { disposed = true; return serialize(stop) }, 'remote-control: tunnel shutdown')
   // A reload or DSH restart closes the tunnel, usually while nobody is at the desktop to reopen it.
-  // Reopen it for a phone that is still paired. The previous instance may still hold the port and
-  // Tailscale may still be connecting after login, so retry while the pairing is valid.
-  void restore(recoveryEpoch)
+  // Reopen it for a phone that is still paired. The previous instance may still hold the remote
+  // port or the network may still be coming up, so retry while the pairing is valid.
+  if (config.ssh !== undefined) void restore(recoveryEpoch)
 }

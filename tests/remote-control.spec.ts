@@ -30,10 +30,12 @@ afterEach(async () => {
   delete process.env.DSH_HOME
 })
 
-it('defaults to Tailscale without enabling SSH or falling back to another tunnel', () => {
+it('defaults to unconfigured SSH without removed tunnel options', () => {
   const config = z.resolve({}, Config, {})[0]
-  expect(config.access).toBe('public')
   expect(config.ssh).toBeUndefined()
+  expect(config).not.toHaveProperty('tailscaleBinary')
+  expect(config).not.toHaveProperty('access')
+  expect(config).not.toHaveProperty('funnelPort')
   expect(config).not.toHaveProperty('publicTunnel')
   expect(config).not.toHaveProperty('cloudflaredBinary')
 })
@@ -48,33 +50,23 @@ it('defaults to unlimited phone access while preserving finite lifetime configur
 })
 
 it.skipIf(process.platform === 'win32').each([
-  { browserTtlMs: 180_000, ssh: false }, { browserTtlMs: 0, ssh: false }, { browserTtlMs: 0, ssh: true },
+  { browserTtlMs: 180_000 }, { browserTtlMs: 0 },
 ])(
-  'keeps paired HTTP and WebSocket access and revokes replacement/stop: %j', async ({ browserTtlMs, ssh }) => {
+  'keeps paired HTTP and WebSocket access and revokes replacement/stop: %j', async ({ browserTtlMs }) => {
   directory = await mkdtemp(join(tmpdir(), 'dsh-remote-control-'))
   process.env.DSH_HOME = directory
-  const state = join(directory, 'funnel-target')
-  const binary = join(directory, 'tailscale')
+  const state = join(directory, 'ssh-target')
+  const binary = join(directory, 'ssh')
   await writeFile(binary, `#!/usr/bin/env node
 const fs = require('node:fs')
 const state = ${JSON.stringify(state)}
 const args = process.argv.slice(2)
-if (${ssh}) {
-  if (!args.includes('-R') || fs.existsSync(state)) process.exit(9)
-  const forward = args[args.indexOf('-R') + 1].split(':')
-  fs.writeFileSync(state, 'http://' + forward[2] + ':' + forward[3])
-  process.stderr.write('debug1: remote forward success for: listen ' + forward[0] + ':' + forward[1] + ', connect 127.0.0.1\\n')
-  process.on('SIGTERM', () => { fs.unlinkSync(state); process.exit(0) })
-  setInterval(() => {}, 1000)
-  return
-}
-if (args[0] === 'status') console.log(JSON.stringify({ BackendState: 'Running', Self: { DNSName: 'host.tailnet.ts.net.' } }))
-else if (args[1] === 'status') console.log(fs.existsSync(state) ? JSON.stringify({ Web: { Proxy: fs.readFileSync(state, 'utf8') } }) : '{}')
-else if (args[0] === 'funnel') {
-  fs.writeFileSync(state, args.at(-1))
-  process.on('SIGTERM', () => { fs.unlinkSync(state); process.exit(0) })
-  setInterval(() => {}, 1000)
-} else process.exit(1)
+if (!args.includes('-R') || fs.existsSync(state)) process.exit(9)
+const forward = args[args.indexOf('-R') + 1].split(':')
+fs.writeFileSync(state, 'http://' + forward[2] + ':' + forward[3])
+process.stderr.write('debug1: remote forward success for: listen ' + forward[0] + ':' + forward[1] + ', connect 127.0.0.1\\n')
+process.on('SIGTERM', () => { fs.unlinkSync(state); process.exit(0) })
+setInterval(() => {}, 1000)
 `)
   await chmod(binary, 0o700)
   let filesRoute: ConnectionFetchRoute | undefined
@@ -150,9 +142,9 @@ else if (args[0] === 'funnel') {
     },
   }
   const config: Config = {
-    tailscaleBinary: binary, access: 'public', funnelPort: 443, invitationTtlMs: 60_000,
+    invitationTtlMs: 60_000,
     browserTtlMs, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000, phoneSilenceMs: 60_000,
-    ...ssh ? { ssh: { binary, destination: 'ubuntu@relay.example', publicUrl: 'https://203.0.113.10', port: 22, remotePort: 18080 } } : {},
+    ssh: { binary, destination: 'ubuntu@relay.example', publicUrl: 'https://203.0.113.10', port: 22, remotePort: 18080 },
   }
   apply(ctx as never as Context, config)
   if (route === undefined) throw new Error('Control route not installed')
@@ -164,7 +156,7 @@ else if (args[0] === 'funnel') {
   const started = await post({ action: 'start' })
   expect(started.status).toBe(200)
   const { url: first } = await started.json() as { url: string }
-  const hostname = ssh ? '203.0.113.10' : 'host.tailnet.ts.net'
+  const hostname = '203.0.113.10'
   const origin = 'https://' + hostname
   expect(first).toMatch(new RegExp('^' + origin.replaceAll('.', '\\.') + '/\\?pair='))
   // The global footer can pair without choosing a Session or Workspace.
@@ -259,7 +251,7 @@ else if (args[0] === 'funnel') {
   const filesPath = '/api/remote-control/files?' + new URLSearchParams({ path: directory })
   const files = await request(filesPath, { cookie: cookie ?? '' })
   expect(files.status).toBe(200)
-  expect((await files.json() as { entries: { name: string }[] }).entries.some(file => file.name === 'tailscale')).toBe(true)
+  expect((await files.json() as { entries: { name: string }[] }).entries.some(file => file.name === 'ssh')).toBe(true)
   expect((await request(filesPath, { cookie: cookie ?? '', 'sec-fetch-site': 'cross-site' })).status).toBe(403)
   const repeat = await request('/' + new URL(url).search, { cookie: cookie ?? '', 'sec-fetch-site': 'cross-site' })
   expect(repeat.status).toBe(303)
@@ -421,56 +413,32 @@ else if (args[0] === 'funnel') {
   expect((await post({ action: 'start', workspaceId: 'workspace-1' })).status).toBe(409)
 })
 
-/** A fake Tailscale CLI that answers status and then runs `funnel` as the given script body. */
-function fakeCli(funnel: string, status = "'{}'"): string {
-  return `#!/usr/bin/env node
-const fs = require('node:fs')
-const path = require('node:path')
-const home = path.dirname(process.argv[1])
-const args = process.argv.slice(2)
-if (args[0] === 'status') {
-  const stateFile = path.join(home, 'backend-state')
-  const state = fs.existsSync(stateFile) ? fs.readFileSync(stateFile, 'utf8') : 'Running'
-  if (state === 'unavailable') process.exit(7)
-  console.log(JSON.stringify({ BackendState: state, Self: { DNSName: 'host.tailnet.ts.net.' } }))
-}
-else if (args[1] === 'status') console.log(${status})
-else if (args[0] === 'funnel' || args[0] === 'serve') {
-${funnel}
-} else process.exit(1)
-`
-}
-
-/** Applies the plugin against a fake CLI and returns its control route. */
+/** Applies the plugin against an optional fake SSH CLI and returns its control route. */
 async function controlRoute(
-  funnel: string, startupTimeoutMs: number, status = "'{}'", wrap = false,
-  access: Config['access'] = 'public', overrides: Partial<Config> = {}, sshScript?: string,
+  sshScript?: string, overrides: Partial<Config> = {}, startupTimeoutMs = 5_000, wrap = false,
 ): Promise<ConnectionFetchRoute> {
   directory = await mkdtemp(join(tmpdir(), 'dsh-remote-control-'))
   process.env.DSH_HOME = directory
-  const binary = join(directory, 'tailscale')
-  if (wrap) {
-    // /usr/local/bin/tailscale is a shell script without exec, so the CLI becomes a grandchild.
-    const cli = join(directory, 'cli.cjs')
-    await writeFile(cli, fakeCli(funnel, status))
-    await writeFile(binary, `#!/bin/sh\n/usr/bin/env node ${JSON.stringify(cli)} "$@"\n`)
-  } else await writeFile(binary, fakeCli(funnel, status))
-  await chmod(binary, 0o700)
   let ssh: Config['ssh']
   if (sshScript !== undefined) {
     const sshBinary = join(directory, 'ssh')
-    await writeFile(sshBinary, `#!/usr/bin/env node
+    const source = `#!/usr/bin/env node
 const fs = require('node:fs')
 const path = require('node:path')
 const home = path.dirname(process.argv[1])
 const args = process.argv.slice(2)
 fs.writeFileSync(path.join(home, 'ssh-args'), JSON.stringify(args))
 ${sshScript}
-`)
+`
+    if (wrap) {
+      // A shell wrapper without exec leaves the real CLI as a grandchild process.
+      const cli = join(directory, 'cli.cjs')
+      await writeFile(cli, source)
+      await writeFile(sshBinary, `#!/bin/sh\n/usr/bin/env node ${JSON.stringify(cli)} "$@"\n`)
+    } else await writeFile(sshBinary, source)
     await chmod(sshBinary, 0o700)
     ssh = { destination: 'ubuntu@relay.example', publicUrl: 'https://203.0.113.10',
       port: 22, remotePort: 18080, ...overrides.ssh, binary: sshBinary }
-    await writeFile(binary, '#!/usr/bin/env node\nprocess.stderr.write("Unexpected Tailscale invocation"); process.exit(91)\n')
   }
   backend = createServer((_req, res) => {
     res.writeHead(303, { location: '/', 'set-cookie': 'dsh-session=signed; Path=/; HttpOnly' }).end()
@@ -491,8 +459,8 @@ ${sshScript}
     },
   }
   apply(ctx as never as Context, {
-    tailscaleBinary: binary, access, funnelPort: 443, invitationTtlMs: 60_000,
-    browserTtlMs: 60_000, startupTimeoutMs, stopTimeoutMs: 5_000, phoneSilenceMs: 60_000, ...overrides,
+    invitationTtlMs: 60_000, browserTtlMs: 60_000, startupTimeoutMs, stopTimeoutMs: 5_000, phoneSilenceMs: 60_000,
+    ...overrides,
     ...ssh === undefined ? {} : { ssh },
   })
   if (route === undefined) throw new Error('Control route not installed')
@@ -518,8 +486,8 @@ setTimeout(() => { process.stderr.write(forward[1] + ', connect 127.0.0.1\\n' + 
 setInterval(() => {}, 1000)
 `
 
-const sshRoute = (script = sshForward, overrides: Partial<Config> = {}, timeout = 5_000) =>
-  controlRoute('', timeout, "'{}'", false, 'public', overrides, script)
+const sshRoute = (script = sshForward, overrides: Partial<Config> = {}, timeout = 5_000, wrap = false) =>
+  controlRoute(script, overrides, timeout, wrap)
 
 it('requires SSH connection fields and defaults only the optional SSH settings', () => {
   const ssh = z.resolve({ ssh: { destination: 'ubuntu@relay.example', publicUrl: 'https://203.0.113.10' } }, Config, {})[0].ssh
@@ -533,6 +501,14 @@ it('requires SSH connection fields and defaults only the optional SSH settings',
     expect(() => z.resolve({ ssh: { destination: 'relay', publicUrl: 'https://relay', port } }, Config, {})).toThrow()
     expect(() => z.resolve({ ssh: { destination: 'relay', publicUrl: 'https://relay', remotePort: port } }, Config, {})).toThrow()
   }
+})
+
+it.each([undefined, null])('refuses to start when SSH is not configured: %s', async ssh => {
+  const route = await controlRoute(undefined, { ssh: z.resolve({ ssh }, Config, {})[0].ssh })
+  const response = await begin(route)
+  expect(response.status).toBe(409)
+  expect(await response.text()).toContain('SSH tunnel is not configured')
+  expect(await (await route.fetch(new Request('http://localhost/api/remote-control'))).json()).toEqual({ active: false })
 })
 
 it.skipIf(process.platform === 'win32')('starts a loopback SSH forward only after acknowledgement and reuses it when refreshing QR', async () => {
@@ -608,27 +584,36 @@ it.skipIf(process.platform === 'win32').each([
   await expect(readFile(join(directory!, 'ssh-args'), 'utf8')).rejects.toThrow()
 })
 
-it.skipIf(process.platform === 'win32').each(['ssh', 'public', 'tailnet'] as const)(
-  'restores a paired %s tunnel even after a long outage but never undoes a user stop', async mode => {
+it.skipIf(process.platform === 'win32')('stops an SSH tunnel whose CLI is a wrapper script', async () => {
+  const route = await sshRoute(sshForward, {}, 5_000, true)
+  expect((await begin(route)).status).toBe(200)
+  const state = join(directory as string, 'ssh-target')
+  expect(await readFile(state, 'utf8')).toContain('http://127.0.0.1:')
+  const stopping = Date.now()
+  const stopped = await route.fetch(new Request('http://localhost/api/remote-control', {
+    method: 'POST', body: JSON.stringify({ action: 'stop' }),
+  }))
+  expect(stopped.status).toBe(200)
+  expect(Date.now() - stopping).toBeLessThan(10_000)
+  await expect(readFile(state, 'utf8')).rejects.toThrow()
+}, 30_000)
+
+it.skipIf(process.platform === 'win32')(
+  'restores a paired SSH tunnel even after a long outage but never undoes a user stop', async () => {
   const script = `
 const target = path.join(home, 'tunnel-target')
 if (fs.existsSync(path.join(home, 'offline'))) {
   fs.writeFileSync(path.join(home, 'offline-attempt'), '1')
   process.exit(7)
 }
-const ssh = args.includes('-R')
-const forward = ssh ? args[args.indexOf('-R') + 1].split(':') : []
-fs.writeFileSync(target, ssh ? 'http://' + forward[2] + ':' + forward[3] : args.at(-1))
+const forward = args[args.indexOf('-R') + 1].split(':')
+fs.writeFileSync(target, 'http://' + forward[2] + ':' + forward[3])
 fs.writeFileSync(path.join(home, 'tunnel-pid'), String(process.pid))
 process.on('SIGTERM', () => { fs.unlinkSync(target); process.exit(0) })
-if (ssh) process.stderr.write('debug1: remote forward success for: listen ' + forward[0] + ':' + forward[1] + ',\\n')
+process.stderr.write('debug1: remote forward success for: listen ' + forward[0] + ':' + forward[1] + ',\\n')
 setInterval(() => {}, 1000)
 `
-  const route = mode === 'ssh' ? await sshRoute(script, { browserTtlMs: 0 })
-    : await controlRoute(script, 5_000,
-      `fs.existsSync(path.join(home, 'tunnel-target'))
-        ? JSON.stringify({ Web: { Proxy: fs.readFileSync(path.join(home, 'tunnel-target'), 'utf8') } }) : '{}'`,
-      false, mode, { browserTtlMs: 0 })
+  const route = await sshRoute(script, { browserTtlMs: 0 })
   const response = await begin(route)
   expect(response.status, await response.clone().text()).toBe(200)
   const { url } = await response.json() as { url: string }
@@ -636,7 +621,7 @@ setInterval(() => {}, 1000)
     const proxy = new URL(await readFile(join(directory!, 'tunnel-target'), 'utf8'))
     return new Promise((resolve, reject) => {
       httpRequest({ hostname: proxy.hostname, port: Number(proxy.port), path,
-        headers: { host: mode === 'ssh' ? '203.0.113.10' : 'host.tailnet.ts.net', cookie } }, reply => {
+        headers: { host: '203.0.113.10', cookie } }, reply => {
         reply.resume()
         resolve({ status: reply.statusCode ?? 502, cookie: String(reply.headers['set-cookie'] ?? '').split(';', 1)[0]! })
       }).on('error', reject).end()
@@ -684,196 +669,22 @@ setInterval(() => {}, 1000)
   expect(await (await route.fetch(new Request('http://localhost/api/remote-control'))).json()).toEqual({ active: false })
 }, 30_000)
 
-it.skipIf(process.platform === 'win32').each([
-  ['tailnet', false], ['tailnet', true], ['public', false], ['public', true],
-] as const)('preserves other %s mappings (foreground: %s) while starting and stopping DSH', async (access, foreground) => {
-  const service = {
-    TCP: { 8443: { HTTPS: true } },
-    Web: { 'host.tailnet.ts.net:8443': { Handlers: { '/': { Proxy: 'http://127.0.0.1:8000' } } } },
-  }
-  const existing = foreground ? { Foreground: { other: service } } : service
-  const route = await controlRoute(`  const state = path.join(home, 'config')
-  const existing = fs.existsSync(state) ? JSON.parse(fs.readFileSync(state, 'utf8')) : ${JSON.stringify(existing)}
-  if (args[1] === 'reset') { fs.writeFileSync(path.join(home, 'reset'), '1'); fs.writeFileSync(state, '{}'); return }
-  if (args[0] !== ${JSON.stringify(access === 'tailnet' ? 'serve' : 'funnel')}) process.exit(9)
-  const port = args.find(arg => arg.startsWith('--https='))?.slice('--https='.length)
-  if (port !== '443') process.exit(8)
-  const config = { ...existing, Foreground: { ...existing.Foreground, dsh: {
-    TCP: { [port]: { HTTPS: true } },
-    Web: { ['host.tailnet.ts.net:' + port]: { Handlers: { '/': { Proxy: args.at(-1) } } } },
-  } } }
-  fs.writeFileSync(state + '.next', JSON.stringify(config))
-  fs.renameSync(state + '.next', state)
-  process.on('SIGTERM', () => { fs.writeFileSync(state, JSON.stringify(existing)); process.exit(0) })
-  setInterval(() => {}, 1000)`, 5_000,
-  `fs.existsSync(path.join(home, 'config')) ? fs.readFileSync(path.join(home, 'config'), 'utf8') : JSON.stringify(${JSON.stringify(existing)})`,
-  false, access)
-  const response = await begin(route)
-  expect(response.status, await response.clone().text()).toBe(200)
-  expect(await response.json()).toMatchObject({ url: expect.stringContaining('https://host.tailnet.ts.net/?pair=') })
-  const state = join(directory!, 'config')
-  expect(JSON.parse(await readFile(state, 'utf8'))).toMatchObject(existing)
-  const stopped = await route.fetch(new Request('http://localhost/api/remote-control', {
-    method: 'POST', body: JSON.stringify({ action: 'stop' }),
-  }))
-  expect(stopped.status).toBe(200)
-  expect(JSON.parse(await readFile(state, 'utf8'))).toEqual(existing)
-  await expect(readFile(join(directory!, 'reset'), 'utf8')).rejects.toThrow()
-})
-
-it.skipIf(process.platform === 'win32').each([
-  { TCP: { 443: { HTTPS: true } } },
-  { TCP: { 443: { TCPForward: '127.0.0.1:8000' } } },
-  { TCP: { 8443: { HTTPS: true } }, Foreground: { other: { TCP: { 443: { HTTPS: true } } } } },
-  { TCP: null },
-  { Foreground: { other: null } },
-])('refuses occupied or unreadable listeners without resetting other mappings: %j', async existing => {
-  const route = await controlRoute(`  fs.writeFileSync(path.join(home, 'mutation'), args.join(' '))
-  process.exit(9)`, 1_000, `JSON.stringify(${JSON.stringify(existing)})`, false, 'tailnet')
-  const response = await begin(route)
-  expect(response.status).toBe(409)
-  await expect(readFile(join(directory!, 'mutation'), 'utf8')).rejects.toThrow()
-})
-
-it.skipIf(process.platform === 'win32')('does not reset a dead foreground session containing another port', async () => {
-  const existing = { Foreground: { other: {
-    TCP: { 443: { HTTPS: true }, 8443: { HTTPS: true } },
-    Web: { 'host.tailnet.ts.net:443': { Handlers: {
-      '/': { Proxy: 'http://127.0.0.1:' + String(await deadPort()) },
-    } } },
-  } } }
-  const route = await controlRoute(`  fs.writeFileSync(path.join(home, 'mutation'), args.join(' '))
-  process.exit(9)`, 1_000, `JSON.stringify(${JSON.stringify(existing)})`, false, 'tailnet')
-  expect((await begin(route)).status).toBe(409)
-  await expect(readFile(join(directory!, 'mutation'), 'utf8')).rejects.toThrow()
-})
-
-it.skipIf(process.platform === 'win32')('reports an unenabled tailnet instead of waiting out the timeout', async () => {
-  const route = await controlRoute(`  process.stderr.write('Funnel is not enabled on your tailnet.\\nTo enable, visit:\\n\\n         https://login.tailscale.com/f/funnel?node=abc\\n')
-  setInterval(() => {}, 1000)`, 30_000)
-  const started = Date.now()
-  const response = await begin(route)
-  expect(response.status).toBe(409)
-  expect(await response.text()).toBe('Tailscale Funnel could not start — Funnel is not enabled on your'
-    + ' tailnet. To enable, visit: https://login.tailscale.com/f/funnel?node=abc')
-  expect(Date.now() - started).toBeLessThan(10_000)
-}, 30_000)
-
-it.skipIf(process.platform === 'win32')('carries the CLI output into the startup timeout error', async () => {
-  const route = await controlRoute(`  process.stderr.write('sending serve config: updating config: listener already exists for port 443\\n')
-  setInterval(() => {}, 1000)`, 1_000)
-  const response = await begin(route)
-  expect(response.status).toBe(409)
-  expect(await response.text()).toBe('Tailscale Funnel did not become ready before the startup timeout'
-    + ' — sending serve config: updating config: listener already exists for port 443')
-})
-
-/** A JS expression printing the serve config a `tailscale funnel` process leaves behind. */
-function foreground(target: string): string {
-  return 'JSON.stringify(' + JSON.stringify({
-    Foreground: {
-      session: {
-        TCP: { 443: { HTTPS: true } },
-        Web: { 'host.tailnet.ts.net:443': { Handlers: { '/': { Proxy: target } } } },
-      },
-    },
-  }) + ')'
-}
-
-/** A loopback port that was just released, so nothing can be listening on it. */
-async function deadPort(): Promise<number> {
-  const server = createServer()
-  await new Promise<void>(resolve => { server.listen(0, '127.0.0.1', resolve) })
-  const port = (server.address() as AddressInfo).port
-  await new Promise<void>(resolve => { server.close(() => resolve()) })
-  return port
-}
-
-it.skipIf(process.platform === 'win32')('retires the tunnel a dead DSH process left behind', async () => {
-  const stale = foreground('http://127.0.0.1:' + String(await deadPort()))
-  const route = await controlRoute(`  if (args[1] === 'reset') { fs.writeFileSync(path.join(home, 'reset'), '1'); return }
-  fs.writeFileSync(path.join(home, 'target'), args.at(-1))
-  setInterval(() => {}, 1000)`, 5_000,
-  `fs.existsSync(path.join(home, 'reset')) ? (fs.existsSync(path.join(home, 'target'))`
-  + ` ? JSON.stringify({ Web: { Proxy: fs.readFileSync(path.join(home, 'target'), 'utf8') } }) : '{}') : ${stale}`)
-  const response = await begin(route)
-  expect(response.status).toBe(200)
-  expect(await response.json())
-    .toMatchObject({ url: expect.stringContaining('https://host.tailnet.ts.net/?pair=') })
-})
-
-it.skipIf(process.platform === 'win32')('still refuses a foreground tunnel that is serving', async () => {
-  const live = createServer((_req, res) => { res.writeHead(200).end() })
-  await new Promise<void>(resolve => { live.listen(0, '127.0.0.1', resolve) })
-  try {
-    const route = await controlRoute('  setInterval(() => {}, 1000)', 5_000,
-      foreground('http://127.0.0.1:' + String((live.address() as AddressInfo).port)))
-    const response = await begin(route)
-    expect(response.status).toBe(409)
-    expect(await response.text()).toBe('Tailscale Funnel port 443 already has a configuration')
-  } finally {
-    await new Promise<void>(resolve => { live.close(() => resolve()) })
-  }
-})
-
-it.skipIf(process.platform === 'win32')('stops a tunnel whose CLI is a wrapper script', async () => {
-  const route = await controlRoute(`  fs.writeFileSync(path.join(home, 'target'), args.at(-1))
-  process.on('SIGTERM', () => { fs.unlinkSync(path.join(home, 'target')); process.exit(0) })
-  setInterval(() => {}, 1000)`, 5_000,
-  `fs.existsSync(path.join(home, 'target'))`
-  + ` ? JSON.stringify({ Web: { Proxy: fs.readFileSync(path.join(home, 'target'), 'utf8') } }) : '{}'`, true)
-  expect((await begin(route)).status).toBe(200)
-  const state = join(directory as string, 'target')
-  expect(await readFile(state, 'utf8')).toContain('http://127.0.0.1:')
-  const stopping = Date.now()
-  const stopped = await route.fetch(new Request('http://localhost/api/remote-control', {
-    method: 'POST', body: JSON.stringify({ action: 'stop' }),
-  }))
-  expect(stopped.status).toBe(200)
-  expect(Date.now() - stopping).toBeLessThan(10_000)
-  await expect(readFile(state, 'utf8')).rejects.toThrow()
-}, 30_000)
-
-it.skipIf(process.platform === 'win32').each([undefined, null])('serves tailnet peers alone with an absent SSH config: %s', async ssh => {
-  // `funnel` would open the public ingress, so failing on it proves `serve` drove the tunnel.
-  const route = await controlRoute(`  if (args[0] === 'funnel') process.exit(9)
-  fs.writeFileSync(path.join(home, 'target'), args.at(-1))
-  setInterval(() => {}, 1000)`, 5_000,
-  `fs.existsSync(path.join(home, 'target'))`
-  + ` ? JSON.stringify({ Web: { Proxy: fs.readFileSync(path.join(home, 'target'), 'utf8') } }) : '{}'`,
-  false, 'tailnet', { ssh: z.resolve({ ssh }, Config, {})[0].ssh })
-  const response = await begin(route)
-  expect(response.status).toBe(200)
-  expect(await response.json())
-    .toMatchObject({ url: expect.stringContaining('https://host.tailnet.ts.net/?pair=') })
-})
-
-it.skipIf(process.platform === 'win32').each([false, true])('reopens a paired tunnel after reload until stopped (SSH: %s)', async ssh => {
+it.skipIf(process.platform === 'win32')('reopens a paired tunnel after reload until stopped', async () => {
   directory = await mkdtemp(join(tmpdir(), 'dsh-remote-control-'))
   process.env.DSH_HOME = directory
-  const target = join(directory, 'funnel-target')
+  const target = join(directory, 'ssh-target')
   const pairing = join(directory, 'dsh-remote-control', 'pairing.json')
-  const binary = join(directory, 'tailscale')
+  const binary = join(directory, 'ssh')
   await writeFile(binary, `#!/usr/bin/env node
 const fs = require('node:fs')
 const target = ${JSON.stringify(target)}
 const args = process.argv.slice(2)
-if (${ssh}) {
-  if (!args.includes('-R') || fs.existsSync(target)) process.exit(9)
-  const forward = args[args.indexOf('-R') + 1].split(':')
-  fs.writeFileSync(target, 'http://' + forward[2] + ':' + forward[3])
-  process.stderr.write('debug1: remote forward success for: listen ' + forward[0] + ':' + forward[1] + ', connect 127.0.0.1\\n')
-  process.on('SIGTERM', () => { fs.unlinkSync(target); process.exit(0) })
-  setInterval(() => {}, 1000)
-  return
-}
-if (args[0] === 'status') console.log(JSON.stringify({ BackendState: 'Running', Self: { DNSName: 'host.tailnet.ts.net.' } }))
-else if (args[1] === 'status') console.log(fs.existsSync(target) ? JSON.stringify({ Web: { Proxy: fs.readFileSync(target, 'utf8') } }) : '{}')
-else if (args[0] === 'funnel') {
-  fs.writeFileSync(target, args.at(-1))
-  process.on('SIGTERM', () => { fs.unlinkSync(target); process.exit(0) })
-  setInterval(() => {}, 1000)
-} else process.exit(1)
+if (!args.includes('-R') || fs.existsSync(target)) process.exit(9)
+const forward = args[args.indexOf('-R') + 1].split(':')
+fs.writeFileSync(target, 'http://' + forward[2] + ':' + forward[3])
+process.stderr.write('debug1: remote forward success for: listen ' + forward[0] + ':' + forward[1] + ', connect 127.0.0.1\\n')
+process.on('SIGTERM', () => { fs.unlinkSync(target); process.exit(0) })
+setInterval(() => {}, 1000)
 `)
   await chmod(binary, 0o700)
   backend = createServer((req, res) => {
@@ -901,9 +712,9 @@ else if (args[0] === 'funnel') {
         if (route !== undefined) dispose = registered
       },
     } as never as Context, {
-      tailscaleBinary: binary, access: 'public', funnelPort: 443, invitationTtlMs: 60_000,
+      invitationTtlMs: 60_000,
       browserTtlMs: 0, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000, phoneSilenceMs: 60_000,
-      ...ssh ? { ssh: { binary, destination: 'ubuntu@relay.example', publicUrl: 'https://203.0.113.10', port: 22, remotePort: 18080 } } : {},
+      ssh: { binary, destination: 'ubuntu@relay.example', publicUrl: 'https://203.0.113.10', port: 22, remotePort: 18080 },
     })
     if (route === undefined) throw new Error('Control route not installed')
     stop = async () => { await dispose?.() }
@@ -916,7 +727,7 @@ else if (args[0] === 'funnel') {
     const proxy = new URL(await readFile(target, 'utf8'))
     return new Promise((resolve, reject) => {
       httpRequest({
-        hostname: proxy.hostname, port: Number(proxy.port), path, headers: { host: ssh ? '203.0.113.10' : 'host.tailnet.ts.net', cookie },
+        hostname: proxy.hostname, port: Number(proxy.port), path, headers: { host: '203.0.113.10', cookie },
       }, (reply) => {
         reply.resume()
         resolve({ status: reply.statusCode ?? 502, setCookie: String(reply.headers['set-cookie'] ?? '') })
@@ -992,19 +803,18 @@ function frames(bytes: Buffer): { opcode: number; payload: Buffer }[] {
 it.skipIf(process.platform === 'win32')('answers DSH heartbeats for a slow phone and drops a silent one', async () => {
   directory = await mkdtemp(join(tmpdir(), 'dsh-remote-control-'))
   process.env.DSH_HOME = directory
-  const target = join(directory, 'funnel-target')
-  const binary = join(directory, 'tailscale')
+  const target = join(directory, 'ssh-target')
+  const binary = join(directory, 'ssh')
   await writeFile(binary, `#!/usr/bin/env node
 const fs = require('node:fs')
 const target = ${JSON.stringify(target)}
 const args = process.argv.slice(2)
-if (args[0] === 'status') console.log(JSON.stringify({ BackendState: 'Running', Self: { DNSName: 'host.tailnet.ts.net.' } }))
-else if (args[1] === 'status') console.log(fs.existsSync(target) ? JSON.stringify({ Web: { Proxy: fs.readFileSync(target, 'utf8') } }) : '{}')
-else if (args[0] === 'funnel') {
-  fs.writeFileSync(target, args.at(-1))
-  process.on('SIGTERM', () => { fs.unlinkSync(target); process.exit(0) })
-  setInterval(() => {}, 1000)
-} else process.exit(1)
+if (!args.includes('-R')) process.exit(9)
+const forward = args[args.indexOf('-R') + 1].split(':')
+fs.writeFileSync(target, 'http://' + forward[2] + ':' + forward[3])
+process.stderr.write('debug1: remote forward success for: listen ' + forward[0] + ':' + forward[1] + ', connect 127.0.0.1\\n')
+process.on('SIGTERM', () => { fs.unlinkSync(target); process.exit(0) })
+setInterval(() => {}, 1000)
 `)
   await chmod(binary, 0o700)
   backend = createServer((req, res) => {
@@ -1050,8 +860,9 @@ else if (args[0] === 'funnel') {
         if (route !== undefined) dispose = registered
       },
     } as never as Context, {
-      tailscaleBinary: binary, access: 'public', funnelPort: 443, invitationTtlMs: 60_000,
+      invitationTtlMs: 60_000,
       browserTtlMs: 0, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000, phoneSilenceMs,
+      ssh: { binary, destination: 'ubuntu@relay.example', publicUrl: 'https://203.0.113.10', port: 22, remotePort: 18080 },
     })
     if (route === undefined) throw new Error('Control route not installed')
     stop = async () => { await dispose?.() }
@@ -1063,7 +874,7 @@ else if (args[0] === 'funnel') {
       method: 'POST', body: JSON.stringify({ action: 'refresh' }),
     }))).json() as { url: string }
     const proxy = new URL(await readFile(target, 'utf8'))
-    const headers = { host: 'host.tailnet.ts.net' }
+    const headers = { host: '203.0.113.10' }
     const cookie = await new Promise<string>((resolve, reject) => {
       httpRequest({ hostname: proxy.hostname, port: Number(proxy.port), path: '/' + new URL(url).search, headers }, (reply) => {
         reply.resume()

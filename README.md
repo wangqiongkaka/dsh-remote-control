@@ -4,7 +4,7 @@
 
 ## 安装
 
-需要正在运行并提供 Web 服务的 DSH profile。默认使用 [Tailscale Funnel](https://tailscale.com/docs/features/tailscale-funnel) 提供公网 HTTPS 入口，需连接 Tailscale 并启用 MagicDNS、HTTPS 和 Funnel 权限；手机走公网入口时无需 Tailscale。也可使用下文的 SSH 隧道模式，此时电脑和手机均不需要 Tailscale。开发依赖中的 `link:` 路径假定本插件与 `deepseek-harness` 同在 `AIProjetcs` 目录下；如目录不同，先调整 `package.json` 的开发链接。打包产物不依赖这些路径。
+需要正在运行并提供 Web 服务的 DSH profile。本插件通过 SSH 反向隧道连接公网服务器，由服务器上的 Caddy 提供 HTTPS 和 WebSocket 入口，电脑无需公网入站条件。开发依赖中的 `link:` 路径假定本插件与 `deepseek-harness` 同在 `AIProjetcs` 目录下；如目录不同，先调整 `package.json` 的开发链接。打包产物不依赖这些路径。
 
 ```sh
 cd /Users/wangqiongkaka/AIProjetcs/dsh-plugin/dsh-remote-control
@@ -20,7 +20,7 @@ pnpm dsh plugin --profile web add file:/Users/wangqiongkaka/AIProjetcs/dsh-plugi
 
 使用已安装的 `dsh` CLI 时，去掉 `pnpm`。安装后重启 Web profile 并重新打开 Web 页面。插件只向 profile 安装自己的 bundle，不要求修改 DSH 主仓库。若同版本重新打包，需要先移除旧包再安装，避免 pnpm 复用缓存。
 
-## SSH 隧道模式
+## SSH 隧道配置
 
 Mac 主动通过 OpenSSH 连接公网服务器，将服务器的回环端口转发到插件的本机鉴权代理；服务器上的 Caddy 提供 HTTPS 和 WebSocket 入口。手机访问服务器，无需 Mac 具备公网入站条件。HTTPS 在服务器终止，服务器属于可信边界，可以接触会话内容；手机访问仍需一次性扫码配对。
 
@@ -61,9 +61,9 @@ https://203.0.113.10 {
 
 示例通过公网 80 端口验证 IP，手机访问 443；Caddy 版本须支持 IP 证书与 ACME profile，并保持证书存储可写、自动续期运行。合并到已有 Caddyfile 时保留现有站点和全局配置。若需保留原有 HTTP 欢迎页而不自动跳转，在全局配置中添加 `auto_https disable_redirects`。
 
-配置 `ssh` 后只启动 SSH，不调用 Tailscale，也不自动切换其他隧道；移除 `ssh` 即恢复原有 Tailscale 模式。二维码使用 `publicUrl`；更新二维码不重启隧道。插件仅在 OpenSSH 确认远端监听建立后返回二维码，这不代表服务器证书或公网链路已验证可达。未知主机密钥、密钥登录失败、远端端口占用和启动超时会返回具体诊断，并关闭本次本机代理与子进程。
+未配置 `ssh` 时开启远程控制会直接报错提示未配置。二维码使用 `publicUrl`；更新二维码不重启隧道。插件仅在 OpenSSH 确认远端监听建立后返回二维码，这不代表服务器证书或公网链路已验证可达。未知主机密钥、密钥登录失败、远端端口占用和启动超时会返回具体诊断，并关闭本次本机代理与子进程。
 
-已配对的 SSH 或 Tailscale 隧道意外退出时，插件关闭旧代理及长连接，并沿用持久配对重建隧道；电脑切换网络或断网超过一分钟后，仍会在配对有效期间持续尝试恢复，无需在电脑上重新开启。恢复流程与插件重载共用，每次失败后间隔两秒再试，单次启动仍受 `startupTimeoutMs` 限制；未配对、配对已过期或插件已卸载时不会自动重建。点击「停止远程控制」会取消重试、关闭隧道并撤销配对，不会改动服务器的 Caddy 或其他 SSH 会话。首次从 Tailscale 域名切换到自有公网地址时，浏览器 Cookie 不跨站共享，手机需要重新扫码一次。
+已配对的 SSH 隧道意外退出时，插件关闭旧代理及长连接，并沿用持久配对重建隧道；电脑切换网络或断网超过一分钟后，仍会在配对有效期间持续尝试恢复，无需在电脑上重新开启。恢复流程与插件重载共用，每次失败后间隔两秒再试，单次启动仍受 `startupTimeoutMs` 限制；未配对、配对已过期、未配置 `ssh` 或插件已卸载时不会自动重建。点击「停止远程控制」会取消重试、关闭隧道并撤销配对，不会改动服务器的 Caddy 或其他 SSH 会话。更换公网地址时，浏览器 Cookie 不跨站共享，手机需要重新扫码一次。
 
 ## 开发热更新
 
@@ -125,13 +125,9 @@ https://203.0.113.10 {
 
 远程页面的「工作步骤展示」和「性能与用量」默认为「简洁」。DSH 只为本机页面保存这两项设置，远程页面上的选择只在当前页面有效，刷新后回到「简洁」，也不会改动电脑上的设置。手机宽度下的设置窗口不显示「模型」分区，模型配置请在电脑上进行。
 
-插件只在本机回环地址上代理已有的 DSH Web 服务。所选隧道提供 HTTPS 入口（`access: tailnet` 时入口只在 tailnet 内可达，手机需登录同一 tailnet）；插件校验请求来源、消耗一次性配对凭证，并以独立 HttpOnly Cookie 授权手机。DSH 的本地浏览器 Cookie 不会发给手机。插件允许与其他端口的 Serve/Funnel 映射共存，例如 DSH 使用 443、前端使用 8443；目标端口被后台或前台会话占用时会拒绝启动，报错包含端口，不会覆盖已有映射。唯一可自动清理的残留是配置中只有本插件目标端口的 Foreground 会话、且其所有回环后端都已停止；配置中包含其他端口或后台映射时不会执行全局清理。停止远程控制只关闭本次启动的代理和前台隧道，保留其他映射。电脑关闭 DSH 或隧道进程后，远程入口不可用；Tailscale 入口也会在电脑断开 Tailscale 后失效。为了在插件重载或 DSH 重启后恢复访问，配对成功时会把手机 Cookie 的 SHA-256 哈希和访问有效期写入 `$DSH_HOME/dsh-remote-control/pairing.json`（未设置 `DSH_HOME` 时为 `~/.dsh`，仅本人可读写）；文件中没有 Cookie 本身，停止远程控制时删除。自动重建在插件加载后的一分钟内每两秒尝试一次，以等待旧隧道释放端口或 Tailscale 完成连接；超时后需在电脑上重新打开弹窗，原配对仍然有效。
+插件只在本机回环地址上代理已有的 DSH Web 服务。公网服务器通过 Caddy 提供 HTTPS 入口，插件校验请求来源、消耗一次性配对凭证，并以独立 HttpOnly Cookie 授权手机。DSH 的本地浏览器 Cookie 不会发给手机。停止远程控制只关闭本次启动的代理和 SSH 隧道，不会影响服务器上的其他服务。电脑关闭 DSH 或隧道进程后，远程入口不可用。为了在插件重载或 DSH 重启后恢复访问，配对成功时会把手机 Cookie 的 SHA-256 哈希和访问有效期写入 `$DSH_HOME/dsh-remote-control/pairing.json`（未设置 `DSH_HOME` 时为 `~/.dsh`，仅本人可读写）；文件中没有 Cookie 本身，停止远程控制时删除。
 
-可通过 profile 的 `cordis.patch.yml` 覆盖 `remote-control` 行的 `tailscaleBinary`、`access`、`funnelPort`（443、8443 或 10000）、`invitationTtlMs`、`browserTtlMs`、`startupTimeoutMs`、`stopTimeoutMs` 和 `phoneSilenceMs`。`browserTtlMs` 默认 `0`，表示手机访问权限一直有效；仍可设置 1,000 至 86,400,000 毫秒的有限有效期，显式配置会覆盖默认值。`access` 默认 `public`，使用 `tailscale funnel`；改为 `tailnet` 则用 `tailscale serve`，只有同一 tailnet 内的设备能打开链接，不再暴露公网入口。插件在本机映射注册后显示二维码，这不代表公网 DNS 与 Funnel 中继链路已验证可达；公网故障不会改用其他隧道或域名。电脑 Tailscale 关闭、未登录或不可用时，开启远控会报错。Funnel 的命令形式参见 [Tailscale CLI 文档](https://tailscale.com/docs/reference/tailscale-cli/funnel)。
-
-使用 Tailscale 入口并需要「直连优先、公网备用」时，保持 `access: public`，并在手机上开启 Tailscale、连接同一 tailnet、启用 Tailscale DNS（MagicDNS）。手机通过同一 HTTPS 域名访问 tailnet 内的服务，Tailscale 会优先尝试直接连接；同一 Wi-Fi 且设备间互通时可走本地路径，5G 下也会尝试直连，不能直连时回退到 Tailscale 中继。关闭手机 Tailscale DNS 或关闭 Tailscale 后，同一域名改经公网 DNS 和 Funnel 中继访问，需要公网入口可达。公网 Funnel 本身仍有中继和带宽限制，不能保证比 5G 下的 Tailscale 直连更快。该策略由 Tailscale 与 DNS 处理，适用于 Safari 和 Chrome。连接机制参见 [Tailscale 连接类型](https://tailscale.com/docs/reference/connection-types)、[MagicDNS](https://tailscale.com/docs/features/magicdns) 和 [Funnel 工作原理](https://tailscale.com/docs/features/tailscale-funnel)。
-
-已有 profile 的显式 `access: tailnet` 会覆盖插件的默认值，需要改为 `public` 并重新开启远程控制。配置中其他端口的 Serve/Funnel 服务会保留。
+除 `ssh` 外，还可通过 profile 的 `cordis.patch.yml` 覆盖 `remote-control` 行的 `invitationTtlMs`、`browserTtlMs`、`startupTimeoutMs`、`stopTimeoutMs` 和 `phoneSilenceMs`。`browserTtlMs` 默认 `0`，表示手机访问权限一直有效；仍可设置 1,000 至 86,400,000 毫秒的有限有效期，显式配置会覆盖默认值。
 
 手机会话输入框和历史消息编辑框中，输入法的「换行」键只换行，不发送；发送使用界面的发送按钮，外接键盘仍可用 Ctrl/Cmd+Enter 发送，中文选词保持原有行为。
 
@@ -143,46 +139,34 @@ https://203.0.113.10 {
 
 手机轨迹页面不显示输入框，整屏用于查看轨迹；切回对话页面后输入框和草稿照常显示。轨迹页面底部安全区的底色与轨迹内容区一致；打开侧栏或右侧面板时恢复为页面底色。
 
-## 公网访问排查
+## 连接与心跳
 
-手机显示「网络出错，无法显示该页面」且一直打不开时，先在电脑上运行 `tailscale funnel status`，确认所选端口的映射仍在。电脑端没有隧道时，Funnel 中继仍会接受 TCP 连接，再在 TLS 握手阶段断开，与链路故障的表现相同；这通常发生在构建触发插件重载、DSH 重启或隧道进程退出之后，与手机使用 Wi-Fi 还是蜂窝网络无关。映射不在时重新打开远程控制弹窗即可重建隧道。
+配对后，同一手机、同一浏览器切换 Wi-Fi/5G、断线后重连或关闭再打开浏览器，仍使用相同的访问 Cookie；正在传输的连接可能因切网中断，是否自动重连由 DSH Web 客户端处理。
 
-手机开启 Tailscale DNS 时，完整 `ts.net` 域名通过 MagicDNS 解析为电脑的 tailnet 地址，访问内网路径；关闭后由手机当前网络的 DNS 解析为 Funnel 公网中继地址。内网可用不能证明公网链路也可用。排查时分开检查：
-
-
-1. 用当前网络 DNS 和另一家公共 DNS 查询该完整域名；`NXDOMAIN`、超时或解析结果不一致时先查 DNS。
-2. 公网 DNS 返回地址后，保留原域名的 Host、SNI 与证书验证，逐个测试返回地址上的 HTTPS。映射存在时，TCP 能连上但 TLS 握手断开属于解析之后的链路故障，不能通过修改插件内的 DNS 查询修复。
-3. 用 `tailscale funnel status --json` 确认所选端口在 `AllowFunnel` 中启用，并通过 `tailscale netcheck` 检查电脑的 Tailscale 网络。
-4. 同一手机分别使用 Wi-Fi 和蜂窝网络测试，区分本地网络与 Funnel 服务故障。不要用 HTTPS IP 地址代替域名，也不要关闭证书校验。
-
-旧配置中的 `publicTunnel` 和 `cloudflaredBinary` 已移除，应从本插件的 profile 配置中删除。配对后，同一手机、同一浏览器切换 Wi-Fi/5G、断线后重连或关闭再打开浏览器，仍使用相同的访问 Cookie；正在传输的连接可能因切网中断，是否自动重连由 DSH Web 客户端处理。
-
-DSH 每两秒向实时连接发送一次 WebSocket Ping，连续两次未收到应答就断开连接。经 Funnel 中继时，手机的应答可能排在一大段会话数据之后，几秒内到不了电脑，表现为手机反复显示「重新连接中」，每次重连又要重新下载同一段数据。代理因此在本机替手机向 DSH 应答心跳，并自行判断手机是否离线：Ping 仍会转发给手机，手机超过 `phoneSilenceMs`（默认 60,000 毫秒，最小 1,000）没有发来任何数据时才关闭这条连接。链路很慢、打开很长的会话仍被断开时可调大该值；调小则能更快释放已离线手机占用的连接。
+DSH 每两秒向实时连接发送一次 WebSocket Ping，连续两次未收到应答就断开连接。在公网转发或高延迟网络下，手机的应答可能排在一大段会话数据之后，几秒内到不了电脑，表现为手机反复显示「重新连接中」，每次重连又要重新下载同一段数据。代理因此在本机替手机向 DSH 应答心跳，并自行判断手机是否离线：Ping 仍会转发给手机，手机超过 `phoneSilenceMs`（默认 60,000 毫秒，最小 1,000）没有发来任何数据时才关闭这条连接。链路很慢、打开很长的会话仍被断开时可调大该值；调小则能更快释放已离线手机占用的连接。
 
 ## 手机访问前端服务
 
-手机与电脑在同一局域网或同一 Tailscale 网络时，直接访问电脑上的开发服务即可。以 Vite 为例，让服务监听所有网卡（只监听 `localhost` 或 `127.0.0.1` 时手机无法直连）：
+手机与电脑在同一局域网时，直接访问电脑上的开发服务即可。以 Vite 为例，让服务监听所有网卡（只监听 `localhost` 或 `127.0.0.1` 时手机无法直连）：
 
 ```sh
 npm run dev -- --host 0.0.0.0
 ```
 
-在手机浏览器的独立标签页中打开 `http://电脑的IP:实际端口`，例如 `http://100.x.y.z:5173`。使用 Tailscale 时通过 `tailscale ip -4` 获取电脑的地址；同一局域网下也可以使用电脑的局域网 IP。端口以开发服务启动输出为准，电脑防火墙和 Tailscale 访问规则须允许该连接。此方式无需插件代理或额外配对，服务访问权限由网络规则和应用自身管理。Vite 的监听配置参见 [官方文档](https://vite.dev/config/server-options)，Tailscale 直连方式参见 [官方文档](https://tailscale.com/docs/how-to/connect-to-devices)。
+在手机浏览器的独立标签页中打开 `http://电脑的局域网IP:实际端口`。端口以开发服务启动输出为准，电脑防火墙须允许该连接。此方式无需插件代理或额外配对，服务访问权限由网络规则和应用自身管理。Vite 的监听配置参见 [官方文档](https://vite.dev/config/server-options)。
 
 页面中的 API 地址若写成 `localhost`，会指向手机自身；可通过开发服务的同源代理访问电脑上的后端。此方式用于手机实际浏览器中的页面预览，不提供 Console、Network 或断点调试工具。
 
-需要 HTTPS 时也可以直接使用 Tailscale 原生代理，前端仍可监听回环地址。启动服务后运行 `tailscale serve --https=8443 http://127.0.0.1:5173`，手机打开 `https://电脑的完整Tailscale域名:8443`；前台命令按 `Ctrl+C` 关闭。8443 须未被占用，手机需连接同一 tailnet，开发框架也须允许该域名。新增服务使用不同的 HTTPS 端口即可，无需修改插件代码。参见 [Tailscale Serve 文档](https://tailscale.com/docs/reference/tailscale-cli/serve)。
-
 ## 验证
 
-运行 `npm run check`，依次完成构建、类型检查和全部测试；测试直接引用 `dist/` 构建产物。测试用假的 Tailscale、OpenSSH 命令和本机 HTTP 服务验证一次性配对、二维码更新、替换配对时旧凭证及长连接的撤销、完整 Web 路由代理、Host/Origin 拒绝及停止后的撤销，并验证弹窗重新打开和已配对时的二维码展示。SSH 测试还验证监听确认、启动失败及清理、配置校验、重载恢复、意外断线重建，以及停止后不再自动重连。公网 HTTP 和 WebSocket 连通性需要通过实际隧道单独验证。
+运行 `npm run check`，依次完成构建、类型检查和全部测试；测试直接引用 `dist/` 构建产物。测试用假的 OpenSSH 命令和本机 HTTP 服务验证一次性配对、二维码更新、替换配对时旧凭证及长连接的撤销、完整 Web 路由代理、Host/Origin 拒绝及停止后的撤销，并验证弹窗重新打开和已配对时的二维码展示，以及 SSH 监听确认、启动失败及清理、配置校验、重载恢复、意外断线重建和停止后不再自动重连。公网 HTTP 和 WebSocket 连通性需要通过实际隧道单独验证。
 
 ## iOS App
 
 `ios/` 是手机端的 iOS 壳应用：全屏 WKWebView 加载同一个远程入口，页面功能与手机浏览器完全一致，宿主或插件更新后无需重新安装 App。它取代微信或 Safari 打开链接这一步，不经过、也不修改 DSH 宿主。
 
 - 配对：首次打开点「扫码配对」扫描电脑远程控制弹窗里的二维码，或点「粘贴链接」粘贴弹窗里复制的链接。只接受 `https://主机[:端口]/?pair=令牌` 形式的链接，App 只记住入口地址，配对 Cookie 保存在 App 自己的网站数据里，重启 App 后继续有效。配对规则与浏览器相同：App 配对成功会替换并断开之前配对的手机浏览器。
-- 重新配对：远程入口返回未配对或拒绝页面时，底部出现「扫码配对 / 粘贴链接」；无法连接时另有「重试」。更换隧道地址（如从 Tailscale 切换到 SSH 模式）后重新扫码即可。
+- 重新配对：远程入口返回未配对或拒绝页面时，底部出现「扫码配对 / 粘贴链接」；无法连接时另有「重试」。更换公网入口地址后重新扫码即可。
 - 外部网站链接交给系统浏览器打开；导出会话等下载完成后弹出系统分享面板，可保存到「文件」；语音输入使用麦克风前系统会询问一次权限。
 - App 没有地址栏和刷新按钮：隧道重建后页面没有自动恢复时，从多任务界面关闭 App 再打开即可重新加载。
 - 网络错误或 HTTP 5xx 时显示原生连接失败页：真实错误信息、独立的「重试」主按钮，以及「扫码配对 / 粘贴链接」次操作。重试加载原失败地址；不支持扫描的设备只显示粘贴入口。页面适配深浅色和动态字体，紧凑尺寸下错误说明可滚动。此项属于原生 App，修改后需重新构建安装；设计来源与原生布局验证见 `ios/DESIGN.md`、`ios/Checks/connection.sh`。
