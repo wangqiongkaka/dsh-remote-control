@@ -285,7 +285,7 @@ it('removes the sheet it injected', () => {
   expect(sheet()).toBeNull()
 })
 
-it.each([false, true])('scrolls the drawer as one list while the Agent tiles and Workspace header stick (installed host: %s)', installed => {
+it.each([false, true])('pins the Agent board at the top and scrolls only the Workspace list (installed host: %s)', installed => {
   // harness-provider's own card rules: the group caps itself to five rows and scrolls inside.
   const provider = document.createElement('style')
   provider.textContent = '.hp-agents-list{max-height:40dvh;overflow:auto}'
@@ -316,53 +316,25 @@ it.each([false, true])('scrolls the drawer as one list while the Agent tiles and
   document.body.append(frame)
   const dispose = applyDrawerSelection()
   const style = (selector: string): CSSStyleDeclaration => getComputedStyle(frame.querySelector(selector)!)
-  const root = frame.querySelector('.ui_sidebar__root__h1')!
-  // A sticky child only sticks to the drawer when nothing between them clips or scrolls.
-  const clippers = (selector: string): string[] => {
-    const found: string[] = []
-    for (let node = frame.querySelector(selector)!.parentElement; node !== root; node = node!.parentElement) {
-      const computed = getComputedStyle(node!)
-      if (computed.display !== 'contents' && (computed.overflowY !== 'visible' || computed.overflowX !== 'visible')) {
-        found.push(node!.className || node!.tagName)
-      }
-    }
-    return found
-  }
   try {
-    // The drawer itself is the one scrollport; a long Agent group keeps the card's own five-row scrollport.
-    expect(style('.ui_sidebar__root__h1').overflowY).toBe('auto')
-    expect(style('.ui_sidebar__root__h1').scrollbarWidth).toBe('none')
-    expect(style('.ui_sidebar__root__h1').scrollbarGutter).toBe('auto')
-    expect(style('.ui_sidebar__root__h1').overscrollBehaviorY).toBe('none')
-    expect(style('.ui_sidebar__logoRow__h1').position).toBe('sticky')
-    expect(style('.ui_sidebar__logoRow__h1').top).toBe('0px')
-    expect(style('.ui_sidebar__footArea__h1').position).toBe('sticky')
-    expect(style('.ui_sidebar__footArea__h1').bottom).toBe('0px')
+    // The drawer itself stays fixed so the header, Agent board, Workspace header and footer never scroll away.
+    expect(style('.ui_sidebar__root__h1').overflowY).toBe('hidden')
+    expect(style('.ui_sidebar__logoRow__h1').gridRow).toBe('1')
+    expect(style(installed ? '.ui_sidebar__newSessionRow__h1' : '[data-hp-agents]').gridRow).toBe('2')
     expect(style('.hp-agents-list').overflow).toBe('visible')
     expect(style('.hp-agents-list').maxHeight).toBe('none')
     expect(style('.hp-agents-group > div').overflowY).toBe('auto')
     expect(style('.hp-agents-group > div').maxHeight).toBe('248px')
-    // The card title scrolls away; the tiles stay under the drawer header while the Agent rows pass.
-    expect(style('.hp-agents-head').position).not.toBe('sticky')
-    expect(style('.hp-agents-tiles').position).toBe('sticky')
-    expect(style('.hp-agents-tiles').top).toBe('66px')
-    expect(clippers('.hp-agents-tiles')).toEqual([])
-    // Past the card, the Workspace header takes that seat, as it did when only the list scrolled.
-    expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('auto')
+    // Only the Workspace list area scrolls beneath the pinned Agent board and Workspace header.
+    expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('0px')
     expect(style('.ui_workspace__root__h1').maxHeight).toBe('none')
     expect(style('.ui_workspace__root__h1').height).toBe('auto')
-    expect(style('.ui_workspace__sectionHeader__h1').position).toBe('sticky')
-    expect(style('.ui_workspace__sectionHeader__h1').top).toBe('66px')
-    expect(clippers('.ui_workspace__sectionHeader__h1')).toEqual([])
+    expect(style('.ui_workspace__listArea__h1').overflowX).toBe('hidden')
+    expect(style('.ui_workspace__listArea__h1').overflowY).toBe('auto')
+    expect(style('.ui_workspace__listArea__h1').overscrollBehaviorY).toBe('none')
+    expect(style('.ui_workspace__listArea__h1').scrollbarWidth).toBe('none')
     expect(style('.ui_workspace__list__h1').overflowY).toBe('visible')
-    // jsdom resolves no var(); the stuck rows need the drawer's opaque fill so rows do not show through.
     const sheetText = document.querySelector(`[${DRAWER_STYLE_ATTRIBUTE}]`)!.textContent
-    expect(sheetText).toMatch(/\.hp-agents-tiles\{[^}]*background:var\(--dsw-specific-sidebar-fill\)/)
-    expect(sheetText).toMatch(/_sectionHeader"\]\{[^}]*background:var\(--dsw-specific-sidebar-fill\)/)
-    // Like the drawer header, the stuck Workspace header also paints the side insets rows reach into.
-    const headerShadow = style('.ui_workspace__sectionHeader__h1').boxShadow
-    expect(headerShadow).toContain('var(--dsh-sidebar-inline-padding,12px) 0 0 var(--dsw-specific-sidebar-fill)')
-    expect(headerShadow).toContain('calc(-1 * var(--dsh-sidebar-inline-padding,12px)) 0 0 var(--dsw-specific-sidebar-fill)')
     // The title takes the left seat and the three controls (search, view options, add) hug the
     // right edge, level with the Workspace cards below the header. Host builds disagree on the
     // row's own packing, so the sheet packs it and gives the title the free space.
@@ -528,8 +500,8 @@ it('pins settings at the bottom and preserves the header button sizes and spacin
     indicator.setAttribute('role', 'status')
     expect(style('[data-connection-indicator]').order).not.toBe('-1')
     expect(style('[data-update-indicator]').order).not.toBe('-1')
-    // The project track grows with its content; the drawer scrolls above the pinned footer.
-    expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('auto')
+    // The project track takes the remaining height below the pinned Agent board and above the footer.
+    expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('0px')
     expect(style('.ui_sidebar__regionArea__h1').overflowY).toBe('visible')
     for (const selector of ['.ui_sidebar__logoRow__h1', '.ui_sidebar__panelList__h1']) {
       expect(style(selector).gridRow).toBe('1')

@@ -93,3 +93,17 @@ it('handles newly opened dialogs, removes controls on wider screens and cleans u
   expect(next.panel.hasAttribute('data-dsh-settings-sheet')).toBe(false)
   expect(next.panel.style.getPropertyValue('--dsh-settings-ratio')).toBe('')
 })
+
+it('ignores DOM mutations inside unrelated page subtrees', async () => {
+  const sidebar = document.createElement('aside')
+  document.body.append(sidebar)
+  dispose = applyDrawerSelection()
+  const querySpy = vi.spyOn(document, 'querySelectorAll')
+  for (let index = 0; index < 10; index++) {
+    const row = document.createElement('div')
+    row.textContent = `session-${index}`
+    sidebar.append(row)
+  }
+  await Promise.resolve()
+  expect(querySpy).not.toHaveBeenCalled()
+})

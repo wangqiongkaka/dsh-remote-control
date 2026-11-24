@@ -41,6 +41,9 @@ export const DRAWER_SCROLL_ROOT = '[class*="_frame"]:has([class*="_sidebarCol"])
 /** Share the sticky top row with the shell's existing panel navigation, without moving its DOM. */
 export const DRAWER_HEADER = `${DRAWER_SCROLL_ROOT}:has([class*="_panelList"])`
 
+/** The Workspace list scrollport beneath the pinned Agent board and section header. */
+export const DRAWER_WORKSPACE_SCROLL = `${DRAWER_HEADER} [class*="_regionArea"] [class*="_listArea"]`
+
 const HEADER_BUTTON = `${DRAWER_HEADER} :is(button[class*="_toggle"],button[class*="_panelRow"])`
 
 /** The task catalog's own root keeps these phone text rules out of other panels. */
@@ -91,7 +94,7 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `height:${PHONE_HEADER_HEIGHT};padding-top:14px;background:var(--dsw-specific-sidebar-fill);`
   + 'box-shadow:var(--dsh-sidebar-inline-padding,12px) 0 0 var(--dsw-specific-sidebar-fill),'
   + 'calc(-1 * var(--dsh-sidebar-inline-padding,12px)) 0 0 var(--dsw-specific-sidebar-fill)}'
-  + `${DRAWER_HEADER}{display:grid;grid-template-columns:minmax(0,1fr) auto 40px;grid-template-rows:${PHONE_HEADER_HEIGHT} auto 1fr auto;column-gap:8px}`
+  + `${DRAWER_HEADER}{display:grid;grid-template-columns:minmax(0,1fr) auto 40px;grid-template-rows:${PHONE_HEADER_HEIGHT} auto minmax(0,1fr) auto;column-gap:8px;overflow-y:hidden}`
   // Paint one full-width sticky header; its subgrid leaves the middle track to panel shortcuts.
   + `${DRAWER_HEADER} > [class*="_logoRow"]{grid-column:1 / -1;grid-row:1;display:grid;grid-template-columns:subgrid;`
   + 'gap:8px;min-width:0;padding:14px 0 12px 4px;margin-bottom:0}'
@@ -120,18 +123,12 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${DRAWER_SCROLL_ROOT} [class*="_settingsArea"] button[class*="_trigger"][aria-haspopup="menu"]{background:transparent !important}`
   // harness-provider's Agent card takes the seat New Session leaves.
   + `${DRAWER_HEADER} > [data-hp-agents]{grid-column:1 / -1;grid-row:2;min-width:0}`
-  // One drawer scrollport: the Agent tiles stick under the header while their rows pass, then the
-  // Workspace header takes that seat; the host's own section cap and inner list scroll are lifted.
-  + `${DRAWER_HEADER} [class*="_regionArea"]{grid-column:1 / -1;grid-row:3;min-width:0;min-height:auto;overflow:visible}`
+  // Keep the Agent board pinned beneath the header; only the Workspace list scrolls and bounces below it.
+  + `${DRAWER_HEADER} [class*="_regionArea"]{grid-column:1 / -1;grid-row:3;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:visible}`
   // Menu anchors also use _root; only the container owning the Workspace header may grow.
-  + `${DRAWER_HEADER} [class*="_regionArea"] [class*="_root"]:has(> [class*="_sectionHeader"]){flex:none;height:auto;max-height:none;overflow:visible}`
-  + `${DRAWER_HEADER} [class*="_regionArea"] [class*="_listArea"]{flex:none;overflow:visible}`
-  // Like the drawer header, paint the side insets the Workspace rows reach into.
-  + `${DRAWER_HEADER} [class*="_regionArea"] [class*="_sectionHeader"]{position:sticky;top:${PHONE_HEADER_HEIGHT};z-index:2;`
-  + 'background:var(--dsw-specific-sidebar-fill);box-shadow:var(--dsh-sidebar-inline-padding,12px) 0 0 var(--dsw-specific-sidebar-fill),'
-  + 'calc(-1 * var(--dsh-sidebar-inline-padding,12px)) 0 0 var(--dsw-specific-sidebar-fill)}'
-  + `${DRAWER_SCROLL_ROOT} .hp-agents-tiles{position:sticky;top:${PHONE_HEADER_HEIGHT};z-index:2;`
-  + 'background:var(--dsw-specific-sidebar-fill);box-shadow:0 -6px 0 var(--dsw-specific-sidebar-fill),0 6px 0 var(--dsw-specific-sidebar-fill)}'
+  + `${DRAWER_HEADER} [class*="_regionArea"] [class*="_root"]:has(> [class*="_sectionHeader"]){flex:1 1 auto;min-height:0;height:auto;max-height:none;overflow:visible}`
+  + `${DRAWER_WORKSPACE_SCROLL}{flex:1 1 auto;min-width:0;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:none;scrollbar-width:none;scrollbar-gutter:auto;padding-bottom:12px}`
+  + `${DRAWER_WORKSPACE_SCROLL}::-webkit-scrollbar{display:none}`
   // Keep the title at the left and the three controls aligned with the Workspace cards.
   + `${DRAWER_HEADER} [class*="_sectionHeader"]{justify-content:flex-end;flex-wrap:nowrap;`
   + 'margin-right:calc(2px - var(--dsh-sidebar-inline-padding,12px));'
@@ -276,11 +273,16 @@ export function applyDrawerSelection(): () => void {
       menu.style.setProperty('--dsh-remote-mode-menu-height', `${Math.min(360, top - viewportTop - 16)}px`)
     }
   }
-  const schedule = (): void => { if (!frame) frame = requestAnimationFrame(position) }
+  const admissions = document.getElementsByClassName('dt-admission')
+  const menus = document.getElementsByClassName('hp-menu')
+  const schedule = (): void => {
+    if (frame || (admissions.length === 0 && menus.length === 0)) return
+    frame = requestAnimationFrame(position)
+  }
   const observer = new MutationObserver(schedule)
   observer.observe(document.body, { childList: true, characterData: true, subtree: true })
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] })
-  document.addEventListener('scroll', schedule, true)
+  document.addEventListener('scroll', schedule, { capture: true, passive: true })
   window.addEventListener('resize', schedule)
   viewport?.addEventListener('resize', schedule)
   viewport?.addEventListener('scroll', schedule)

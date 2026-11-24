@@ -84,7 +84,16 @@ export function followSettingsSheet(): () => void {
       if (!panels.has(panel)) panels.set(panel, attach(panel))
     }
   }
-  const observer = new MutationObserver(sync)
+  const hasSettings = (node: Node): boolean => node instanceof Element && (
+    node.getAttribute('data-shortcut-modal') === 'settings'
+    || (node.childElementCount > 0 && node.querySelector('[data-shortcut-modal="settings"]') !== null)
+  )
+  const observer = new MutationObserver((records) => {
+    for (const panel of panels.keys()) if (!panel.isConnected) { sync(); return }
+    for (const record of records) {
+      for (const node of record.addedNodes) if (hasSettings(node)) { sync(); return }
+    }
+  })
   observer.observe(document.body, { childList: true, subtree: true })
   window.addEventListener('resize', sync)
   sync()

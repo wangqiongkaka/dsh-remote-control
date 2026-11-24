@@ -810,15 +810,16 @@ it('moves the phone drawer and right panel with the finger and settles them on r
     touch(content, 'touchstart', 20)
     expect(touch(content, 'touchmove', 40).defaultPrevented).toBe(true)
     expect(open()).toBe(true)
-    expect(drawer.style.transform).toBe('translateX(-280px)')
+    expect(drawer.style.transform).toBe('translate3d(-280px, 0, 0)')
     expect(drawer.style.transition).toBe('none')
     touch(content, 'touchmove', 80)
-    expect(drawer.style.transform).toBe('translateX(-240px)')
+    vi.advanceTimersByTime(16)
+    expect(drawer.style.transform).toBe('translate3d(-240px, 0, 0)')
     // A slow release short of a third springs back closed.
     vi.advanceTimersByTime(500)
     touch(content, 'touchend', 80)
     expect(open()).toBe(false)
-    expect(drawer.style.transform).toBe('translateX(-300px)')
+    expect(drawer.style.transform).toBe('translate3d(-300px, 0, 0)')
     expect(drawer.style.transition).toContain('transform')
     vi.advanceTimersByTime(300)
     expect(drawer.style.transform).toBe('')
@@ -831,7 +832,7 @@ it('moves the phone drawer and right panel with the finger and settles them on r
     vi.advanceTimersByTime(500)
     touch(content, 'touchend', 140)
     expect(open()).toBe(true)
-    expect(drawer.style.transform).toBe('translateX(0px)')
+    expect(drawer.style.transform).toBe('translate3d(0px, 0, 0)')
     vi.advanceTimersByTime(300)
     expect(drawer.style.transform).toBe('')
 
@@ -839,13 +840,13 @@ it('moves the phone drawer and right panel with the finger and settles them on r
     const left = frame.querySelector('[data-left-content]')!
     touch(left, 'touchstart', 250)
     touch(left, 'touchmove', 230)
-    expect(drawer.style.transform).toBe('translateX(-20px)')
+    expect(drawer.style.transform).toBe('translate3d(-20px, 0, 0)')
     vi.advanceTimersByTime(16)
     touch(left, 'touchmove', 190)
     vi.advanceTimersByTime(16)
     touch(left, 'touchend', 190)
     expect(open()).toBe(false)
-    expect(drawer.style.transform).toBe('translateX(-300px)')
+    expect(drawer.style.transform).toBe('translate3d(-300px, 0, 0)')
     vi.advanceTimersByTime(300)
     expect(drawer.style.transform).toBe('')
 
@@ -853,15 +854,16 @@ it('moves the phone drawer and right panel with the finger and settles them on r
     touch(content, 'touchstart', 300)
     touch(content, 'touchmove', 280)
     expect(panel.hasAttribute('data-sidebar-right-open')).toBe(true)
-    expect(dock.style.transform).toBe('translateX(380px)')
+    expect(dock.style.transform).toBe('translate3d(380px, 0, 0)')
     touch(content, 'touchmove', 100)
-    expect(dock.style.transform).toBe('translateX(200px)')
+    vi.advanceTimersByTime(16)
+    expect(dock.style.transform).toBe('translate3d(200px, 0, 0)')
     vi.advanceTimersByTime(16)
     touch(content, 'touchmove', 250)
     vi.advanceTimersByTime(16)
     touch(content, 'touchend', 250)
     expect(panel.hasAttribute('data-sidebar-right-open')).toBe(false)
-    expect(dock.style.transform).toBe('translateX(400px)')
+    expect(dock.style.transform).toBe('translate3d(400px, 0, 0)')
     vi.advanceTimersByTime(300)
     expect(dock.style.transform).toBe('')
 
@@ -1553,10 +1555,10 @@ it('pulls to load earlier messages only at the top of the phone conversation', (
     touch('touchstart', 100)
     const pull = touch('touchmove', 190)
     expect(pull.defaultPrevented).toBe(true)
-    expect(column.style.transform).toMatch(/translateY\([1-9]/u)
+    expect(column.style.transform).toMatch(/translate3d\(0px, [1-9]/u)
     touch('touchend', 190)
     expect(loads).toBe(1)
-    expect(column.style.transform).toBe('translateY(0px)')
+    expect(column.style.transform).toBe('translate3d(0px, 0px, 0px)')
     expect(column.style.transition).toContain('transform')
 
     scroller.scrollTop = 100
@@ -1576,7 +1578,7 @@ it('pulls to load earlier messages only at the top of the phone conversation', (
     touch('touchstart', 100)
     touch('touchmove', 190)
     touch('touchstart', 190, 2)
-    expect(column.style.transform).toBe('translateY(0px)')
+    expect(column.style.transform).toBe('translate3d(0px, 0px, 0px)')
     touch('touchend', 190)
     expect(loads).toBe(1)
   } finally {
@@ -1628,9 +1630,9 @@ it('rebounds an upward pull at the bottom without moving the composer', () => {
     touch('touchend', 190)
     touch('touchstart', 190)
     expect(touch('touchmove', 90).defaultPrevented).toBe(true)
-    expect(column.style.transform).toMatch(/translateY\(-/u)
+    expect(column.style.transform).toMatch(/translate3d\(0px, -/u)
     touch('touchend', 90)
-    expect(column.style.transform).toBe('translateY(0px)')
+    expect(column.style.transform).toBe('translate3d(0px, 0px, 0px)')
     expect(column.style.transition).toContain('transform')
     expect(frame.querySelector('[data-composer-seat]')?.getAttribute('style')).toBeNull()
 
@@ -1647,18 +1649,29 @@ it('rebounds an upward pull at the bottom without moving the composer', () => {
   }
 })
 
-it('holds the drawer still under a top pull and rebounds it at the bottom, never moving its pinned header or settings', () => {
+it.each([false, true])('rebounds only the workspace list at both ends while keeping the Agent board and bars pinned (installed host: %s)', (installed) => {
+  vi.useFakeTimers()
   const proxy = document.createElement('style')
   proxy.setAttribute('data-dsh-remote-control', '')
   document.head.append(proxy)
   const frame = document.createElement('div')
   frame.className = 'ui_layout__frame__h1'
+  const region = '<div class="ui_sidebar__regionArea__h1"><div class="ui_workspace__root__h1">'
+    + '<div class="ui_workspace__sectionHeader__h1"><span>工作区</span></div>'
+    + '<div class="ui_workspace__listArea__h1"><div class="ui_workspace__treeBody__h1">'
+    + '<div class="ui_workspace__list__h1">'
+    + '<button data-project>项目</button><input><div role="dialog">菜单</div>'
+    + '</div></div></div></div></div>'
   frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
     + '<div class="ui_sidebar__logoRow__h1"><button>收起</button></div>'
-    + '<div data-hp-agents><button>Agent</button></div>'
-    + '<nav class="ui_sidebar__panelList__h1"><button>插件</button><button>自动化任务</button></nav>'
-    + '<div class="ui_sidebar__regionArea__h1"><div class="ui_workspace__list__h1">'
-    + '<button data-project>项目</button><input><div role="dialog">菜单</div></div></div>'
+    + (installed
+      ? '<div class="ui_sidebar__newSessionRow__h1"><div data-hp-agents><button data-agent>Agent</button></div></div>'
+        + '<div class="kB3qhq_scrollRegion"><div class="kB3qhq_scrollArea">'
+        + '<nav class="ui_sidebar__panelList__h1"><button>插件</button><button>自动化任务</button></nav>'
+        + `${region}</div><span class="kB3qhq_scrollFade"></span></div>`
+      : '<div data-hp-agents><button data-agent>Agent</button></div>'
+        + '<nav class="ui_sidebar__panelList__h1"><button>插件</button><button>自动化任务</button></nav>'
+        + region)
     + '<div class="ui_sidebar__footArea__h1"><button>设置</button></div></div></div>'
   document.body.append(frame)
   let reducedMotion = false
@@ -1667,11 +1680,16 @@ it('holds the drawer still under a top pull and rebounds it at the bottom, never
     value: (query: string) => ({ matches: query.includes('prefers-reduced-motion') ? reducedMotion : true,
       addEventListener: () => {}, removeEventListener: () => {} }),
   })
-  const scroller = frame.querySelector<HTMLElement>('.ui_sidebar__root__h1')!
-  const agents = frame.querySelector<HTMLElement>('[data-hp-agents]')!
-  const projects = frame.querySelector<HTMLElement>('.ui_sidebar__regionArea__h1')!
+  const scroller = frame.querySelector<HTMLElement>('.ui_workspace__listArea__h1')!
+  const tree = frame.querySelector<HTMLElement>('.ui_workspace__treeBody__h1')!
+  const agents = frame.querySelector<HTMLElement>(installed ? '.ui_sidebar__newSessionRow__h1' : '[data-hp-agents]')!
+  const header = frame.querySelector<HTMLElement>('.ui_workspace__sectionHeader__h1')!
   const target = frame.querySelector('[data-project]')!
   Object.defineProperties(scroller, { scrollHeight: { value: 900 }, clientHeight: { value: 400 } })
+  const parseY = (el: HTMLElement): number => {
+    const match = el.style.transform.match(/translate3d\(0px,\s*(-?\d+(?:\.\d+)?)px,\s*0px\)/u)
+    return match ? Number(match[1]) : 0
+  }
   const touch = (element: Element, type: string, y: number, x = 160, count = 1): Event => {
     const event = new Event(type, { bubbles: true, cancelable: true })
     const points = Array.from({ length: count }, (_, identifier) => ({ identifier, clientX: x, clientY: y }))
@@ -1685,47 +1703,83 @@ it('holds the drawer still under a top pull and rebounds it at the bottom, never
   const disposers: (() => void)[] = []
   try {
     apply(context(slots(), disposers))
+    // Pulling on the pinned Agent board never moves the board or the workspace list.
+    const agentButton = frame.querySelector('[data-agent]')!
+    touch(agentButton, 'touchstart', 100)
+    touch(agentButton, 'touchmove', 200)
+    vi.advanceTimersByTime(16)
+    expect(agents.getAttribute('style')).toBeNull()
+    expect(tree.getAttribute('style')).toBeNull()
+    touch(agentButton, 'touchend', 200)
+
+    // Mid-list scrolling stays native.
     scroller.scrollTop = 100
     touch(target, 'touchstart', 100)
     expect(touch(target, 'touchmove', 200).defaultPrevented).toBe(false)
-    touch(target, 'touchend', 200)
+    // Continuing past the top boundary starts damping from the edge without jumping.
+    scroller.scrollTop = 0
+    expect(touch(target, 'touchmove', 220).defaultPrevented).toBe(true)
+    vi.advanceTimersByTime(16)
+    expect(parseY(tree)).toBeGreaterThan(0)
+    expect(parseY(tree)).toBeLessThan(20)
+    expect(agents.getAttribute('style')).toBeNull()
+    expect(header.getAttribute('style')).toBeNull()
+    touch(target, 'touchend', 220)
+    vi.advanceTimersByTime(350)
+
+    // At the top: claim from the first pixel to block WebKit rubber-band, and damp-stretch only the workspace list downward.
     scroller.scrollTop = 0
     touch(target, 'touchstart', 100)
-    // At the top the drawer holds still, from the first pixel on: neither WebKit's own rubber band
-    // nor a rebound may pull the header, the Agent card or its pinned tiles off their seats.
     expect(touch(target, 'touchmove', 103).defaultPrevented).toBe(true)
     expect(touch(target, 'touchmove', 200).defaultPrevented).toBe(true)
-    for (const element of [agents, projects, ...frame.querySelectorAll('.ui_sidebar__logoRow__h1,.ui_sidebar__panelList__h1,.ui_sidebar__footArea__h1')]) {
-      expect(element.getAttribute('style')).toBeNull()
+    vi.advanceTimersByTime(16)
+    const pull100 = parseY(tree)
+    expect(pull100).toBeGreaterThan(15)
+    expect(pull100).toBeLessThan(64)
+    expect(tree.style.willChange).toBe('transform')
+    if (installed) expect(frame.querySelector('.kB3qhq_scrollRegion')?.getAttribute('style')).toBeNull()
+    // Deeper pull keeps increasing with resistance instead of hitting a flat wall.
+    expect(touch(target, 'touchmove', 350).defaultPrevented).toBe(true)
+    vi.advanceTimersByTime(16)
+    expect(parseY(tree)).toBeGreaterThan(pull100)
+    expect(parseY(tree)).toBeLessThan(64)
+    for (const pinned of [agents, header, ...frame.querySelectorAll('.ui_sidebar__logoRow__h1,.ui_sidebar__panelList__h1,.ui_sidebar__footArea__h1')]) {
+      expect(pinned.getAttribute('style')).toBeNull()
     }
-    touch(target, 'touchend', 200)
-    expect(agents.getAttribute('style')).toBeNull()
-    // A drawer that cannot scroll at all also holds still under a pull.
-    scroller.scrollTop = 0
-    touch(target, 'touchstart', 100)
-    expect(touch(target, 'touchmove', 200).defaultPrevented).toBe(true)
-    expect(projects.getAttribute('style')).toBeNull()
-    touch(target, 'touchend', 200)
+    touch(target, 'touchend', 350)
+    expect(tree.style.transform).toBe('translate3d(0px, 0px, 0px)')
+    expect(tree.style.transition).toContain('transform')
+    vi.advanceTimersByTime(350)
+    expect(tree.style.transform).toBe('')
+    expect(tree.style.willChange).toBe('')
+
     // An upward drag at the top is an ordinary scroll.
     touch(target, 'touchstart', 200)
     expect(touch(target, 'touchmove', 197).defaultPrevented).toBe(false)
     touch(target, 'touchend', 197)
+
+    // At the bottom: damp-stretch only the workspace list upward and rebound smoothly without moving the Agent board or bars.
     scroller.scrollTop = 500
     touch(target, 'touchstart', 200)
     expect(touch(target, 'touchmove', 100).defaultPrevented).toBe(true)
-    expect(projects.style.transform).toMatch(/translateY\(-/u)
-    expect(agents.style.transform).toBe(projects.style.transform)
+    vi.advanceTimersByTime(16)
+    expect(parseY(tree)).toBeLessThan(-15)
+    expect(agents.getAttribute('style')).toBeNull()
+    expect(header.getAttribute('style')).toBeNull()
     expect(frame.querySelector('.ui_sidebar__panelList__h1')?.getAttribute('style')).toBeNull()
     expect(frame.querySelector('.ui_sidebar__footArea__h1')?.getAttribute('style')).toBeNull()
     touch(target, 'touchcancel', 100)
-    expect(projects.style.transform).toBe('translateY(0px)')
-    expect(projects.style.transition).toContain('transform')
+    expect(tree.style.transform).toBe('translate3d(0px, 0px, 0px)')
+    expect(tree.style.transition).toContain('transform')
+    vi.advanceTimersByTime(350)
+
     reducedMotion = true
     touch(target, 'touchstart', 200)
     touch(target, 'touchmove', 100)
+    vi.advanceTimersByTime(16)
     touch(target, 'touchend', 100)
-    expect(projects.style.transform).toBe('')
-    expect(projects.style.transition).toBe('')
+    expect(tree.style.transform).toBe('')
+    expect(tree.style.transition).toBe('')
     for (const selector of ['input', '[role="dialog"]', '.ui_sidebar__logoRow__h1 button', '.ui_sidebar__panelList__h1 button', '.ui_sidebar__footArea__h1 button']) {
       const element = frame.querySelector(selector)!
       touch(element, 'touchstart', 200)
@@ -1735,7 +1789,7 @@ it('holds the drawer still under a top pull and rebounds it at the bottom, never
     // A sideways drag belongs to the drawer's closing swipe, not to the rebound.
     touch(target, 'touchstart', 200)
     touch(target, 'touchmove', 200, 80)
-    expect(projects.style.transform).toBe('')
+    expect(tree.style.transform).toBe('')
     touch(target, 'touchcancel', 200)
     touch(target, 'touchstart', 200, 160, 2)
     expect(touch(target, 'touchmove', 100, 160, 2).defaultPrevented).toBe(false)
@@ -1743,9 +1797,10 @@ it('holds the drawer still under a top pull and rebounds it at the bottom, never
     touch(target, 'touchstart', 200)
     touch(target, 'touchmove', 100)
     for (const dispose of disposers.splice(0)) dispose()
-    expect(projects.style.transform).toBe('')
+    expect(tree.style.transform).toBe('')
   } finally {
     for (const dispose of disposers) dispose()
+    vi.useRealTimers()
     proxy.remove()
     frame.remove()
   }
@@ -2013,4 +2068,129 @@ it('opens a file link written as path:line on the real file, at that line', asyn
     await ctx.fiber.dispose()
   }
   expect(open(`${file}:9`)).toEqual({ address: `${file}:9` })
+})
+
+it('coalesces swipe touchmoves per animation frame, caches targets, measures before toggling, and promotes GPU layers', () => {
+  vi.useFakeTimers()
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div data-left-content>左栏</div></div>'
+    + '<main class="ui_layout__centerCol__h1"><div data-conversation-scroll>消息</div></main>'
+    + '<div data-remote-control-scrim></div>'
+  frame.setAttribute('data-sidebar-collapsed', '')
+  frame.setAttribute('data-rightbar-collapsed', '')
+  document.body.append(frame)
+  const dpr = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio')
+  Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 3 })
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (query: string) => ({ matches: !query.includes('prefers-reduced-motion'), addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const drawer = frame.querySelector<HTMLElement>('[class*="_sidebarCol"]')!
+  const scrim = frame.querySelector<HTMLElement>('[data-remote-control-scrim]')!
+  const order: string[] = []
+  drawer.getBoundingClientRect = () => { order.push('measure'); return { width: 300 } as DOMRect }
+  const disposers: (() => void)[] = []
+  const ctx = context(slots(), disposers)
+  ctx.layout.toggleSidebar = () => { order.push('toggle'); frame.toggleAttribute('data-sidebar-collapsed') }
+  const content = frame.querySelector('[data-conversation-scroll]')!
+  const touch = (type: string, x: number): void => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    const point = { identifier: 0, clientX: x, clientY: 100 }
+    Object.defineProperties(event, {
+      touches: { value: type === 'touchend' ? [] : [point] },
+      changedTouches: { value: [point] },
+    })
+    content.dispatchEvent(event)
+  }
+  try {
+    apply(ctx)
+    touch('touchstart', 20)
+    // Lock frame measures drawer width before mutating layout via toggleSidebar.
+    touch('touchmove', 40.33)
+    expect(order).toEqual(['measure', 'toggle'])
+    expect(frame.hasAttribute('data-remote-control-swiping')).toBe(true)
+    expect(drawer.style.willChange).toBe('transform')
+    expect(scrim.style.willChange).toBe('opacity')
+    expect(drawer.style.transform).toBe('translate3d(-279.67px, 0, 0)')
+
+    const querySpy = vi.spyOn(frame, 'querySelectorAll')
+    // Multiple touchmove events within a single frame coalesce into one rAF paint without re-querying DOM.
+    touch('touchmove', 60)
+    touch('touchmove', 80)
+    touch('touchmove', 110.67)
+    expect(drawer.style.transform).toBe('translate3d(-279.67px, 0, 0)')
+    vi.advanceTimersByTime(16)
+    expect(drawer.style.transform).toBe('translate3d(-209.33px, 0, 0)')
+    expect(querySpy).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(500)
+    touch('touchend', 110.67)
+    expect(frame.hasAttribute('data-remote-control-swiping')).toBe(true)
+    vi.advanceTimersByTime(300)
+    expect(frame.hasAttribute('data-remote-control-swiping')).toBe(false)
+    expect(drawer.style.willChange).toBe('')
+    expect(scrim.style.willChange).toBe('')
+    expect(drawer.style.transform).toBe('')
+  } finally {
+    for (const dispose of disposers) dispose()
+    vi.restoreAllMocks()
+    proxy.remove()
+    frame.remove()
+    vi.useRealTimers()
+    if (dpr) Object.defineProperty(window, 'devicePixelRatio', dpr)
+    else Reflect.deleteProperty(window, 'devicePixelRatio')
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})
+
+it('ignores unrelated DOM subtree churn when tracking the last phone page', async () => {
+  const key = 'dsh-remote-control.last-page.v1'
+  localStorage.removeItem(key)
+  document.documentElement.setAttribute('data-remote-control-landed', '')
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.setAttribute('data-sidebar-collapsed', '')
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"></div>'
+    + '<main class="ui_layout__centerCol__h1"><div data-chat-flow></div></main>'
+  document.body.append(frame)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const disposers: (() => void)[] = []
+  const tick = (): Promise<void> => new Promise(resolve => { setTimeout(resolve, 0) })
+  try {
+    apply(context(slots(), disposers))
+    await tick()
+    const querySpy = vi.spyOn(document, 'querySelector')
+    const chat = frame.querySelector('[data-chat-flow]')!
+    for (let index = 0; index < 10; index++) {
+      const node = document.createElement('p')
+      node.textContent = `msg-${index}`
+      chat.append(node)
+    }
+    await tick()
+    expect(querySpy).not.toHaveBeenCalled()
+  } finally {
+    for (const dispose of disposers) dispose()
+    vi.restoreAllMocks()
+    localStorage.removeItem(key)
+    document.documentElement.removeAttribute('data-remote-control-landed')
+    proxy.remove()
+    frame.remove()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
 })

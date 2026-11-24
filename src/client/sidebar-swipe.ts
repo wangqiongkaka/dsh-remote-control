@@ -1,20 +1,12 @@
 /** Open and close the phone drawers with horizontal swipes. */
 
-import { DRAWER_SCROLL_ROOT, GIT_HISTORY_REF } from './drawer-style.ts'
+import { DRAWER_WORKSPACE_SCROLL, GIT_HISTORY_REF } from './drawer-style.ts'
 import { EASE, SLOW } from '../narrow-style.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 
 const MIN_SWIPE = 48
 const INTERACTIVE = 'button,a,input,textarea,select,[contenteditable], [role="dialog"], [data-composer-card]'
-
-/** Leave a child horizontal scroller's gesture to that scroller. */
-function scrollsHorizontally(target: Element, center: Element): boolean {
-  for (let element: Element | null = target; element !== null && element !== center; element = element.parentElement) {
-    if (element.scrollWidth > element.clientWidth && /^(auto|scroll)$/.test(getComputedStyle(element).overflowX)) return true
-  }
-  return false
-}
 
 /**
  * Inside an open drawer a sideways drag never clicks the control under it, so only a field that
@@ -27,10 +19,11 @@ const DRAWER_OWN_DRAG = 'input,textarea,select,[contenteditable], [role="dialog"
  * Which ways the horizontal scrollers between a touch and its area can still scroll: a drag that
  * would move one of them is that scroller's, not the drawer's.
  */
-function scrollRoom(target: Element, area: Element): { back: boolean; forward: boolean } {
-  const room = { back: false, forward: false }
+function scrollRoom(target: Element, area: Element): { back: boolean; forward: boolean; horizontal: boolean } {
+  const room = { back: false, forward: false, horizontal: false }
   for (let element: Element | null = target; element !== null && element !== area; element = element.parentElement) {
     if (element.scrollWidth <= element.clientWidth || !/^(auto|scroll)$/.test(getComputedStyle(element).overflowX)) continue
+    room.horizontal = true
     if (element.scrollLeft > 0) room.back = true
     if (element.scrollLeft + element.clientWidth < element.scrollWidth - 1) room.forward = true
   }
@@ -74,9 +67,15 @@ export function followLastPage(ctx: Context): () => void {
   let first: ReturnType<typeof setTimeout> | undefined
   let askedLeft = false
   let askedRight = false
+  let cachedFrame: Element | null = null
+  const currentFrame = (): Element | null => cachedFrame?.isConnected ? cachedFrame : (cachedFrame = document.querySelector(FRAME))
+  const touchesSidebarPanel = (node: Node): boolean => node instanceof Element && (
+    node.hasAttribute('data-sidebar-right-panel') || node.hasAttribute('data-sidebar-right-toggle')
+    || (node.childElementCount > 0 && node.querySelector('[data-sidebar-right-panel],[data-sidebar-right-toggle]') !== null)
+  )
   const save = (): void => {
     if (restoring || hidden) return
-    const frame = document.querySelector(FRAME)
+    const frame = currentFrame()
     if (!frame) return
     const panelId = ctx.layout.panelInfo.getSnapshot().activePanelId
     const area = !frame.hasAttribute('data-sidebar-collapsed') ? 'left'
@@ -88,7 +87,7 @@ export function followLastPage(ctx: Context): () => void {
   const update = (): void => {
     if (hidden) return
     if (!restoring) { save(); return }
-    const frame = document.querySelector(FRAME)
+    const frame = currentFrame()
     if (!frame) return
     if (ctx.layout.panelInfo.getSnapshot().activePanelId !== wanted.panelId) {
       const entry = ctx.slots.entries('main').find(entry => entry.options.key === wanted.panelId)
@@ -108,6 +107,15 @@ export function followLastPage(ctx: Context): () => void {
     else if (!askedLeft) {
       askedLeft = true
       ctx.layout.toggleSidebar()
+    }
+  }
+  const onMutation = (records: MutationRecord[]): void => {
+    if (hidden) return
+    if (restoring || !cachedFrame?.isConnected) { update(); return }
+    for (const record of records) {
+      if (record.type === 'attributes') { save(); return }
+      for (const node of record.addedNodes) if (touchesSidebarPanel(node)) { save(); return }
+      for (const node of record.removedNodes) if (touchesSidebarPanel(node)) { save(); return }
     }
   }
   const stopListening = (): void => {
@@ -144,7 +152,7 @@ export function followLastPage(ctx: Context): () => void {
     first = setTimeout(update, 0)
   }
   const onVisible = (): void => { if (document.visibilityState === 'visible') show(); else hide() }
-  const observer = new MutationObserver(update)
+  const observer = new MutationObserver(onMutation)
   observer.observe(document.body, {
     subtree: true, childList: true, attributes: true,
     attributeFilter: ['data-sidebar-collapsed', 'data-sidebar-right-open'],
@@ -301,6 +309,13 @@ const SETTLE = 300
 /** What the shell slides for the right panel; its root stays untransformed so floating children escape. */
 const RIGHT_PIECES = '[data-sidebar-right-panel] :is([data-dockkit-host="dock"],[data-dockkit-empty],[data-dockkit-divider])'
 const SCRIM = '[data-remote-control-scrim]'
+const SWIPING = 'data-remote-control-swiping'
+
+/** Align a translation to physical device pixels so 3x Retina screens keep sub-pixel smoothness. */
+function snap(value: number): number {
+  const scale = window.devicePixelRatio || 1
+  return Math.round((Math.round(value * scale) / scale) * 100) / 100
+}
 
 /** A light tap through the iOS App's native bridge (RemoteViewController); browsers have none. */
 function haptic(): void {
@@ -309,7 +324,12 @@ function haptic(): void {
 }
 
 /** The left drawer (-1) or right panel (1) a horizontal drag moves, opening or closing it. */
-type Drag = { side: -1 | 1; opening: boolean; width: number; past: boolean; prev: { x: number; t: number }; last: { x: number; t: number } }
+type Drag = {
+  side: -1 | 1; opening: boolean; width: number; past: boolean
+  prev: { x: number; t: number }; last: { x: number; t: number }
+  pieces: HTMLElement[]; scrims: HTMLElement[]
+  frameId: number; pendingX?: number
+}
 
 /**
  * Observe single-finger swipes without blocking native scrolling or clicks. Once a touch turns
@@ -320,9 +340,9 @@ type Drag = { side: -1 | 1; opening: boolean; width: number; past: boolean; prev
 export function followSidebarSwipes(openLeft: () => void): () => void {
   let start: {
     id: number; x: number; y: number; frame: Element; area: 'center' | 'left' | 'right'
-    room: { back: boolean; forward: boolean }; at: number; moving: boolean; drag?: Drag
+    room: { back: boolean; forward: boolean; horizontal: boolean }; at: number; moving: boolean; drag?: Drag
   } | undefined
-  let settling: { frame: Element; side: -1 | 1; timer: ReturnType<typeof setTimeout> } | undefined
+  let settling: { frame: Element; pieces: HTMLElement[]; scrims: HTMLElement[]; timer: ReturnType<typeof setTimeout> } | undefined
   const selecting = (): boolean => document.getSelection()?.isCollapsed === false
   /** Which drawer a sideways swipe from this start opens or closes, if any. */
   const target = (from: NonNullable<typeof start>, dx: number): Pick<Drag, 'side' | 'opening'> | undefined => {
@@ -343,27 +363,35 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     if (side < 0) openLeft()
     else frame.querySelector<HTMLButtonElement>(open ? '[data-sidebar-right-expand]' : RIGHT_TOGGLE)?.click()
   }
-  const pieces = (frame: Element, side: -1 | 1): HTMLElement[] => [...frame.querySelectorAll<HTMLElement>(side < 0 ? '[class*="_sidebarCol"]' : RIGHT_PIECES)]
-  const paint = (frame: Element, side: -1 | 1, offset: number, openness: number, transition: string): void => {
-    for (const piece of pieces(frame, side)) {
-      piece.style.transition = transition ? `transform ${transition}` : 'none'
+  const queryPieces = (frame: Element, side: -1 | 1): HTMLElement[] => [...frame.querySelectorAll<HTMLElement>(side < 0 ? '[class*="_sidebarCol"]' : RIGHT_PIECES)]
+  const queryScrims = (side: -1 | 1): HTMLElement[] => side < 0 ? [...document.querySelectorAll<HTMLElement>(SCRIM)] : []
+  const paint = (pieces: HTMLElement[], scrims: HTMLElement[], offset: number, openness: number, transition: string): void => {
+    const move = transition ? `transform ${transition}` : 'none'
+    const transform = `translate3d(${snap(offset)}px, 0, 0)`
+    for (const piece of pieces) {
+      piece.style.transition = move
       piece.style.visibility = 'visible'
-      piece.style.transform = `translateX(${Math.round(offset)}px)`
+      piece.style.willChange = 'transform'
+      piece.style.transform = transform
     }
-    if (side > 0) return
-    for (const scrim of document.querySelectorAll<HTMLElement>(SCRIM)) {
-      scrim.style.transition = transition ? `opacity ${transition}` : 'none'
-      scrim.style.opacity = String(openness)
+    if (scrims.length === 0) return
+    const fade = transition ? `opacity ${transition}` : 'none'
+    const opacity = String(openness)
+    for (const scrim of scrims) {
+      scrim.style.transition = fade
+      scrim.style.willChange = 'opacity'
+      scrim.style.opacity = opacity
     }
   }
-  const clear = (frame: Element, side: -1 | 1): void => {
-    for (const piece of pieces(frame, side)) for (const name of ['transform', 'transition', 'visibility']) piece.style.removeProperty(name)
-    if (side < 0) for (const scrim of document.querySelectorAll<HTMLElement>(SCRIM)) for (const name of ['opacity', 'transition']) scrim.style.removeProperty(name)
+  const clear = (frame: Element, pieces: HTMLElement[], scrims: HTMLElement[]): void => {
+    frame.removeAttribute(SWIPING)
+    for (const piece of pieces) for (const name of ['transform', 'transition', 'visibility', 'will-change']) piece.style.removeProperty(name)
+    for (const scrim of scrims) for (const name of ['opacity', 'transition', 'will-change']) scrim.style.removeProperty(name)
   }
   const settle = (): void => {
     if (!settling) return
     clearTimeout(settling.timer)
-    clear(settling.frame, settling.side)
+    clear(settling.frame, settling.pieces, settling.scrims)
     settling = undefined
   }
   /** End a drag: commit leaves the drawer in its new state, otherwise it returns to where it was. */
@@ -372,20 +400,23 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     start = undefined
     const drag = from?.drag
     if (!from || !drag) return
+    if (drag.frameId !== 0) { cancelAnimationFrame(drag.frameId); drag.frameId = 0 }
     // Opening already flipped the shell at lock: undo it on cancel; closing flips only on commit.
     if (drag.opening !== commit) flip(from.frame, drag.side, false)
     const open = drag.opening === commit
     // A drag past its release point already tapped there; a fling settles with its own tap.
     if (commit && !drag.past) haptic()
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { clear(from.frame, drag.side); return }
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { clear(from.frame, drag.pieces, drag.scrims); return }
     // Slide the rest of the way inline, so the shell's own transition never retargets mid-flight.
-    paint(from.frame, drag.side, open ? 0 : drag.side * drag.width, open ? 1 : 0, `${SLOW} ${EASE}`)
-    settling = { frame: from.frame, side: drag.side, timer: setTimeout(settle, SETTLE) }
+    paint(drag.pieces, drag.scrims, open ? 0 : drag.side * drag.width, open ? 1 : 0, `${SLOW} ${EASE}`)
+    settling = { frame: from.frame, pieces: drag.pieces, scrims: drag.scrims, timer: setTimeout(settle, SETTLE) }
   }
   const drawTo = (from: NonNullable<typeof start>, drag: Drag, x: number): void => {
     const base = drag.opening ? drag.side * drag.width : 0
     const offset = Math.min(Math.max(base + x - from.x, Math.min(0, drag.side * drag.width)), Math.max(0, drag.side * drag.width))
-    paint(from.frame, drag.side, offset, 1 - Math.abs(offset) / drag.width, '')
+    paint(drag.pieces, drag.scrims, offset, 1 - Math.abs(offset) / drag.width, '')
+  }
+  const checkThreshold = (from: NonNullable<typeof start>, drag: Drag, x: number): void => {
     // Tap each time the drag crosses the point where letting go keeps the new state.
     const past = (x - from.x) * (drag.opening ? -drag.side : drag.side) >= drag.width / 3
     if (past !== drag.past) { drag.past = past; haptic() }
@@ -403,12 +434,13 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     if (!area || !frame) return
     // The conversation keeps every control and sideways scroller to itself; an open drawer lets a
     // closing swipe start on its rows and tabs (see DRAWER_OWN_DRAG and the direction check below).
-    const ownDrag = target.closest(DRAWER_OWN_DRAG)
-    if (center ? target.closest(INTERACTIVE) || scrollsHorizontally(target, area) : ownDrag) return
+    if (center ? target.closest(INTERACTIVE) : target.closest(DRAWER_OWN_DRAG)) return
+    const room = scrollRoom(target, area)
+    if (center && room.horizontal) return
     const touch = event.touches[0]
     if (touch === undefined) return
     start = { id: touch.identifier, x: touch.clientX, y: touch.clientY, frame,
-      area: center ? 'center' : left ? 'left' : 'right', room: scrollRoom(target, area), at: Date.now(), moving: false }
+      area: center ? 'center' : left ? 'left' : 'right', room, at: Date.now(), moving: false }
   }
   const onMove = (event: TouchEvent): void => {
     if (selecting() || event.touches.length !== 1) { cancel(); return }
@@ -421,7 +453,16 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
       if (event.cancelable) event.preventDefault()
       drag.prev = drag.last
       drag.last = { x: touch.clientX, t: Date.now() }
-      drawTo(start, drag, touch.clientX)
+      checkThreshold(start, drag, touch.clientX)
+      drag.pendingX = touch.clientX
+      if (drag.frameId === 0) {
+        const current = start
+        drag.frameId = requestAnimationFrame(() => {
+          drag.frameId = 0
+          if (start !== current || drag.pendingX === undefined) return
+          drawTo(current, drag, drag.pendingX)
+        })
+      }
       return
     }
     if (start.moving) return
@@ -434,10 +475,17 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
     const aim = Math.abs(dx) >= Math.abs(dy) * 1.5 && start.frame.isConnected ? target(start, dx) : undefined
     if (!aim) return
     if (event.cancelable) event.preventDefault()
-    if (aim.opening) flip(start.frame, aim.side, true)
+    // Measure before toggling shell state so opening does not force a synchronous reflow.
     const sized = aim.side < 0 ? start.frame.querySelector('[class*="_sidebarCol"]') : start.frame.querySelector('[data-sidebar-right-panel]')
-    start.drag = { ...aim, width: sized?.getBoundingClientRect().width || window.innerWidth, past: false,
-      prev: { x: start.x, t: start.at }, last: { x: touch.clientX, t: Date.now() } }
+    const width = sized?.getBoundingClientRect().width || window.innerWidth
+    if (aim.opening) flip(start.frame, aim.side, true)
+    const pieces = queryPieces(start.frame, aim.side)
+    const scrims = queryScrims(aim.side)
+    start.frame.setAttribute(SWIPING, '')
+    start.drag = { ...aim, width, past: false,
+      prev: { x: start.x, t: start.at }, last: { x: touch.clientX, t: Date.now() },
+      pieces, scrims, frameId: 0 }
+    checkThreshold(start, start.drag, touch.clientX)
     drawTo(start, start.drag, touch.clientX)
   }
   const onEnd = (event: TouchEvent): void => {
@@ -494,48 +542,89 @@ export function followSidebarSwipes(openLeft: () => void): () => void {
   }
 }
 
+/** Collect the real layout boxes inside the Workspace list scrollport so transforms never touch pinned bars. */
+function workspacePullColumns(listArea: Element): HTMLElement[] {
+  const result: HTMLElement[] = []
+  for (const child of listArea.children) {
+    if (!(child instanceof HTMLElement) || child.matches('[class*="_fade"]')) continue
+    if (getComputedStyle(child).display === 'contents') result.push(...workspacePullColumns(child))
+    else result.push(child)
+  }
+  return result
+}
+
+/** Progressive rubber-band resistance: smooth near zero and approaches `limit` without a hard stop. */
+function rubberBand(distance: number, limit: number): number {
+  const abs = Math.abs(distance)
+  return Math.sign(distance) * ((abs * limit * 0.55) / (limit + abs * 0.55))
+}
+
 /**
- * Bounce the chat past its ends and the drawer past its bottom; only a chat's top pull loads earlier
- * messages. The drawer holds still under a top pull, so its header and the Agent card's pinned tiles stay put.
+ * Bounce the chat and the drawer's Workspace list past either end with progressive resistance;
+ * only a chat's top pull loads earlier messages. Claims boundary pulls in the Workspace list from
+ * the first pixel so WebKit's native rubber band never drags the pinned Agent board or bars along.
  */
 export function followVerticalPulls(): () => void {
   const THRESHOLD = 72
-  const LIMIT = 56
-  const DURATION = 220
-  let start: { id: number; x: number; y: number; scroller: HTMLElement; columns: HTMLElement[]; drawer: boolean; distance: number } | undefined
+  const LIMIT = 64
+  const DURATION = 320
+  const REBOUND_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
+  let start: {
+    id: number; x: number; y: number; lastY: number
+    scroller: HTMLElement; columns: HTMLElement[]; drawer: boolean
+    edgeY?: number | undefined; side?: 1 | -1 | undefined; distance: number; frameId: number; pending?: number | undefined
+  } | undefined
   let animated: HTMLElement[] = []
   let cleanupTimer: ReturnType<typeof setTimeout> | undefined
+  const resetColumns = (columns: HTMLElement[]): void => {
+    for (const column of columns) {
+      column.style.removeProperty('transform')
+      column.style.removeProperty('transition')
+      column.style.removeProperty('will-change')
+    }
+  }
   const clearAnimation = (): void => {
     if (cleanupTimer !== undefined) clearTimeout(cleanupTimer)
     cleanupTimer = undefined
-    for (const column of animated) {
-      column.style.removeProperty('transform')
-      column.style.removeProperty('transition')
-    }
+    resetColumns(animated)
     animated = []
+  }
+  const paint = (columns: HTMLElement[], distance: number): void => {
+    const offset = snap(rubberBand(distance, LIMIT))
+    const transform = `translate3d(0px, ${offset}px, 0px)`
+    for (const column of columns) {
+      column.style.transition = 'none'
+      column.style.willChange = 'transform'
+      column.style.transform = transform
+    }
   }
   const onStart = (event: TouchEvent): void => {
     if (start?.distance) finish(false)
-    else start = undefined
+    else {
+      if (start?.frameId) cancelAnimationFrame(start.frameId)
+      start = undefined
+    }
     if (event.touches.length !== 1 || !(event.target instanceof Element)
       || event.target.closest(`[data-composer-seat],${DRAWER_OWN_DRAG},[role="menu"]`)) return
     const target = event.target
-    const scroller = event.target.closest<HTMLElement>(`[data-conversation-scroll],${DRAWER_SCROLL_ROOT}`)
+    const scroller = event.target.closest<HTMLElement>(`[data-conversation-scroll],${DRAWER_WORKSPACE_SCROLL}`)
     if (!scroller) return
     const chat = scroller.querySelector<HTMLElement>('[data-chat-flow]')
-    const columns = chat ? [chat] : [...scroller.querySelectorAll<HTMLElement>(
-      ':scope > :not([class*="_logoRow"]):not([class*="_panelList"]):not([class*="_footArea"]):not([class*="_topStrip"])',
-    )]
-    if (!columns.some(column => column.contains(target))
-      || scrollsHorizontally(event.target, scroller)) return
-    for (let element = event.target.parentElement; element !== null && element !== scroller; element = element.parentElement) {
-      if (element.scrollHeight > element.clientHeight
-        && /^(auto|scroll)$/u.test(getComputedStyle(element).overflowY)) return
+    const columns = chat ? [chat] : workspacePullColumns(scroller)
+    if (!columns.some(column => column.contains(target))) return
+    for (let element: Element | null = target; element !== null && element !== scroller; element = element.parentElement) {
+      const horiz = element.scrollWidth > element.clientWidth
+      const vert = element !== target && element.scrollHeight > element.clientHeight
+      if (!horiz && !vert) continue
+      const style = getComputedStyle(element)
+      if ((horiz && /^(auto|scroll)$/u.test(style.overflowX))
+        || (vert && /^(auto|scroll)$/u.test(style.overflowY))) return
     }
     const touch = event.touches[0]
     if (touch === undefined) return
     clearAnimation()
-    start = { id: touch.identifier, x: touch.clientX, y: touch.clientY, scroller, columns, drawer: !chat, distance: 0 }
+    start = { id: touch.identifier, x: touch.clientX, y: touch.clientY, lastY: touch.clientY,
+      scroller, columns, drawer: !chat, distance: 0, frameId: 0 }
   }
   const onMove = (event: TouchEvent): void => {
     const from = start
@@ -545,49 +634,74 @@ export function followVerticalPulls(): () => void {
     if (!touch || touch.identifier !== from.id) return
     const dx = touch.clientX - from.x
     const dy = touch.clientY - from.y
-    // Claim the drawer's top pull from its first pixel: once WebKit's own rubber band starts, it
-    // drags the sticky header along and later moves can no longer be cancelled.
-    if (from.drawer && dy > 0 && from.scroller.scrollTop <= 1 && Math.abs(dy) >= Math.abs(dx)) {
-      event.preventDefault()
-      return
-    }
-    if (Math.abs(dy) < 8 || Math.abs(dy) < Math.abs(dx) * 1.2) {
-      if (from.distance) finish(false)
-      return
-    }
+    const prevY = from.lastY
+    const stepY = touch.clientY - prevY
+    from.lastY = touch.clientY
     const { scroller, columns } = from
-    if ((dy > 0 && scroller.scrollTop > 1)
-      || (dy < 0 && scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 1)) {
-      if (from.distance) finish(false)
+    if (from.edgeY === undefined || from.side === undefined) {
+      const atTop = scroller.scrollTop <= 1
+      const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1
+      const pullDown = stepY > 0 && atTop
+      const pullUp = stepY < 0 && atBottom
+      if (!pullDown && !pullUp) return
+      // In the drawer, claim boundary pulls from the first pixel so WebKit's native rubber band
+      // never starts and drags sticky headers/footers along.
+      if (from.drawer) {
+        if (Math.abs(dy) < Math.abs(dx)) return
+      } else if (Math.abs(dy) < 8 || Math.abs(dy) < Math.abs(dx) * 1.2) {
+        return
+      }
+      from.edgeY = prevY
+      from.side = pullDown ? 1 : -1
+    } else if (Math.abs(dx) >= 8 && Math.abs(dy) < Math.abs(dx) * 1.2) {
+      finish(false)
+      return
+    }
+    const over = (touch.clientY - from.edgeY) * from.side
+    if (over <= 0) {
+      // Pulled back inside the scrollport: hand control cleanly back to native scrolling.
+      if (from.frameId !== 0) { cancelAnimationFrame(from.frameId); from.frameId = 0 }
+      from.edgeY = undefined
+      from.side = undefined
+      from.distance = 0
+      from.pending = undefined
+      resetColumns(columns)
       return
     }
     event.preventDefault()
-    from.distance = dy
-    for (const column of columns) {
-      column.style.transition = 'none'
-      column.style.transform = `translateY(${Math.round(Math.sign(dy) * Math.min(LIMIT, Math.abs(dy) * 0.45))}px)`
+    const signed = over * from.side
+    const firstPaint = from.distance === 0
+    from.distance = signed
+    from.pending = signed
+    if (firstPaint) {
+      paint(columns, signed)
+    } else if (from.frameId === 0) {
+      from.frameId = requestAnimationFrame(() => {
+        from.frameId = 0
+        if (start !== from || from.pending === undefined) return
+        paint(columns, from.pending)
+      })
     }
   }
   const finish = (load: boolean): void => {
     const from = start
     start = undefined
-    if (!from || from.distance === 0) return
+    if (!from) return
+    if (from.frameId !== 0) { cancelAnimationFrame(from.frameId); from.frameId = 0 }
+    if (from.distance === 0) return
     const { scroller, columns } = from
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    for (const column of columns) {
-      if (reducedMotion) {
-        column.style.removeProperty('transform')
-        column.style.removeProperty('transition')
-      } else {
-        column.style.transition = `transform ${DURATION}ms ease-out`
-        column.style.transform = 'translateY(0px)'
+    if (reducedMotion) {
+      resetColumns(columns)
+    } else {
+      for (const column of columns) {
+        column.style.transition = `transform ${DURATION}ms ${REBOUND_EASE}`
+        column.style.transform = 'translate3d(0px, 0px, 0px)'
       }
-    }
-    if (!reducedMotion) {
       animated = columns
       cleanupTimer = setTimeout(clearAnimation, DURATION)
     }
-    if (load && from.distance >= THRESHOLD) {
+    if (load && !from.drawer && from.distance >= THRESHOLD) {
       const button = scroller.querySelector<HTMLButtonElement>('[data-chat-flow] [class*="_older"] > button')
       if (button && !button.disabled) button.click()
     }
@@ -605,6 +719,7 @@ export function followVerticalPulls(): () => void {
     document.removeEventListener('touchmove', onMove)
     document.removeEventListener('touchend', onEnd)
     document.removeEventListener('touchcancel', onCancel)
+    if (start?.frameId) cancelAnimationFrame(start.frameId)
     if (start?.distance) animated.push(...start.columns)
     start = undefined
     clearAnimation()

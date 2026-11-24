@@ -15,8 +15,16 @@ private final class RemoteWebView: WKWebView {
 private final class Haptics: NSObject, WKScriptMessageHandler {
   private let generator = UIImpactFeedbackGenerator(style: .light)
 
+  override init() {
+    super.init()
+    generator.prepare()
+  }
+
   func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-    if message.frameInfo.isMainFrame { generator.impactOccurred() }
+    if message.frameInfo.isMainFrame {
+      generator.impactOccurred()
+      generator.prepare()
+    }
   }
 }
 
@@ -105,6 +113,7 @@ final class RemoteViewController: UIViewController {
 
   private func open() {
     guard let origin else { return }
+    webView.isOpaque = false
     panel.isHidden = true
     failure.isHidden = true
     startup.start()
@@ -130,6 +139,7 @@ final class RemoteViewController: UIViewController {
   private func retry() {
     guard let url = failed ?? origin else { return }
     failed = nil
+    webView.isOpaque = false
     panel.isHidden = true
     failure.isHidden = true
     startup.start()
@@ -143,6 +153,7 @@ final class RemoteViewController: UIViewController {
       return
     }
     self.origin = origin
+    webView.isOpaque = false
     panel.isHidden = true
     failure.isHidden = true
     startup.start()
@@ -266,6 +277,8 @@ extension RemoteViewController: WKNavigationDelegate {
   }
 
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    // Once the page paints its own background, switch back to opaque compositing to avoid full-screen alpha blending.
+    webView.isOpaque = true
     startup.finish()
     openTappedSessions()
   }

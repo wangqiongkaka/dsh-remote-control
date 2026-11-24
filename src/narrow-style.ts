@@ -25,6 +25,10 @@ export const PHONE_NATIVE_DRAWER_STYLE = `${FRAME}[data-sidebar-drawer] [class*=
   + `${FRAME}[data-sidebar-drawer] [data-shell-leading] [data-sidebar-opener]{display:none !important}`
   + `${FRAME}[data-sidebar-drawer]:not([data-sidebar-collapsed]) [data-shell-leading]{display:none !important}`
   + `${FRAME}[data-sidebar-drawer][data-sidebar-collapsed] [data-remote-control-scrim]{pointer-events:none}`
+  + `${DRAWER}{contain:layout style}`
+  + `${FRAME}[data-remote-control-swiping] [class*="_sidebarCol"] > *{opacity:1 !important;transition:none !important}`
+  + `${FRAME}[data-remote-control-swiping] [class*="_sidebarCol"],${FRAME}[data-remote-control-swiping] [data-sidebar-right-panel] :is([data-dockkit-host="dock"],[data-dockkit-empty],[data-dockkit-divider]){will-change:transform}`
+  + `${FRAME}[data-remote-control-swiping] [data-remote-control-scrim]{will-change:opacity}`
   + `@media (max-width: 720px){${FRAME}[data-sidebar-drawer] [class*="_sidebarCol"]{width:100vw !important}}`
 
 /** WKWebView can autofocus the native drawer before CSS :focus applies; hide its portalled desktop shortcuts. */
