@@ -149,10 +149,7 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] :is([class*="_list"],[class*="_treeBody"])`
   + '{flex:none;overflow:visible;overflow-y:visible;scrollbar-gutter:auto}'
   + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] [class*="_fade"]{display:none}`
-  + `${DRAWER_SCROLL_ROOT} .hp-agents-card{margin:2px 0 4px;padding:6px;gap:4px;border-radius:14px}`
   + `${DRAWER_SCROLL_ROOT} .hp-agents-head,${DRAWER_SCROLL_ROOT} .hp-agents-group h3{display:none}`
-  + `${DRAWER_SCROLL_ROOT} .hp-agents-tile{height:48px;padding:6px 8px !important;border-radius:10px}`
-  + `${DRAWER_SCROLL_ROOT} .hp-agents-tile b{font-size:17px;line-height:20px}`
   + `${DRAWER_SCROLL_ROOT} .hp-agents-list{max-height:none;overflow:visible}`
   // Configurable embedded row cap (default 5 rows: N * 48px + 8px padding) with internal scrolling.
   + `${DRAWER_SCROLL_ROOT} .hp-agents-group > div{max-height:calc(var(--dsh-remote-agent-rows,${DEFAULT_AGENT_BOARD_ROWS}) * 48px + 8px);overflow-y:auto}`

@@ -290,12 +290,15 @@ it('removes the sheet it injected', () => {
 it.each([false, true])('pins the Agent board at the top and scrolls only the Workspace list (installed host: %s)', installed => {
   // harness-provider's own card rules: the group caps itself to five rows and scrolls inside.
   const provider = document.createElement('style')
-  provider.textContent = '.hp-agents-list{max-height:40dvh;overflow:auto}'
+  provider.textContent = '.hp-agents-card{margin:4px 0 8px;padding:8px;gap:6px;border-radius:16px}'
+    + '.hp-agents-tile{height:60px;padding:8px 10px !important;border-radius:12px}'
+    + '.hp-agents-tile b{font-size:20px;line-height:24px}'
+    + '.hp-agents-list{max-height:40dvh;overflow:auto}'
     + '.hp-agents-group > div{max-height:248px;overflow-y:auto}'
     + '.kB3qhq_scrollArea{overflow:hidden auto}'
   document.head.append(provider)
   const card = '<div data-hp-agents><section class="hp-agents-card"><div class="hp-agents-head">Agent 运行</div>'
-    + '<div class="hp-agents-tiles"><button class="hp-agents-tile">已完成</button></div>'
+    + '<div class="hp-agents-tiles"><button class="hp-agents-tile"><span>已完成</span><b>1</b></button></div>'
     + '<div class="hp-agents-list"><section class="hp-agents-group"><h3>已完成</h3><div>'
     + '<div class="hp-agents-item">会话</div>'.repeat(8) + '</div></section></div></section></div>'
   const workspace = '<div class="ui_sidebar__regionArea__h1"><div class="ui_workspace__root__h1">'
@@ -325,7 +328,9 @@ it.each([false, true])('pins the Agent board at the top and scrolls only the Wor
     expect(style(installed ? '.ui_sidebar__newSessionRow__h1' : '[data-hp-agents]').gridRow).toBe('2')
     expect(style('.hp-agents-head').display).toBe('none')
     expect(style('.hp-agents-group h3').display).toBe('none')
-    expect(style('.hp-agents-tile').height).toBe('48px')
+    expect(style('.hp-agents-card').padding).toBe('8px')
+    expect(style('.hp-agents-tile').height).toBe('60px')
+    expect(style('.hp-agents-tile b').fontSize).toBe('20px')
     expect(style('.ui_sidebar__logoRow__h1').boxSizing).toBe('border-box')
     expect(style('.hp-agents-list').overflow).toBe('visible')
     expect(style('.hp-agents-list').maxHeight).toBe('none')
