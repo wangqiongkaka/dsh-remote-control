@@ -49,6 +49,15 @@ it('defaults to unlimited phone access while preserving finite lifetime configur
   expect(() => z.resolve({ browserTtlMs: -1 }, Config, {})).toThrow()
 })
 
+it('defaults the phone Agent board list to 5 rows and validates custom row limits', () => {
+  expect(z.resolve({}, Config, {})[0].agentBoardRows).toBe(5)
+  expect(z.resolve({ agentBoardRows: 3 }, Config, {})[0].agentBoardRows).toBe(3)
+  expect(z.resolve({ agentBoardRows: 8 }, Config, {})[0].agentBoardRows).toBe(8)
+  expect(() => z.resolve({ agentBoardRows: 0 }, Config, {})).toThrow()
+  expect(() => z.resolve({ agentBoardRows: -2 }, Config, {})).toThrow()
+  expect(() => z.resolve({ agentBoardRows: 2.5 }, Config, {})).toThrow()
+})
+
 it.skipIf(process.platform === 'win32').each([
   { browserTtlMs: 180_000 }, { browserTtlMs: 0 },
 ])(
@@ -144,6 +153,7 @@ setInterval(() => {}, 1000)
   const config: Config = {
     invitationTtlMs: 60_000,
     browserTtlMs, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000, phoneSilenceMs: 60_000,
+    agentBoardRows: browserTtlMs === 0 ? 5 : 3,
     ssh: { binary, destination: 'ubuntu@relay.example', publicUrl: 'https://203.0.113.10', port: 22, remotePort: 18080 },
   }
   apply(ctx as never as Context, config)
@@ -284,6 +294,7 @@ setInterval(() => {}, 1000)
   expect(markup).toContain('<main>DSH Web</main>')
   // The phone gets the proxy's narrow-screen layer on top of the shell it forwards.
   expect(markup).toContain('data-dsh-remote-control')
+  expect(markup).toContain(`<style data-dsh-remote-control-config>:root{--dsh-remote-agent-rows:${browserTtlMs === 0 ? 5 : 3}}</style>`)
   // The drawer layer carries the dismissal scrim's visibility rules.
   expect(markup).toContain('[data-remote-control-scrim]')
   // The composer row is one strip: both host groups dissolve into it, so every chip between the
@@ -459,7 +470,7 @@ ${sshScript}
     },
   }
   apply(ctx as never as Context, {
-    invitationTtlMs: 60_000, browserTtlMs: 60_000, startupTimeoutMs, stopTimeoutMs: 5_000, phoneSilenceMs: 60_000,
+    invitationTtlMs: 60_000, browserTtlMs: 60_000, startupTimeoutMs, stopTimeoutMs: 5_000, phoneSilenceMs: 60_000, agentBoardRows: 5,
     ...overrides,
     ...ssh === undefined ? {} : { ssh },
   })
@@ -713,7 +724,7 @@ setInterval(() => {}, 1000)
       },
     } as never as Context, {
       invitationTtlMs: 60_000,
-      browserTtlMs: 0, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000, phoneSilenceMs: 60_000,
+      browserTtlMs: 0, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000, phoneSilenceMs: 60_000, agentBoardRows: 5,
       ssh: { binary, destination: 'ubuntu@relay.example', publicUrl: 'https://203.0.113.10', port: 22, remotePort: 18080 },
     })
     if (route === undefined) throw new Error('Control route not installed')
@@ -861,7 +872,7 @@ setInterval(() => {}, 1000)
       },
     } as never as Context, {
       invitationTtlMs: 60_000,
-      browserTtlMs: 0, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000, phoneSilenceMs,
+      browserTtlMs: 0, startupTimeoutMs: 5_000, stopTimeoutMs: 5_000, phoneSilenceMs, agentBoardRows: 5,
       ssh: { binary, destination: 'ubuntu@relay.example', publicUrl: 'https://203.0.113.10', port: 22, remotePort: 18080 },
     })
     if (route === undefined) throw new Error('Control route not installed')

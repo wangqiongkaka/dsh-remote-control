@@ -25,7 +25,7 @@
  */
 
 import { PHONE_HEADER_HEIGHT, PHONE_NATIVE_DRAWER_STYLE, PHONE_DRAWER_BOTTOM_STYLE, PHONE_HERO_COMPOSER_STYLE, PHONE_PLUGIN_STYLE, PHONE_SAFE_AREA_STYLE, PHONE_SIDEBAR_TOOLTIP_STYLE, PHONE_SETTINGS_STYLE, PHONE_SUPERAGENT_STYLE, PHONE_TASK_PAGE_STYLE } from '../narrow-style.ts'
-import { phoneViewport } from '../phone-document.ts'
+import { DEFAULT_AGENT_BOARD_ROWS, phoneViewport } from '../phone-document.ts'
 import { followSettingsSheet } from './settings-sheet.ts'
 
 /** Attribute on the injected sheet; the proxy's layers use their own attribute names. */
@@ -40,6 +40,9 @@ export const DRAWER_SCROLL_ROOT = '[class*="_frame"]:has([class*="_sidebarCol"])
 
 /** Share the sticky top row with the shell's existing panel navigation, without moving its DOM. */
 export const DRAWER_HEADER = `${DRAWER_SCROLL_ROOT}:has([class*="_panelList"])`
+
+/** Attribute on the Agent board host while its list is folded down to the status tiles on phones. */
+export const AGENTS_COLLAPSED_ATTRIBUTE = 'data-dsh-remote-agents-collapsed'
 
 /** The Workspace list scrollport beneath the pinned Agent board and section header. */
 export const DRAWER_WORKSPACE_SCROLL = `${DRAWER_HEADER} [class*="_regionArea"] [class*="_listArea"]`
@@ -97,7 +100,7 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${DRAWER_HEADER}{display:grid;grid-template-columns:minmax(0,1fr) auto 40px;grid-template-rows:${PHONE_HEADER_HEIGHT} auto minmax(0,1fr) auto;column-gap:8px;overflow-y:hidden}`
   // Paint one full-width sticky header; its subgrid leaves the middle track to panel shortcuts.
   + `${DRAWER_HEADER} > [class*="_logoRow"]{grid-column:1 / -1;grid-row:1;display:grid;grid-template-columns:subgrid;`
-  + 'gap:8px;min-width:0;padding:14px 0 12px 4px;margin-bottom:0}'
+  + 'gap:8px;min-width:0;box-sizing:border-box;padding:14px 0 12px 4px;margin-bottom:0}'
   + `${DRAWER_HEADER} > [class*="_logoRow"] [class*="_brand"]{grid-column:1}`
   + `${DRAWER_HEADER} > [class*="_logoRow"] button[class*="_toggle"]{grid-column:3}`
   + `${HEADER_BUTTON}{width:40px;height:40px;min-width:40px;min-height:40px;box-sizing:border-box;`
@@ -146,7 +149,15 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] :is([class*="_list"],[class*="_treeBody"])`
   + '{flex:none;overflow:visible;overflow-y:visible;scrollbar-gutter:auto}'
   + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] [class*="_fade"]{display:none}`
+  + `${DRAWER_SCROLL_ROOT} .hp-agents-card{margin:2px 0 4px;padding:6px;gap:4px;border-radius:14px}`
+  + `${DRAWER_SCROLL_ROOT} .hp-agents-head,${DRAWER_SCROLL_ROOT} .hp-agents-group h3{display:none}`
+  + `${DRAWER_SCROLL_ROOT} .hp-agents-tile{height:48px;padding:6px 8px !important;border-radius:10px}`
+  + `${DRAWER_SCROLL_ROOT} .hp-agents-tile b{font-size:17px;line-height:20px}`
   + `${DRAWER_SCROLL_ROOT} .hp-agents-list{max-height:none;overflow:visible}`
+  // Configurable embedded row cap (default 5 rows: N * 48px + 8px padding) with internal scrolling.
+  + `${DRAWER_SCROLL_ROOT} .hp-agents-group > div{max-height:calc(var(--dsh-remote-agent-rows,${DEFAULT_AGENT_BOARD_ROWS}) * 48px + 8px);overflow-y:auto}`
+  + `${DRAWER_SCROLL_ROOT} [data-hp-agents][${AGENTS_COLLAPSED_ATTRIBUTE}] .hp-agents-list{display:none}`
+  + `${DRAWER_SCROLL_ROOT} [data-hp-agents][${AGENTS_COLLAPSED_ATTRIBUTE}] .hp-agents-tile[aria-pressed="true"]{box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l2)}`
   + `${TASKS}{white-space:nowrap}`
   + `${TASKS} :is(h1,h2,h3,button,[class*="_rowSummary"],[class*="_metadata"],[class*="_nextRun"] p){white-space:nowrap}`
   + `${TASKS} :is([class*="_pageHeading"],[class*="_rowSummary"],[class*="_readonlyName"],[class*="_nextRun"] p,[class*="_empty"]){overflow-x:auto}`
@@ -231,6 +242,9 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + '[class*="_sessionRow"]{height:40px !important}'
   + '[class*="_sessionOverflowButton"]{height:36px !important}'
   + '[class*="_logoRow"] button[class*="_toggle"]{width:40px !important;height:40px !important}'
+  + `${CARD}{padding:2px;border-radius:14px}`
+  + `${CARD} + [class*="_groupSection"]{margin-top:6px !important}`
+  + `${CARD}[data-git-worktree-child]{margin-top:-2px !important}`
   + '}'
 
 /**

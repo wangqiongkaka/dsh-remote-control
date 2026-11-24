@@ -1,6 +1,6 @@
 /** Open and close the phone drawers with horizontal swipes. */
 
-import { DRAWER_WORKSPACE_SCROLL, GIT_HISTORY_REF } from './drawer-style.ts'
+import { AGENTS_COLLAPSED_ATTRIBUTE, DRAWER_WORKSPACE_SCROLL, GIT_HISTORY_REF } from './drawer-style.ts'
 import { EASE, SLOW } from '../narrow-style.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -561,18 +561,21 @@ function rubberBand(distance: number, limit: number): number {
 
 /**
  * Bounce the chat and the drawer's Workspace list past either end with progressive resistance;
- * only a chat's top pull loads earlier messages. Claims boundary pulls in the Workspace list from
+ * only a chat's top pull loads earlier messages, and pulling down past the top of a drawer
+ * Workspace list reveals a collapsed Agent board. Claims boundary pulls in the Workspace list from
  * the first pixel so WebKit's native rubber band never drags the pinned Agent board or bars along.
  */
 export function followVerticalPulls(): () => void {
   const THRESHOLD = 72
+  const EXPAND_THRESHOLD = 44
   const LIMIT = 64
   const DURATION = 320
   const REBOUND_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
   let start: {
     id: number; x: number; y: number; lastY: number
     scroller: HTMLElement; columns: HTMLElement[]; drawer: boolean
-    edgeY?: number | undefined; side?: 1 | -1 | undefined; distance: number; frameId: number; pending?: number | undefined
+    edgeY?: number | undefined; side?: 1 | -1 | undefined; distance: number; frameId: number
+    pending?: number | undefined; expanded?: boolean | undefined
   } | undefined
   let animated: HTMLElement[] = []
   let cleanupTimer: ReturnType<typeof setTimeout> | undefined
@@ -611,7 +614,10 @@ export function followVerticalPulls(): () => void {
     if (!scroller) return
     const chat = scroller.querySelector<HTMLElement>('[data-chat-flow]')
     const columns = chat ? [chat] : workspacePullColumns(scroller)
-    if (!columns.some(column => column.contains(target))) return
+    const inColumns = chat
+      ? columns.some(column => column.contains(target))
+      : columns.length > 0 && (target === scroller || columns.some(column => column.contains(target)))
+    if (!inColumns) return
     for (let element: Element | null = target; element !== null && element !== scroller; element = element.parentElement) {
       const horiz = element.scrollWidth > element.clientWidth
       const vert = element !== target && element.scrollHeight > element.clientHeight
@@ -632,6 +638,10 @@ export function followVerticalPulls(): () => void {
     if (event.touches.length !== 1 || !event.cancelable) { finish(false); return }
     const touch = event.touches[0]
     if (!touch || touch.identifier !== from.id) return
+    if (from.expanded) {
+      event.preventDefault()
+      return
+    }
     const dx = touch.clientX - from.x
     const dy = touch.clientY - from.y
     const prevY = from.lastY
@@ -669,6 +679,19 @@ export function followVerticalPulls(): () => void {
       return
     }
     event.preventDefault()
+    if (from.drawer && from.side === 1 && over >= EXPAND_THRESHOLD) {
+      const board = scroller.closest('[class*="_sidebarCol"]')?.querySelector<HTMLElement>(`[data-hp-agents][${AGENTS_COLLAPSED_ATTRIBUTE}]`)
+      if (board) {
+        if (from.frameId !== 0) { cancelAnimationFrame(from.frameId); from.frameId = 0 }
+        board.removeAttribute(AGENTS_COLLAPSED_ATTRIBUTE)
+        haptic()
+        from.distance = 0
+        from.pending = undefined
+        from.expanded = true
+        resetColumns(columns)
+        return
+      }
+    }
     const signed = over * from.side
     const firstPaint = from.distance === 0
     from.distance = signed
@@ -723,6 +746,79 @@ export function followVerticalPulls(): () => void {
     if (start?.distance) animated.push(...start.columns)
     start = undefined
     clearAnimation()
+  }
+}
+
+/**
+ * Fold the pinned Agent board's list down to its status tiles once the user browses upward in the
+ * Workspace list, freeing vertical space for Workspaces. Tapping any tile expands the list again;
+ * tapping the already active tile while expanded folds it manually.
+ */
+export function followAgentBoardCollapse(): () => void {
+  const TOUCH_COLLAPSE = 16
+  const SCROLL_COLLAPSE = 12
+  let drag: { id: number; x: number; y: number; scroller: HTMLElement } | undefined
+  const boardOf = (scroller: Element): HTMLElement | null =>
+    scroller.closest('[class*="_sidebarCol"]')?.querySelector<HTMLElement>('[data-hp-agents]') ?? null
+  const collapseFor = (scroller: Element): void => {
+    const board = boardOf(scroller)
+    if (board && !board.hasAttribute(AGENTS_COLLAPSED_ATTRIBUTE)) board.setAttribute(AGENTS_COLLAPSED_ATTRIBUTE, '')
+  }
+  const onStart = (event: TouchEvent): void => {
+    drag = undefined
+    const touch = event.touches[0]
+    if (event.touches.length !== 1 || touch === undefined || !(event.target instanceof Element)) return
+    const scroller = event.target.closest<HTMLElement>(DRAWER_WORKSPACE_SCROLL)
+    if (!scroller) return
+    drag = { id: touch.identifier, x: touch.clientX, y: touch.clientY, scroller }
+  }
+  const onMove = (event: TouchEvent): void => {
+    const from = drag
+    if (!from) return
+    const touch = event.touches[0]
+    if (event.touches.length !== 1 || touch === undefined || touch.identifier !== from.id) { drag = undefined; return }
+    const dx = touch.clientX - from.x
+    const dy = touch.clientY - from.y
+    if (dy <= -TOUCH_COLLAPSE && Math.abs(dy) >= Math.abs(dx) * 1.2) {
+      collapseFor(from.scroller)
+      drag = undefined
+    }
+  }
+  const onEnd = (): void => { drag = undefined }
+  const onScroll = (event: Event): void => {
+    const target = event.target
+    if (target instanceof HTMLElement && target.scrollTop >= SCROLL_COLLAPSE && target.matches(DRAWER_WORKSPACE_SCROLL)) {
+      collapseFor(target)
+    }
+  }
+  const onClick = (event: MouseEvent): void => {
+    if (!(event.target instanceof Element)) return
+    const tile = event.target.closest<HTMLElement>('[data-hp-agents] .hp-agents-tile')
+    const board = tile?.closest<HTMLElement>('[data-hp-agents]')
+    if (!tile || !board) return
+    if (board.hasAttribute(AGENTS_COLLAPSED_ATTRIBUTE)) {
+      board.removeAttribute(AGENTS_COLLAPSED_ATTRIBUTE)
+    } else if (tile.getAttribute('aria-pressed') === 'true') {
+      board.setAttribute(AGENTS_COLLAPSED_ATTRIBUTE, '')
+    }
+  }
+  document.addEventListener('touchstart', onStart, { passive: true })
+  document.addEventListener('touchmove', onMove, { passive: true })
+  document.addEventListener('touchend', onEnd, { passive: true })
+  document.addEventListener('touchcancel', onEnd, { passive: true })
+  document.addEventListener('scroll', onScroll, { capture: true, passive: true })
+  document.addEventListener('click', onClick, true)
+  return () => {
+    drag = undefined
+    document.removeEventListener('touchstart', onStart)
+    document.removeEventListener('touchmove', onMove)
+    document.removeEventListener('touchend', onEnd)
+    document.removeEventListener('touchcancel', onEnd)
+    document.removeEventListener('scroll', onScroll, true)
+    document.removeEventListener('click', onClick, true)
+    for (const board of document.querySelectorAll(`[${AGENTS_COLLAPSED_ATTRIBUTE}]`)) {
+      board.removeAttribute(AGENTS_COLLAPSED_ATTRIBUTE)
+    }
   }
 }
 

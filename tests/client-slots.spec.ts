@@ -2194,3 +2194,134 @@ it('ignores unrelated DOM subtree churn when tracking the last phone page', asyn
     })
   }
 })
+
+it('collapses the Agent board list when browsing workspaces and expands via status tiles or top pull-down', () => {
+  const proxy = document.createElement('style')
+  proxy.setAttribute('data-dsh-remote-control', '')
+  document.head.append(proxy)
+  const frame = document.createElement('div')
+  frame.className = 'ui_layout__frame__h1'
+  frame.innerHTML = '<div class="ui_layout__sidebarCol__h1"><div class="ui_sidebar__root__h1">'
+    + '<div class="ui_sidebar__logoRow__h1"><button>收起</button></div>'
+    + '<div class="ui_sidebar__newSessionRow__h1"><div data-hp-agents><section class="hp-agents-card">'
+    + '<div class="hp-agents-tiles">'
+    + '<button class="hp-agents-tile" data-state="running" aria-pressed="false">运行中</button>'
+    + '<button class="hp-agents-tile" data-state="done" aria-pressed="true">已完成</button>'
+    + '</div><div class="hp-agents-list"><div class="hp-agents-group"><div><button>条目</button></div></div></div>'
+    + '</section></div></div>'
+    + '<div class="kB3qhq_scrollRegion"><div class="kB3qhq_scrollArea">'
+    + '<nav class="ui_sidebar__panelList__h1"><button>插件</button></nav>'
+    + '<div class="ui_sidebar__regionArea__h1"><div class="ui_workspace__root__h1">'
+    + '<div class="ui_workspace__sectionHeader__h1">工作区</div>'
+    + '<div class="ui_workspace__listArea__h1"><div class="ui_workspace__treeBody__h1">'
+    + '<button data-project>项目</button></div></div></div></div></div></div>'
+    + '<div class="ui_sidebar__footArea__h1"><button>设置</button></div></div></div>'
+  document.body.append(frame)
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (query: string) => ({ matches: !query.includes('prefers-reduced-motion'), addEventListener: () => {}, removeEventListener: () => {} }),
+  })
+  const board = frame.querySelector<HTMLElement>('[data-hp-agents]')!
+  const runningTile = frame.querySelector<HTMLButtonElement>('[data-state="running"]')!
+  const doneTile = frame.querySelector<HTMLButtonElement>('[data-state="done"]')!
+  const listArea = frame.querySelector<HTMLElement>('.ui_workspace__listArea__h1')!
+  const tree = frame.querySelector<HTMLElement>('.ui_workspace__treeBody__h1')!
+  const project = frame.querySelector<HTMLElement>('[data-project]')!
+  Object.defineProperties(listArea, { scrollHeight: { value: 900 }, clientHeight: { value: 400 } })
+  const collapsed = (): boolean => board.hasAttribute('data-dsh-remote-agents-collapsed')
+  const selectTile = (tile: HTMLButtonElement): void => {
+    for (const item of [runningTile, doneTile]) item.setAttribute('aria-pressed', String(item === tile))
+  }
+  runningTile.addEventListener('click', () => { selectTile(runningTile) })
+  doneTile.addEventListener('click', () => { selectTile(doneTile) })
+  const touch = (element: Element, type: string, x: number, y: number): Event => {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    const point = { identifier: 0, clientX: x, clientY: y }
+    Object.defineProperties(event, {
+      touches: { value: type === 'touchend' ? [] : [point] },
+      changedTouches: { value: [point] },
+    })
+    element.dispatchEvent(event)
+    return event
+  }
+  const disposers: (() => void)[] = []
+  try {
+    apply(context(slots(), disposers))
+    expect(collapsed()).toBe(false)
+
+    // Horizontal swipe in workspaces does not collapse the Agent board.
+    touch(project, 'touchstart', 200, 200)
+    touch(project, 'touchmove', 120, 200)
+    touch(project, 'touchend', 120, 200)
+    expect(collapsed()).toBe(false)
+
+    // Browsing upward in the workspace list automatically collapses the Agent list to tiles only.
+    touch(project, 'touchstart', 160, 300)
+    touch(project, 'touchmove', 160, 270)
+    touch(project, 'touchend', 160, 270)
+    expect(collapsed()).toBe(true)
+
+    // Scrolling back to top keeps it collapsed so the first workspace does not jump under the thumb.
+    listArea.scrollTop = 0
+    listArea.dispatchEvent(new Event('scroll'))
+    expect(collapsed()).toBe(true)
+
+    // A short downward tug at the top stays collapsed and rebounds normally.
+    touch(project, 'touchstart', 160, 100)
+    expect(touch(project, 'touchmove', 160, 124).defaultPrevented).toBe(true)
+    expect(collapsed()).toBe(true)
+    touch(project, 'touchend', 160, 124)
+    expect(collapsed()).toBe(true)
+
+    // Continuing to pull down at the top past the reveal threshold expands the Agent board cleanly.
+    touch(project, 'touchstart', 160, 100)
+    expect(touch(project, 'touchmove', 160, 152).defaultPrevented).toBe(true)
+    expect(collapsed()).toBe(false)
+    expect(tree.style.transform).toBe('')
+    touch(project, 'touchend', 160, 152)
+    expect(collapsed()).toBe(false)
+
+    // Tapping the already-active tile while expanded manually collapses the list.
+    doneTile.click()
+    expect(collapsed()).toBe(true)
+
+    // Scrolling down to the top in one continuous drag and continuing past the top edge expands it too.
+    listArea.scrollTop = 80
+    touch(project, 'touchstart', 160, 100)
+    expect(touch(project, 'touchmove', 160, 180).defaultPrevented).toBe(false)
+    expect(collapsed()).toBe(true)
+    listArea.scrollTop = 0
+    expect(touch(project, 'touchmove', 160, 232).defaultPrevented).toBe(true)
+    expect(collapsed()).toBe(false)
+    expect(tree.style.transform).toBe('')
+    touch(project, 'touchend', 160, 232)
+
+    // Tapping a different tile while collapsed expands the list onto that filter.
+    doneTile.click()
+    expect(collapsed()).toBe(true)
+    runningTile.click()
+    expect(collapsed()).toBe(false)
+    expect(runningTile.getAttribute('aria-pressed')).toBe('true')
+
+    // Switching to another tile while expanded keeps the list open.
+    doneTile.click()
+    expect(collapsed()).toBe(false)
+    expect(doneTile.getAttribute('aria-pressed')).toBe('true')
+
+    // Programmatic/native scrolling down in the workspace list also collapses the board.
+    listArea.scrollTop = 24
+    listArea.dispatchEvent(new Event('scroll'))
+    expect(collapsed()).toBe(true)
+
+    for (const dispose of disposers.splice(0)) dispose()
+    expect(collapsed()).toBe(false)
+  } finally {
+    for (const dispose of disposers) dispose()
+    proxy.remove()
+    frame.remove()
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
+    })
+  }
+})

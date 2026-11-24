@@ -16,7 +16,7 @@ import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
-import { phoneDocument, remoteErrorDocument } from './phone-document.ts'
+import { DEFAULT_AGENT_BOARD_ROWS, phoneDocument, remoteErrorDocument } from './phone-document.ts'
 import { computerFiles } from './remote-files.ts'
 import { notificationSettings, pushBark, watchSessions, type BarkConfig } from './notify.ts'
 
@@ -46,6 +46,8 @@ export interface Config {
   stopTimeoutMs: number
   /** How long a phone's live stream may send nothing before it counts as gone. */
   phoneSilenceMs: number
+  /** Maximum visible rows in the phone Agent board list before scrolling inside. */
+  agentBoardRows: number
 }
 
 const SSH_DESTINATION = /^(?:[A-Za-z0-9_][A-Za-z0-9_.-]*@)?(?:[A-Za-z0-9_][A-Za-z0-9_.-]*|[A-Fa-f0-9:]+|\[[A-Fa-f0-9:]+\])$/u
@@ -68,6 +70,7 @@ export const Config: z<Config> = z.object({
   startupTimeoutMs: z.natural().min(1_000).default(30_000),
   stopTimeoutMs: z.natural().min(1_000).default(5_000),
   phoneSilenceMs: z.natural().min(1_000).default(60_000),
+  agentBoardRows: z.natural().min(1).default(DEFAULT_AGENT_BOARD_ROWS),
 })
 
 /** Public proxy plus the upgraded sockets `closeAllConnections()` does not reach. */
@@ -203,7 +206,7 @@ function loopbackHeaders(headers: IncomingHttpHeaders, port: number, dshCookie: 
 const HTML_LIMIT = 512 * 1024
 
 /** Forward a document with the narrow-screen layer after `<head>`. */
-function sendHtml(reply: IncomingMessage, res: ServerResponse, headers: IncomingHttpHeaders): void {
+function sendHtml(reply: IncomingMessage, res: ServerResponse, headers: IncomingHttpHeaders, agentBoardRows: number): void {
   const chunks: Buffer[] = []
   let size = 0
   let streamed = false
@@ -231,7 +234,7 @@ function sendHtml(reply: IncomingMessage, res: ServerResponse, headers: Incoming
       return
     }
     const body = Buffer.concat(chunks).toString('utf8')
-    const out = Buffer.from(phoneDocument(body), 'utf8')
+    const out = Buffer.from(phoneDocument(body, { agentBoardRows }), 'utf8')
     const rewritten: IncomingHttpHeaders = { ...headers, 'content-length': String(out.length) }
     delete rewritten['transfer-encoding']
     res.writeHead(reply.statusCode ?? 502, rewritten)
@@ -240,7 +243,9 @@ function sendHtml(reply: IncomingMessage, res: ServerResponse, headers: Incoming
 }
 
 /** Forward an admitted browser request to the existing loopback Web server. */
-function forward(req: IncomingMessage, res: ServerResponse, port: number, dshCookie: string): void {
+function forward(
+  req: IncomingMessage, res: ServerResponse, port: number, dshCookie: string, agentBoardRows: number,
+): void {
   const headers = { ...req.headers }
   for (const field of req.headers.connection?.split(',') ?? []) delete headers[field.trim().toLowerCase()]
   delete headers.connection
@@ -261,7 +266,7 @@ function forward(req: IncomingMessage, res: ServerResponse, port: number, dshCoo
     delete responseHeaders['set-cookie']
     delete responseHeaders.connection
     if (req.method === 'GET' && String(reply.headers['content-type'] ?? '').includes('text/html')) {
-      sendHtml(reply, res, responseHeaders)
+      sendHtml(reply, res, responseHeaders, agentBoardRows)
       return
     }
     res.writeHead(reply.statusCode ?? 502, responseHeaders)
@@ -478,7 +483,7 @@ function browserProxy(baseUrl: string, dshPort: number, dshCookie: string, confi
     if (config.browserTtlMs === 0) res.setHeader('set-cookie', browserCookie(cookieValue(req.headers.cookie) ?? ''))
     responses.add(res)
     res.once('close', () => { responses.delete(res) })
-    forward(req, res, dshPort, dshCookie)
+    forward(req, res, dshPort, dshCookie, config.agentBoardRows)
   })
   server.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     socket.on('error', () => { socket.destroy() })

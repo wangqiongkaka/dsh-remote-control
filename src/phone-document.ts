@@ -2,6 +2,15 @@
 
 import { NARROW_SCREEN_STYLE } from './narrow-style.ts'
 
+/** Default visible rows in the phone Agent board list before scrolling inside. */
+export const DEFAULT_AGENT_BOARD_ROWS = 5
+
+/** Optional per-instance settings written into the rewritten phone document. */
+export interface PhoneDocumentOptions {
+  /** Maximum visible rows in the phone Agent board list before scrolling inside. */
+  agentBoardRows?: number | undefined
+}
+
 /** Viewport meta for documents that ship none, with the soft-keyboard hint Chromium honors. */
 export const VIEWPORT_META = '<meta name="viewport" content="width=device-width, initial-scale=1, '
   + 'interactive-widget=resizes-content, viewport-fit=cover">'
@@ -53,10 +62,14 @@ export function keyboardViewport(body: string): string {
  * @param body - the document text.
  * @returns the rewritten document.
  */
-export function phoneDocument(body: string): string {
+export function phoneDocument(body: string, options?: PhoneDocumentOptions): string {
   const patched = keyboardViewport(body)
   const head = /<head[^>]*>/iu.exec(patched)
   const at = head === null ? 0 : head.index + head[0].length
   const meta = VIEWPORT_TAG.test(patched) ? '' : VIEWPORT_META
-  return patched.slice(0, at) + meta + NARROW_SCREEN_STYLE + patched.slice(at)
+  const rows = options?.agentBoardRows
+  const configStyle = rows !== undefined && Number.isInteger(rows) && rows >= 1
+    ? `<style data-dsh-remote-control-config>:root{--dsh-remote-agent-rows:${rows}}</style>`
+    : ''
+  return patched.slice(0, at) + meta + NARROW_SCREEN_STYLE + configStyle + patched.slice(at)
 }

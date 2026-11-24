@@ -200,6 +200,8 @@ it('raises the drawer rows to touch height at phone width', () => {
   expect(phone).toContain('[class*="_sessionRow"]{height:40px !important}')
   expect(phone).toContain('[class*="_sessionOverflowButton"]{height:36px !important}')
   expect(phone).toContain('[class*="_logoRow"] button[class*="_toggle"]{width:40px !important;height:40px !important}')
+  expect(phone).toContain('[class*="_sidebarCol"] [role="tree"] > [class*="_groupSection"]{padding:2px;border-radius:14px}')
+  expect(phone).toContain('[class*="_sidebarCol"] [role="tree"] > [class*="_groupSection"] + [class*="_groupSection"]{margin-top:6px !important}')
   dispose()
 })
 
@@ -321,10 +323,20 @@ it.each([false, true])('pins the Agent board at the top and scrolls only the Wor
     expect(style('.ui_sidebar__root__h1').overflowY).toBe('hidden')
     expect(style('.ui_sidebar__logoRow__h1').gridRow).toBe('1')
     expect(style(installed ? '.ui_sidebar__newSessionRow__h1' : '[data-hp-agents]').gridRow).toBe('2')
+    expect(style('.hp-agents-head').display).toBe('none')
+    expect(style('.hp-agents-group h3').display).toBe('none')
+    expect(style('.hp-agents-tile').height).toBe('48px')
+    expect(style('.ui_sidebar__logoRow__h1').boxSizing).toBe('border-box')
     expect(style('.hp-agents-list').overflow).toBe('visible')
     expect(style('.hp-agents-list').maxHeight).toBe('none')
     expect(style('.hp-agents-group > div').overflowY).toBe('auto')
-    expect(style('.hp-agents-group > div').maxHeight).toBe('248px')
+    expect(style('.hp-agents-group > div').maxHeight).toBe('calc(var(--dsh-remote-agent-rows,5) * 48px + 8px)')
+    // Collapsed board hides its list while keeping the status tiles pinned.
+    const board = frame.querySelector('[data-hp-agents]')!
+    board.setAttribute('data-dsh-remote-agents-collapsed', '')
+    expect(style('.hp-agents-list').display).toBe('none')
+    board.removeAttribute('data-dsh-remote-agents-collapsed')
+    expect(style('.hp-agents-list').display).not.toBe('none')
     // Only the Workspace list area scrolls beneath the pinned Agent board and Workspace header.
     expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('0px')
     expect(style('.ui_workspace__root__h1').maxHeight).toBe('none')

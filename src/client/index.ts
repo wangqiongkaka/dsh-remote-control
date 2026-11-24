@@ -14,7 +14,7 @@ import { followKeyboard } from './keyboard.ts'
 import { applyDrawerSelection } from './drawer-style.ts'
 import { compactChatDefaults } from './chat-defaults.ts'
 import { hideModelsSettings } from './settings-models.ts'
-import { followVerticalPulls, followSidebarSwipes, followRowHolds, followStripPulls, followLastPage } from './sidebar-swipe.ts'
+import { followVerticalPulls, followSidebarSwipes, followRowHolds, followStripPulls, followLastPage, followAgentBoardCollapse } from './sidebar-swipe.ts'
 import { en, NS, zh, type RemoteControlKey } from './locales.ts'
 import { registerComputerDirectories, registerComputerFiles } from './ComputerFiles.tsx'
 import { registerSessionNotifications } from './SessionNotifications.tsx'
@@ -102,6 +102,7 @@ export function apply(ctx: Context): void {
     let selection: (() => void) | undefined
     let swipes: (() => void) | undefined
     let pulls: (() => void) | undefined
+    let boardCollapse: (() => void) | undefined
     let strips: (() => void) | undefined
     let models: (() => void) | undefined
     let landing: (() => void) | undefined
@@ -116,6 +117,8 @@ export function apply(ctx: Context): void {
       swipes = phone ? followSidebarSwipes(() => { ctx.layout.toggleSidebar() }) : undefined
       pulls?.()
       pulls = phone ? followVerticalPulls() : undefined
+      boardCollapse?.()
+      boardCollapse = phone ? followAgentBoardCollapse() : undefined
       strips?.()
       strips = phone ? followStripPulls() : undefined
       models?.()
@@ -133,6 +136,7 @@ export function apply(ctx: Context): void {
       selection?.()
       swipes?.()
       pulls?.()
+      boardCollapse?.()
       strips?.()
       models?.()
       landing?.()

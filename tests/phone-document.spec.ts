@@ -236,3 +236,13 @@ it('leaves a viewport meta without a content attribute alone', () => {
   const odd = '<head><meta name="viewport"></head>'
   expect(keyboardViewport(odd)).toBe(odd)
 })
+
+it('injects the configured Agent board row limit into the proxied document', () => {
+  expect(phoneDocument('<head></head>')).not.toContain('data-dsh-remote-control-config')
+  const custom = phoneDocument('<head></head>', { agentBoardRows: 3 })
+  expect(custom).toContain('<style data-dsh-remote-control-config>:root{--dsh-remote-agent-rows:3}</style>')
+  const fallback = phoneDocument('<head></head>', { agentBoardRows: 5 })
+  expect(fallback).toContain('<style data-dsh-remote-control-config>:root{--dsh-remote-agent-rows:5}</style>')
+  expect(phoneDocument('<head></head>', { agentBoardRows: 0 })).not.toContain('data-dsh-remote-control-config')
+  expect(phoneDocument('<head></head>', { agentBoardRows: 2.5 })).not.toContain('data-dsh-remote-control-config')
+})
