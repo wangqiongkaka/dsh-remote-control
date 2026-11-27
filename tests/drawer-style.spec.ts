@@ -334,14 +334,23 @@ it.each([false, true])('pins the Agent board at the top and scrolls only the Wor
     expect(style('.ui_sidebar__logoRow__h1').boxSizing).toBe('border-box')
     expect(style('.hp-agents-list').overflow).toBe('visible')
     expect(style('.hp-agents-list').maxHeight).toBe('none')
+    expect(style('.hp-agents-group').flexShrink).toBe('0')
     expect(style('.hp-agents-group > div').overflowY).toBe('auto')
     expect(style('.hp-agents-group > div').maxHeight).toBe('calc(var(--dsh-remote-agent-rows,5) * 48px + 8px)')
-    // Collapsed board hides its list while keeping the status tiles pinned.
+    // Collapsed board hides its list via zero height and opacity so progressive drag can measure and animate it.
     const board = frame.querySelector('[data-hp-agents]')!
     board.setAttribute('data-dsh-remote-agents-collapsed', '')
-    expect(style('.hp-agents-list').display).toBe('none')
+    expect(style('.hp-agents-list').height).toBe('0px')
+    expect(style('.hp-agents-list').maxHeight).toBe('0px')
+    expect(style('.hp-agents-list').marginTop).toBe('-6px')
+    expect(style('.hp-agents-list').opacity).toBe('0')
+    expect(style('.hp-agents-list').overflow).toBe('hidden')
+    expect(style('.hp-agents-list').visibility).toBe('hidden')
+    expect(style('.hp-agents-list').pointerEvents).toBe('none')
     board.removeAttribute('data-dsh-remote-agents-collapsed')
-    expect(style('.hp-agents-list').display).not.toBe('none')
+    expect(style('.hp-agents-list').maxHeight).toBe('none')
+    expect(style('.hp-agents-list').opacity).not.toBe('0')
+    expect(style('.hp-agents-list').visibility).not.toBe('hidden')
     // Only the Workspace list area scrolls beneath the pinned Agent board and Workspace header.
     expect(style('.ui_sidebar__regionArea__h1').minHeight).toBe('0px')
     expect(style('.ui_workspace__root__h1').maxHeight).toBe('none')

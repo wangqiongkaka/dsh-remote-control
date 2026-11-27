@@ -2195,7 +2195,8 @@ it('ignores unrelated DOM subtree churn when tracking the last phone page', asyn
   }
 })
 
-it('collapses the Agent board list when browsing workspaces and expands via status tiles or top pull-down', () => {
+it('progressively collapses and expands the Agent board list with drag progress, snap thresholds and tile transitions', () => {
+  vi.useFakeTimers()
   const proxy = document.createElement('style')
   proxy.setAttribute('data-dsh-remote-control', '')
   document.head.append(proxy)
@@ -2222,12 +2223,15 @@ it('collapses the Agent board list when browsing workspaces and expands via stat
     value: (query: string) => ({ matches: !query.includes('prefers-reduced-motion'), addEventListener: () => {}, removeEventListener: () => {} }),
   })
   const board = frame.querySelector<HTMLElement>('[data-hp-agents]')!
+  const list = frame.querySelector<HTMLElement>('.hp-agents-list')!
   const runningTile = frame.querySelector<HTMLButtonElement>('[data-state="running"]')!
   const doneTile = frame.querySelector<HTMLButtonElement>('[data-state="done"]')!
   const listArea = frame.querySelector<HTMLElement>('.ui_workspace__listArea__h1')!
   const tree = frame.querySelector<HTMLElement>('.ui_workspace__treeBody__h1')!
   const project = frame.querySelector<HTMLElement>('[data-project]')!
   Object.defineProperties(listArea, { scrollHeight: { value: 900 }, clientHeight: { value: 400 } })
+  Object.defineProperties(list, { scrollHeight: { value: 200 } })
+  list.getBoundingClientRect = () => ({ height: 200, width: 320, top: 0, left: 0, right: 320, bottom: 200, x: 0, y: 0, toJSON: () => ({}) })
   const collapsed = (): boolean => board.hasAttribute('data-dsh-remote-agents-collapsed')
   const selectTile = (tile: HTMLButtonElement): void => {
     for (const item of [runningTile, doneTile]) item.setAttribute('aria-pressed', String(item === tile))
@@ -2249,59 +2253,131 @@ it('collapses the Agent board list when browsing workspaces and expands via stat
     apply(context(slots(), disposers))
     expect(collapsed()).toBe(false)
 
-    // Horizontal swipe in workspaces does not collapse the Agent board.
+    // Horizontal swipe in workspaces does not collapse or partially fade the Agent board.
     touch(project, 'touchstart', 200, 200)
     touch(project, 'touchmove', 120, 200)
     touch(project, 'touchend', 120, 200)
     expect(collapsed()).toBe(false)
+    expect(list.style.opacity).toBe('')
 
-    // Browsing upward in the workspace list automatically collapses the Agent list to tiles only.
+    // Slow partial upward drag (< 1/3) gradually shrinks and fades the list, then springs back open on release.
     touch(project, 'touchstart', 160, 300)
-    touch(project, 'touchmove', 160, 270)
-    touch(project, 'touchend', 160, 270)
+    vi.advanceTimersByTime(100)
+    expect(touch(project, 'touchmove', 160, 250).defaultPrevented).toBe(true)
+    expect(collapsed()).toBe(false)
+    expect(parseFloat(list.style.height)).toBeCloseTo(150, 0)
+    expect(parseFloat(list.style.opacity)).toBeCloseTo(0.75, 2)
+    expect(parseFloat(list.style.marginTop)).toBeCloseTo(-1.5, 1)
+    vi.advanceTimersByTime(120)
+    touch(project, 'touchend', 160, 250)
+    expect(collapsed()).toBe(false)
+    expect(list.style.transition).toContain('opacity')
+    vi.advanceTimersByTime(300)
+    expect(list.style.height).toBe('')
+    expect(list.style.opacity).toBe('')
+
+    // Dragging upward past 1/3 smoothly snaps closed on release.
+    touch(project, 'touchstart', 160, 300)
+    vi.advanceTimersByTime(100)
+    touch(project, 'touchmove', 160, 200)
+    expect(collapsed()).toBe(false)
+    expect(parseFloat(list.style.height)).toBeCloseTo(100, 0)
+    expect(parseFloat(list.style.opacity)).toBeCloseTo(0.5, 2)
+    vi.advanceTimersByTime(120)
+    touch(project, 'touchend', 160, 200)
     expect(collapsed()).toBe(true)
+    expect(list.style.height).toBe('0px')
+    expect(list.style.opacity).toBe('0')
+    vi.advanceTimersByTime(300)
+    expect(list.style.height).toBe('')
 
     // Scrolling back to top keeps it collapsed so the first workspace does not jump under the thumb.
     listArea.scrollTop = 0
     listArea.dispatchEvent(new Event('scroll'))
     expect(collapsed()).toBe(true)
 
-    // A short downward tug at the top stays collapsed and rebounds normally.
+    // Short slow downward pull at the top (< 1/3) progressively previews the list without rubber-banding workspaces, then rebounds closed.
     touch(project, 'touchstart', 160, 100)
-    expect(touch(project, 'touchmove', 160, 124).defaultPrevented).toBe(true)
+    vi.advanceTimersByTime(100)
+    expect(touch(project, 'touchmove', 160, 140).defaultPrevented).toBe(true)
     expect(collapsed()).toBe(true)
-    touch(project, 'touchend', 160, 124)
-    expect(collapsed()).toBe(true)
-
-    // Continuing to pull down at the top past the reveal threshold expands the Agent board cleanly.
-    touch(project, 'touchstart', 160, 100)
-    expect(touch(project, 'touchmove', 160, 152).defaultPrevented).toBe(true)
-    expect(collapsed()).toBe(false)
     expect(tree.style.transform).toBe('')
-    touch(project, 'touchend', 160, 152)
-    expect(collapsed()).toBe(false)
-
-    // Tapping the already-active tile while expanded manually collapses the list.
-    doneTile.click()
+    expect(parseFloat(list.style.height)).toBeCloseTo(40, 0)
+    expect(parseFloat(list.style.opacity)).toBeCloseTo(0.2, 2)
+    vi.advanceTimersByTime(120)
+    touch(project, 'touchend', 160, 140)
     expect(collapsed()).toBe(true)
+    vi.advanceTimersByTime(300)
+    expect(list.style.height).toBe('')
 
-    // Scrolling down to the top in one continuous drag and continuing past the top edge expands it too.
+    // Pulling down past 1/3 progressively reveals the list and snaps open on release.
+    touch(project, 'touchstart', 160, 100)
+    vi.advanceTimersByTime(100)
+    expect(touch(project, 'touchmove', 160, 190).defaultPrevented).toBe(true)
+    expect(parseFloat(list.style.height)).toBeCloseTo(90, 0)
+    expect(parseFloat(list.style.opacity)).toBeCloseTo(0.45, 2)
+    expect(tree.style.transform).toBe('')
+    vi.advanceTimersByTime(120)
+    touch(project, 'touchend', 160, 190)
+    expect(collapsed()).toBe(false)
+    vi.advanceTimersByTime(300)
+    expect(list.style.height).toBe('')
+
+    // Fast upward fling collapses even below the 1/3 distance threshold.
+    touch(project, 'touchstart', 160, 300)
+    vi.advanceTimersByTime(16)
+    touch(project, 'touchmove', 160, 270)
+    touch(project, 'touchend', 160, 270)
+    expect(collapsed()).toBe(true)
+    vi.advanceTimersByTime(300)
+
+    // Fast downward fling at top expands even below the 1/3 distance threshold.
+    touch(project, 'touchstart', 160, 100)
+    vi.advanceTimersByTime(16)
+    touch(project, 'touchmove', 160, 130)
+    touch(project, 'touchend', 160, 130)
+    expect(collapsed()).toBe(false)
+    vi.advanceTimersByTime(300)
+
+    // Dragging upward past full height finishes collapsing and forwards overflow scroll to the workspace list.
+    listArea.scrollTop = 0
+    touch(project, 'touchstart', 160, 360)
+    vi.advanceTimersByTime(100)
+    touch(project, 'touchmove', 160, 120)
+    expect(listArea.scrollTop).toBeGreaterThan(0)
+    touch(project, 'touchend', 160, 120)
+    expect(collapsed()).toBe(true)
+    vi.advanceTimersByTime(300)
+
+    // Scrolling down to the top in one continuous drag and continuing past the top edge expands progressively.
     listArea.scrollTop = 80
     touch(project, 'touchstart', 160, 100)
+    vi.advanceTimersByTime(50)
     expect(touch(project, 'touchmove', 160, 180).defaultPrevented).toBe(false)
     expect(collapsed()).toBe(true)
     listArea.scrollTop = 0
-    expect(touch(project, 'touchmove', 160, 232).defaultPrevented).toBe(true)
-    expect(collapsed()).toBe(false)
+    vi.advanceTimersByTime(50)
+    expect(touch(project, 'touchmove', 160, 260).defaultPrevented).toBe(true)
+    expect(parseFloat(list.style.height)).toBeCloseTo(80, 0)
     expect(tree.style.transform).toBe('')
-    touch(project, 'touchend', 160, 232)
+    vi.advanceTimersByTime(120)
+    touch(project, 'touchend', 160, 260)
+    expect(collapsed()).toBe(false)
+    vi.advanceTimersByTime(300)
 
-    // Tapping a different tile while collapsed expands the list onto that filter.
+    // Tapping the already-active tile while expanded smoothly collapses the list.
     doneTile.click()
     expect(collapsed()).toBe(true)
+    expect(list.style.transition).toContain('opacity')
+    vi.advanceTimersByTime(300)
+    expect(list.style.height).toBe('')
+
+    // Tapping a different tile while collapsed expands the list onto that filter.
     runningTile.click()
     expect(collapsed()).toBe(false)
     expect(runningTile.getAttribute('aria-pressed')).toBe('true')
+    vi.advanceTimersByTime(300)
+    expect(list.style.height).toBe('')
 
     // Switching to another tile while expanded keeps the list open.
     doneTile.click()
@@ -2312,10 +2388,13 @@ it('collapses the Agent board list when browsing workspaces and expands via stat
     listArea.scrollTop = 24
     listArea.dispatchEvent(new Event('scroll'))
     expect(collapsed()).toBe(true)
+    vi.advanceTimersByTime(300)
 
     for (const dispose of disposers.splice(0)) dispose()
     expect(collapsed()).toBe(false)
+    expect(list.style.height).toBe('')
   } finally {
+    vi.useRealTimers()
     for (const dispose of disposers) dispose()
     proxy.remove()
     frame.remove()

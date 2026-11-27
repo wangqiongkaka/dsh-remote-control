@@ -559,15 +559,21 @@ function rubberBand(distance: number, limit: number): number {
   return Math.sign(distance) * ((abs * limit * 0.55) / (limit + abs * 0.55))
 }
 
+/** Find the sidebar's Agent board and its collapsible session list, if mounted. */
+function agentBoardParts(scroller: Element): { board: HTMLElement; list: HTMLElement } | null {
+  const board = scroller.closest('[class*="_sidebarCol"]')?.querySelector<HTMLElement>('[data-hp-agents]')
+  const list = board?.querySelector<HTMLElement>('.hp-agents-list')
+  return board && list ? { board, list } : null
+}
+
 /**
  * Bounce the chat and the drawer's Workspace list past either end with progressive resistance;
- * only a chat's top pull loads earlier messages, and pulling down past the top of a drawer
- * Workspace list reveals a collapsed Agent board. Claims boundary pulls in the Workspace list from
- * the first pixel so WebKit's native rubber band never drags the pinned Agent board or bars along.
+ * only a chat's top pull loads earlier messages. Yields drawer edge drags that progressively
+ * collapse or expand the pinned Agent board to `followAgentBoardCollapse`. Claims boundary pulls
+ * in the Workspace list from the first pixel so WebKit's native rubber band never drags pinned bars.
  */
 export function followVerticalPulls(): () => void {
   const THRESHOLD = 72
-  const EXPAND_THRESHOLD = 44
   const LIMIT = 64
   const DURATION = 320
   const REBOUND_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
@@ -575,7 +581,7 @@ export function followVerticalPulls(): () => void {
     id: number; x: number; y: number; lastY: number
     scroller: HTMLElement; columns: HTMLElement[]; drawer: boolean
     edgeY?: number | undefined; side?: 1 | -1 | undefined; distance: number; frameId: number
-    pending?: number | undefined; expanded?: boolean | undefined
+    pending?: number | undefined
   } | undefined
   let animated: HTMLElement[] = []
   let cleanupTimer: ReturnType<typeof setTimeout> | undefined
@@ -638,10 +644,6 @@ export function followVerticalPulls(): () => void {
     if (event.touches.length !== 1 || !event.cancelable) { finish(false); return }
     const touch = event.touches[0]
     if (!touch || touch.identifier !== from.id) return
-    if (from.expanded) {
-      event.preventDefault()
-      return
-    }
     const dx = touch.clientX - from.x
     const dy = touch.clientY - from.y
     const prevY = from.lastY
@@ -654,9 +656,14 @@ export function followVerticalPulls(): () => void {
       const pullDown = stepY > 0 && atTop
       const pullUp = stepY < 0 && atBottom
       if (!pullDown && !pullUp) return
-      // In the drawer, claim boundary pulls from the first pixel so WebKit's native rubber band
-      // never starts and drags sticky headers/footers along.
+      // In the drawer, yield pulls that expand a collapsed board or collapse an open board,
+      // and claim remaining boundary pulls from the first pixel against WebKit rubber-band.
       if (from.drawer) {
+        const parts = agentBoardParts(scroller)
+        if (parts) {
+          const isCollapsed = parts.board.hasAttribute(AGENTS_COLLAPSED_ATTRIBUTE)
+          if ((pullDown && isCollapsed) || (pullUp && !isCollapsed)) return
+        }
         if (Math.abs(dy) < Math.abs(dx)) return
       } else if (Math.abs(dy) < 8 || Math.abs(dy) < Math.abs(dx) * 1.2) {
         return
@@ -679,19 +686,6 @@ export function followVerticalPulls(): () => void {
       return
     }
     event.preventDefault()
-    if (from.drawer && from.side === 1 && over >= EXPAND_THRESHOLD) {
-      const board = scroller.closest('[class*="_sidebarCol"]')?.querySelector<HTMLElement>(`[data-hp-agents][${AGENTS_COLLAPSED_ATTRIBUTE}]`)
-      if (board) {
-        if (from.frameId !== 0) { cancelAnimationFrame(from.frameId); from.frameId = 0 }
-        board.removeAttribute(AGENTS_COLLAPSED_ATTRIBUTE)
-        haptic()
-        from.distance = 0
-        from.pending = undefined
-        from.expanded = true
-        resetColumns(columns)
-        return
-      }
-    }
     const signed = over * from.side
     const firstPaint = from.distance === 0
     from.distance = signed
@@ -750,74 +744,294 @@ export function followVerticalPulls(): () => void {
 }
 
 /**
- * Fold the pinned Agent board's list down to its status tiles once the user browses upward in the
- * Workspace list, freeing vertical space for Workspaces. Tapping any tile expands the list again;
- * tapping the already active tile while expanded folds it manually.
+ * Progressively collapse and expand the pinned Agent board's session list in step with vertical
+ * Workspace drags, snapping cleanly past a third or on a fling. Tapping a status tile smoothly
+ * expands the list (or collapses it when tapping the already-active tile).
  */
 export function followAgentBoardCollapse(): () => void {
-  const TOUCH_COLLAPSE = 16
+  const SLOP = 4
   const SCROLL_COLLAPSE = 12
-  let drag: { id: number; x: number; y: number; scroller: HTMLElement } | undefined
-  const boardOf = (scroller: Element): HTMLElement | null =>
-    scroller.closest('[class*="_sidebarCol"]')?.querySelector<HTMLElement>('[data-hp-agents]') ?? null
-  const collapseFor = (scroller: Element): void => {
-    const board = boardOf(scroller)
-    if (board && !board.hasAttribute(AGENTS_COLLAPSED_ATTRIBUTE)) board.setAttribute(AGENTS_COLLAPSED_ATTRIBUTE, '')
+  const CARD_GAP = 6
+  const DURATION = 240
+  const SNAP_RATIO = 1 / 3
+  const STALE_VELOCITY = 80
+  const BOARD_EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
+  const TRANSITION = `height ${DURATION}ms ${BOARD_EASE}, max-height ${DURATION}ms ${BOARD_EASE}, margin-top ${DURATION}ms ${BOARD_EASE}, opacity ${DURATION}ms ${BOARD_EASE}`
+  const STYLE_PROPS = ['height', 'max-height', 'margin-top', 'opacity', 'overflow', 'visibility', 'pointer-events', 'transition', 'will-change'] as const
+  let drag: {
+    id: number; x: number; y: number; lastY: number; prevY: number; prevT: number; lastT: number
+    scroller: HTMLElement; board: HTMLElement; list: HTMLElement; height: number
+    startOpen: boolean; openness: number; active: boolean; painted: boolean
+    frameId: number; pending?: number | undefined
+  } | undefined
+  let settling: {
+    list: HTMLElement; height: number; timer?: ReturnType<typeof setTimeout> | undefined; frameId?: number | undefined
+  } | undefined
+  const clearListStyle = (list: HTMLElement): void => {
+    for (const prop of STYLE_PROPS) list.style.removeProperty(prop)
+  }
+  const stopSettling = (clear: boolean): void => {
+    if (!settling) return
+    if (settling.timer !== undefined) clearTimeout(settling.timer)
+    if (settling.frameId !== undefined) cancelAnimationFrame(settling.frameId)
+    if (clear) clearListStyle(settling.list)
+    settling = undefined
+  }
+  const measureHeight = (list: HTMLElement): number => {
+    const measured = list.scrollHeight || list.getBoundingClientRect().height
+    return measured > 0 ? measured : 0
+  }
+  const paintList = (list: HTMLElement, height: number, openness: number, transition: string): void => {
+    const clamped = Math.min(1, Math.max(0, openness))
+    const px = snap(height * clamped)
+    const margin = Math.round((clamped - 1) * CARD_GAP * 100) / 100
+    const opacity = Math.round(clamped * 1000) / 1000
+    list.style.transition = transition || 'none'
+    list.style.willChange = 'height, opacity'
+    list.style.overflow = 'hidden'
+    list.style.height = `${px}px`
+    list.style.maxHeight = `${px}px`
+    list.style.marginTop = `${margin}px`
+    list.style.opacity = String(opacity)
+    list.style.visibility = clamped > 0 || Boolean(transition) ? 'visible' : 'hidden'
+    list.style.pointerEvents = clamped > 0 ? '' : 'none'
+  }
+  const animateTo = (
+    board: HTMLElement,
+    list: HTMLElement,
+    targetOpen: boolean,
+    fromOpenness?: number,
+    knownHeight?: number,
+  ): void => {
+    const sameList = settling?.list === list
+    stopSettling(!sameList)
+    if (targetOpen) board.removeAttribute(AGENTS_COLLAPSED_ATTRIBUTE)
+    else board.setAttribute(AGENTS_COLLAPSED_ATTRIBUTE, '')
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      clearListStyle(list)
+      return
+    }
+    const height = knownHeight && knownHeight > 0 ? knownHeight : measureHeight(list)
+    if (height <= 0) {
+      clearListStyle(list)
+      return
+    }
+    const finishLater = (targetHeight: number): void => {
+      settling = {
+        list,
+        height: targetHeight,
+        timer: setTimeout(() => {
+          clearListStyle(list)
+          settling = undefined
+        }, DURATION),
+      }
+    }
+    if (fromOpenness !== undefined) {
+      const target = targetOpen ? 1 : 0
+      if ((targetOpen && fromOpenness >= 1) || (!targetOpen && fromOpenness <= 0)) {
+        clearListStyle(list)
+        return
+      }
+      paintList(list, height, target, TRANSITION)
+      finishLater(height)
+      return
+    }
+    if (!targetOpen) {
+      paintList(list, height, 1, '')
+      void list.offsetHeight
+      paintList(list, height, 0, TRANSITION)
+      finishLater(height)
+      return
+    }
+    // Expanding via a tile click may also swap the list's content; measure on the next frame after React commits.
+    paintList(list, height, 0, '')
+    const current: NonNullable<typeof settling> = { list, height }
+    current.frameId = requestAnimationFrame(() => {
+      current.frameId = undefined
+      if (settling !== current) return
+      const nextHeight = measureHeight(list) || height
+      current.height = nextHeight
+      paintList(list, nextHeight, 1, TRANSITION)
+      current.timer = setTimeout(() => {
+        clearListStyle(list)
+        if (settling === current) settling = undefined
+      }, DURATION)
+    })
+    settling = current
+  }
+  const finishDrag = (commit: boolean): void => {
+    const from = drag
+    drag = undefined
+    if (!from) return
+    if (from.frameId !== 0) { cancelAnimationFrame(from.frameId); from.frameId = 0 }
+    if (!from.active) return
+    const dt = from.lastT - from.prevT
+    const stale = Date.now() - from.lastT > STALE_VELOCITY
+    const vy = !stale && dt > 0 ? (from.lastY - from.prevY) / dt : 0
+    let targetOpen: boolean
+    if (!commit) {
+      targetOpen = from.startOpen
+    } else if (from.scroller.scrollTop > 0 && from.openness === 0) {
+      targetOpen = false
+    } else if (from.startOpen) {
+      const collapse = vy < FLING && (-vy >= FLING || 1 - from.openness >= SNAP_RATIO)
+      targetOpen = !collapse
+    } else {
+      targetOpen = -vy < FLING && (vy >= FLING || from.openness >= SNAP_RATIO)
+    }
+    if (commit && targetOpen !== from.startOpen) haptic()
+    animateTo(from.board, from.list, targetOpen, from.openness, from.height)
   }
   const onStart = (event: TouchEvent): void => {
-    drag = undefined
+    finishDrag(false)
     const touch = event.touches[0]
     if (event.touches.length !== 1 || touch === undefined || !(event.target instanceof Element)) return
+    if (event.target.closest(`[data-composer-seat],${DRAWER_OWN_DRAG},[role="menu"]`)) return
     const scroller = event.target.closest<HTMLElement>(DRAWER_WORKSPACE_SCROLL)
     if (!scroller) return
-    drag = { id: touch.identifier, x: touch.clientX, y: touch.clientY, scroller }
+    for (let element: Element | null = event.target; element !== null && element !== scroller; element = element.parentElement) {
+      const horiz = element.scrollWidth > element.clientWidth
+      const vert = element !== event.target && element.scrollHeight > element.clientHeight
+      if (!horiz && !vert) continue
+      const style = getComputedStyle(element)
+      if ((horiz && /^(auto|scroll)$/u.test(style.overflowX))
+        || (vert && /^(auto|scroll)$/u.test(style.overflowY))) return
+    }
+    const parts = agentBoardParts(scroller)
+    if (!parts) return
+    const height = settling?.list === parts.list ? settling.height : measureHeight(parts.list)
+    if (height <= 0) return
+    let openness: number
+    let startOpen: boolean
+    if (settling?.list === parts.list) {
+      const currentH = parseFloat(getComputedStyle(parts.list).height)
+      openness = Number.isFinite(currentH) ? Math.min(1, Math.max(0, currentH / height)) : (parts.board.hasAttribute(AGENTS_COLLAPSED_ATTRIBUTE) ? 0 : 1)
+      startOpen = openness >= 0.5
+      stopSettling(false)
+      paintList(parts.list, height, openness, '')
+    } else {
+      startOpen = !parts.board.hasAttribute(AGENTS_COLLAPSED_ATTRIBUTE)
+      openness = startOpen ? 1 : 0
+    }
+    const now = Date.now()
+    drag = {
+      id: touch.identifier, x: touch.clientX, y: touch.clientY,
+      lastY: touch.clientY, prevY: touch.clientY, prevT: now, lastT: now,
+      scroller, board: parts.board, list: parts.list, height,
+      startOpen, openness, active: false, painted: false, frameId: 0,
+    }
   }
   const onMove = (event: TouchEvent): void => {
     const from = drag
     if (!from) return
     const touch = event.touches[0]
-    if (event.touches.length !== 1 || touch === undefined || touch.identifier !== from.id) { drag = undefined; return }
+    if (event.touches.length !== 1 || touch === undefined || touch.identifier !== from.id) { finishDrag(false); return }
+    const now = Date.now()
     const dx = touch.clientX - from.x
     const dy = touch.clientY - from.y
-    if (dy <= -TOUCH_COLLAPSE && Math.abs(dy) >= Math.abs(dx) * 1.2) {
-      collapseFor(from.scroller)
-      drag = undefined
+    const stepY = touch.clientY - from.lastY
+    if (!from.active) {
+      const canCollapse = from.openness > 0 && dy <= -SLOP && Math.abs(dy) >= Math.abs(dx) * 1.2
+      const canExpand = from.openness === 0 && from.scroller.scrollTop <= 1 && stepY > 0 && Math.abs(dy) >= Math.abs(dx)
+      if (!canCollapse && !canExpand) {
+        if (touch.clientY !== from.lastY) {
+          from.prevY = from.lastY
+          from.prevT = from.lastT
+          from.lastY = touch.clientY
+          from.lastT = now
+        }
+        return
+      }
+      if (!event.cancelable) { drag = undefined; return }
+      from.active = true
+    } else if (!event.cancelable) {
+      finishDrag(false)
+      return
+    }
+    event.preventDefault()
+    if (touch.clientY !== from.lastY) {
+      from.prevY = from.lastY
+      from.prevT = from.lastT
+      from.lastY = touch.clientY
+      from.lastT = now
+    }
+    if (from.openness === 0 && from.scroller.scrollTop > 0) {
+      if (stepY > 0) {
+        const consumed = Math.min(from.scroller.scrollTop, stepY)
+        from.scroller.scrollTop -= consumed
+        const rest = stepY - consumed
+        if (rest > 0) from.openness = Math.min(1, rest / from.height)
+      } else {
+        from.scroller.scrollTop += -stepY
+      }
+    } else {
+      const nextPx = from.openness * from.height + stepY
+      if (nextPx < 0) {
+        from.openness = 0
+        from.scroller.scrollTop += -nextPx
+      } else if (nextPx > from.height) {
+        from.openness = 1
+      } else {
+        from.openness = nextPx / from.height
+      }
+    }
+    from.pending = from.openness
+    if (!from.painted) {
+      from.painted = true
+      paintList(from.list, from.height, from.openness, '')
+    } else if (from.frameId === 0) {
+      from.frameId = requestAnimationFrame(() => {
+        from.frameId = 0
+        if (drag !== from || from.pending === undefined) return
+        paintList(from.list, from.height, from.pending, '')
+      })
     }
   }
-  const onEnd = (): void => { drag = undefined }
+  const onEnd = (event: TouchEvent): void => {
+    if (drag && event.touches.length === 0 && event.changedTouches[0]?.identifier === drag.id) finishDrag(true)
+  }
+  const onCancel = (): void => { finishDrag(false) }
   const onScroll = (event: Event): void => {
+    if (drag?.active) return
     const target = event.target
     if (target instanceof HTMLElement && target.scrollTop >= SCROLL_COLLAPSE && target.matches(DRAWER_WORKSPACE_SCROLL)) {
-      collapseFor(target)
+      const parts = agentBoardParts(target)
+      if (parts && !parts.board.hasAttribute(AGENTS_COLLAPSED_ATTRIBUTE)) animateTo(parts.board, parts.list, false)
     }
   }
   const onClick = (event: MouseEvent): void => {
     if (!(event.target instanceof Element)) return
     const tile = event.target.closest<HTMLElement>('[data-hp-agents] .hp-agents-tile')
     const board = tile?.closest<HTMLElement>('[data-hp-agents]')
-    if (!tile || !board) return
+    const list = board?.querySelector<HTMLElement>('.hp-agents-list')
+    if (!tile || !board || !list) return
     if (board.hasAttribute(AGENTS_COLLAPSED_ATTRIBUTE)) {
-      board.removeAttribute(AGENTS_COLLAPSED_ATTRIBUTE)
+      animateTo(board, list, true)
     } else if (tile.getAttribute('aria-pressed') === 'true') {
-      board.setAttribute(AGENTS_COLLAPSED_ATTRIBUTE, '')
+      animateTo(board, list, false)
     }
   }
   document.addEventListener('touchstart', onStart, { passive: true })
-  document.addEventListener('touchmove', onMove, { passive: true })
+  document.addEventListener('touchmove', onMove, { passive: false })
   document.addEventListener('touchend', onEnd, { passive: true })
-  document.addEventListener('touchcancel', onEnd, { passive: true })
+  document.addEventListener('touchcancel', onCancel, { passive: true })
   document.addEventListener('scroll', onScroll, { capture: true, passive: true })
   document.addEventListener('click', onClick, true)
   return () => {
+    if (drag?.frameId) cancelAnimationFrame(drag.frameId)
+    if (drag) clearListStyle(drag.list)
     drag = undefined
+    stopSettling(true)
     document.removeEventListener('touchstart', onStart)
     document.removeEventListener('touchmove', onMove)
     document.removeEventListener('touchend', onEnd)
-    document.removeEventListener('touchcancel', onEnd)
+    document.removeEventListener('touchcancel', onCancel)
     document.removeEventListener('scroll', onScroll, true)
     document.removeEventListener('click', onClick, true)
     for (const board of document.querySelectorAll(`[${AGENTS_COLLAPSED_ATTRIBUTE}]`)) {
       board.removeAttribute(AGENTS_COLLAPSED_ATTRIBUTE)
+      const list = board.querySelector<HTMLElement>('.hp-agents-list')
+      if (list) clearListStyle(list)
     }
   }
 }

@@ -151,9 +151,10 @@ const DRAWER_SELECTION_STYLE = '.hp-menu,.hp-panel{background:var(--dsw-alias-bg
   + `${DRAWER_SCROLL_ROOT} [class*="_regionArea"] [class*="_fade"]{display:none}`
   + `${DRAWER_SCROLL_ROOT} .hp-agents-head,${DRAWER_SCROLL_ROOT} .hp-agents-group h3{display:none}`
   + `${DRAWER_SCROLL_ROOT} .hp-agents-list{max-height:none;overflow:visible}`
+  + `${DRAWER_SCROLL_ROOT} .hp-agents-list > *{flex-shrink:0}`
   // Configurable embedded row cap (default 5 rows: N * 48px + 8px padding) with internal scrolling.
   + `${DRAWER_SCROLL_ROOT} .hp-agents-group > div{max-height:calc(var(--dsh-remote-agent-rows,${DEFAULT_AGENT_BOARD_ROWS}) * 48px + 8px);overflow-y:auto}`
-  + `${DRAWER_SCROLL_ROOT} [data-hp-agents][${AGENTS_COLLAPSED_ATTRIBUTE}] .hp-agents-list{display:none}`
+  + `${DRAWER_SCROLL_ROOT} [data-hp-agents][${AGENTS_COLLAPSED_ATTRIBUTE}] .hp-agents-list{height:0;max-height:0;margin-top:-6px;opacity:0;overflow:hidden;pointer-events:none;visibility:hidden}`
   + `${DRAWER_SCROLL_ROOT} [data-hp-agents][${AGENTS_COLLAPSED_ATTRIBUTE}] .hp-agents-tile[aria-pressed="true"]{box-shadow:inset 0 0 0 1px var(--dsw-alias-border-l2)}`
   + `${TASKS}{white-space:nowrap}`
   + `${TASKS} :is(h1,h2,h3,button,[class*="_rowSummary"],[class*="_metadata"],[class*="_nextRun"] p){white-space:nowrap}`
